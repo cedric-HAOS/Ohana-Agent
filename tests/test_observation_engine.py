@@ -239,3 +239,40 @@ def test_observation_engine_process_result_uses_explicit_source() -> None:
 
     assert event.observation.source == "dns.custom"
     assert event.observation.capability == "dns.custom"
+
+
+def test_observation_engine_updates_dns_service_by_identifier() -> None:
+    primary = Service(name="dns-primary", type=ServiceType.DNS)
+    secondary = Service(name="dns-secondary", type=ServiceType.DNS)
+    runtime = InfrastructureRuntime.from_infrastructure(
+        Infrastructure(
+            name="Ohana",
+            nodes=[
+                Node(name="DNS-01", services=[primary]),
+                Node(name="DNS-02", services=[secondary]),
+            ],
+        )
+    )
+    engine = ObservationEngine(
+        health_manager=InfrastructureHealthManager(runtime=runtime),
+        mapper=InfrastructureObservationMapper(),
+        result_mapper=ObserverResultMapper(),
+        publisher=ObservationEventPublisher(
+            event_publisher=FakeEventPublisher(),
+        ),
+    )
+
+    event = engine.process_result(
+        ObserverResult(success=True, latency=1.0, check="dns.resolve"),
+        target_name="dns-secondary",
+    )
+
+    primary_runtime = runtime.get_service_runtime_by_name("dns-primary")
+    secondary_runtime = runtime.get_service_runtime_by_name("dns-secondary")
+
+    assert primary_runtime is not None
+    assert secondary_runtime is not None
+    assert primary_runtime.health is HealthStatus.UNKNOWN
+    assert secondary_runtime.health is HealthStatus.HEALTHY
+    assert event.observation.service == "dns-secondary"
+    assert event.observation.node == "DNS-02"

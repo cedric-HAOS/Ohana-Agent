@@ -3,9 +3,8 @@
 # Example DNS plugin configuration
 # -----------------------------------------------------------------------------
 
-# Infrastructure service identifiers handled by the DNS plugin.
-services:
-  - dns-primary
+# DNS services are discovered automatically from infrastructure.yaml.
+# Add or remove services with type "dns" in the infrastructure definition.
 
 # Domain names resolved during each observation cycle.
 queries:

@@ -49,31 +49,31 @@ Objectifs réalisés :
 
 ---
 
-# v1.2.0 — Capacités supplémentaires
+## v1.2.0 — Administration graphique
 
-Objectif : étendre le modèle éprouvé du plugin DNS à de nouvelles capacités.
+**Statut : terminé.**
 
-Priorités envisagées :
+Principaux acquis :
 
-- HTTP et HTTPS ;
-- ICMP ;
-- MQTT ;
-- NTP ;
-- DHCP ;
-- Internet ;
-- Home Assistant ;
-- WireGuard.
+- API locale d'administration protégée ;
+- gestion de l'infrastructure depuis Ohana-Vision ;
+- gestion DHCP et réservations dnsmasq ;
+- synchronisation immédiate du snapshot d'infrastructure.
 
-Chaque plugin devra :
+## v1.2.1 — Services DNS dynamiques
 
-- utiliser les services déclarés dans l'infrastructure ;
-- produire des `ObserverResult` standardisés ;
-- alimenter le pipeline d'observation existant ;
-- disposer de tests unitaires et d'intégration.
+**Statut : terminé.**
+
+Principaux acquis :
+
+- découverte de tous les services DNS depuis l'infrastructure ;
+- observations distinctes pour chaque identifiant de service ;
+- ajout et suppression de tâches DNS sans redémarrage ;
+- absence de limite au nombre de services DNS déclarés.
 
 ---
 
-# v1.3.0 — Résilience et exploitation
+# v1.3.0 — Capacités supplémentaires
 
 Objectifs envisagés :
 

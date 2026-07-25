@@ -105,23 +105,21 @@ def test_dns_configuration_builder_copies_plugin_settings() -> None:
     assert config.policy.minimum_healthy_servers == 2
 
 
-def test_dns_configuration_builder_rejects_unknown_service() -> None:
+def test_dns_configuration_builder_ignores_legacy_service_filter() -> None:
     infrastructure = build_dns_infrastructure()
     declarative_config = DNSPluginConfig(
         services=["dns-secondary"],
     )
 
-    with pytest.raises(
-        LookupError,
-        match="Infrastructure service not found",
-    ):
-        DNSConfigurationBuilder().build(
-            infrastructure,
-            declarative_config,
-        )
+    config = DNSConfigurationBuilder().build(
+        infrastructure,
+        declarative_config,
+    )
+
+    assert [server.name for server in config.servers] == ["dns-primary"]
 
 
-def test_dns_configuration_builder_rejects_non_dns_service() -> None:
+def test_dns_configuration_builder_ignores_non_dns_services() -> None:
     infrastructure = build_dns_infrastructure(
         service_type=ServiceType.MQTT,
     )
@@ -129,14 +127,40 @@ def test_dns_configuration_builder_rejects_non_dns_service() -> None:
         services=["dns-primary"],
     )
 
-    with pytest.raises(
-        ValueError,
-        match="is not a DNS service",
-    ):
-        DNSConfigurationBuilder().build(
-            infrastructure,
-            declarative_config,
-        )
+    config = DNSConfigurationBuilder().build(
+        infrastructure,
+        declarative_config,
+    )
+
+    assert config.servers == []
+
+
+def test_dns_configuration_builder_discovers_all_dns_services() -> None:
+    infrastructure = build_dns_infrastructure()
+    secondary = Service(
+        name="dns-secondary",
+        type=ServiceType.DNS,
+        endpoint=Endpoint(
+            type=EndpointType.IP,
+            address="192.168.1.12",
+            port=53,
+        ),
+    )
+    infrastructure.nodes[0].services.append(secondary)
+
+    config = DNSConfigurationBuilder().build(
+        infrastructure,
+        DNSPluginConfig(),
+    )
+
+    assert [server.name for server in config.servers] == [
+        "dns-primary",
+        "dns-secondary",
+    ]
+    assert [server.address for server in config.servers] == [
+        "192.168.1.11",
+        "192.168.1.12",
+    ]
 
 
 def test_dns_configuration_builder_rejects_service_without_endpoint() -> None:

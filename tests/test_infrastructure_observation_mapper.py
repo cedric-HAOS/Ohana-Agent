@@ -195,3 +195,30 @@ def test_mapper_rejects_service_missing_from_runtime() -> None:
             update,
             capability="dns.resolve",
         )
+
+
+def test_mapper_targets_one_dns_service_by_stable_identifier() -> None:
+    primary = Service(name="dns-primary", type=ServiceType.DNS)
+    secondary = Service(name="dns-secondary", type=ServiceType.DNS)
+    infrastructure = Infrastructure(
+        name="Ohana",
+        nodes=[
+            Node(name="DNS-01", services=[primary]),
+            Node(name="DNS-02", services=[secondary]),
+        ],
+    )
+    runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
+    update = InfrastructureHealthUpdate(
+        target_name="dns-secondary",
+        health=HealthStatus.HEALTHY,
+        source="dns.resolve",
+    )
+
+    observation = InfrastructureObservationMapper().map_service_update(
+        runtime,
+        update,
+        capability="dns.resolve",
+    )
+
+    assert observation.node == "DNS-02"
+    assert observation.service == "dns-secondary"

@@ -120,22 +120,22 @@ Exemple :
 config/plugins/dns.yaml
 ```
 
-Le plugin ne référence jamais une adresse IP.
+Le plugin ne référence ni une adresse IP ni une liste de services.
 
-Il référence uniquement des services déclarés dans l'infrastructure.
-
-Exemple :
+Les services DNS sont découverts automatiquement parmi les services de type
+`dns` déclarés dans l'infrastructure. Le fichier du plugin conserve uniquement
+les paramètres communs aux observations :
 
 ```yaml id="dgw7ae"
-services:
-  - dns-primary
-
 queries:
   - example.com
   - openai.com
 ```
 
-Le composant `DNSConfigurationBuilder` transforme ensuite cette configuration déclarative en configuration d'exécution.
+Le composant `DNSConfigurationBuilder` transforme ensuite l'infrastructure et
+les paramètres du plugin en configuration d'exécution. Lorsqu'une modification
+d'infrastructure est enregistrée par l'API d'administration, les tâches DNS
+sont remplacées sans redémarrer Agent.
 
 ---
 

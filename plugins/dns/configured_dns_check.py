@@ -18,9 +18,13 @@ class ConfiguredDNSCheck:
         if not self.server.strip():
             raise ValueError("server must not be empty.")
 
-    def check(self, hostname: str) -> DNSCheckResult:
-        """Resolve a hostname through the configured server."""
+    def check(
+        self,
+        hostname: str,
+        server: str | None = None,
+    ) -> DNSCheckResult:
+        """Resolve a hostname through an explicit or configured server."""
         return self.check_engine.check(
             hostname=hostname,
-            server=self.server,
+            server=server or self.server,
         )

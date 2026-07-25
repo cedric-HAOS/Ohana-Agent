@@ -56,6 +56,16 @@ class NodeRuntime:
                 return service_runtime
         return None
 
+    def get_service_runtime_by_name(
+        self,
+        name: str,
+    ) -> ServiceRuntime | None:
+        """Return the service runtime matching a stable service identifier."""
+        for service_runtime in self.service_runtimes:
+            if service_runtime.service.name == name:
+                return service_runtime
+        return None
+
     def get_service_runtime_by_type(
         self,
         service_type: ServiceType,

@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from threading import Event
+from threading import Event, RLock
 from time import monotonic
 from typing import Any, Protocol
 
+from configuration.infrastructure import InfrastructureConfig
 from observer.exporters import (
     VisionClient,
     VisionClientError,
@@ -39,6 +40,7 @@ class ProductionAgent:
     infrastructure_retry_seconds: float = 10.0
     infrastructure_refresh_seconds: float = 300.0
     administration_runtime: AdministrationRuntime | None = None
+    infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     monotonic_clock: Callable[[], float] = field(
         default=monotonic,
         repr=False,
@@ -55,6 +57,11 @@ class ProductionAgent:
     )
     _next_infrastructure_refresh_at: float | None = field(
         default=None,
+        init=False,
+        repr=False,
+    )
+    _runtime_lock: RLock = field(
+        default_factory=RLock,
         init=False,
         repr=False,
     )
@@ -109,20 +116,21 @@ class ProductionAgent:
 
     def tick(self) -> None:
         """Execute one scheduler iteration."""
-        results = self.scheduler.tick()
+        with self._runtime_lock:
+            results = self.scheduler.tick()
 
-        for result in results:
-            if result.success:
-                LOGGER.info(
-                    "Scheduled task completed: %s",
-                    result.command,
-                )
-            else:
-                LOGGER.error(
-                    "Scheduled task failed: %s — %s",
-                    result.command,
-                    result.error or "unknown error",
-                )
+            for result in results:
+                if result.success:
+                    LOGGER.info(
+                        "Scheduled task completed: %s",
+                        result.command,
+                    )
+                else:
+                    LOGGER.error(
+                        "Scheduled task failed: %s — %s",
+                        result.command,
+                        result.error or "unknown error",
+                    )
 
     def run(self) -> None:
         """Run until a stop request is received."""
@@ -178,10 +186,32 @@ class ProductionAgent:
         payload: dict[str, Any],
     ) -> None:
         """Replace and immediately synchronize the Agent-owned configuration."""
-        self.infrastructure_payload = payload
+        with self._runtime_lock:
+            self.infrastructure_payload = payload
 
-        if self.vision_client is not None:
-            self._synchronize_infrastructure()
+            if self.vision_client is not None:
+                self._synchronize_infrastructure()
+
+    def apply_infrastructure_configuration(
+        self,
+        configuration: InfrastructureConfig,
+        payload: dict[str, Any],
+    ) -> None:
+        """Reconfigure observations and publish a new infrastructure snapshot."""
+        with self._runtime_lock:
+            scheduler_was_running = self.scheduler.running
+
+            if scheduler_was_running:
+                self.scheduler.stop()
+
+            if self.infrastructure_reconfigure is not None:
+                self.infrastructure_reconfigure(configuration)
+
+            self.infrastructure_payload = payload
+            synchronized = self._synchronize_infrastructure()
+
+            if scheduler_was_running and synchronized:
+                self._start_scheduler()
 
     def _start_administration(self) -> None:
         if self.administration_runtime is not None:

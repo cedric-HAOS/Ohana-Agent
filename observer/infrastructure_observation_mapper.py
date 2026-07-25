@@ -52,19 +52,22 @@ class InfrastructureObservationMapper:
         latency_ms: float | None = None,
     ) -> Observation:
         """Map a service health update using infrastructure runtime context."""
-        try:
-            service_type = ServiceType(update.target_name)
-        except ValueError as error:
-            raise ValueError(
-                f"Unknown infrastructure service target: {update.target_name!r}."
-            ) from error
-
-        service_runtime = runtime.get_service_runtime_by_type(service_type)
+        service_runtime = runtime.get_service_runtime_by_name(update.target_name)
 
         if service_runtime is None:
-            raise LookupError(
-                f"No runtime found for service type {service_type.value!r}."
-            )
+            try:
+                service_type = ServiceType(update.target_name)
+            except ValueError as error:
+                raise ValueError(
+                    f"Unknown infrastructure service target: {update.target_name!r}."
+                ) from error
+
+            service_runtime = runtime.get_service_runtime_by_type(service_type)
+
+            if service_runtime is None:
+                raise LookupError(
+                    f"No runtime found for service type {service_type.value!r}."
+                )
 
         node_runtime = runtime.get_node_runtime_for_service(service_runtime.service)
 

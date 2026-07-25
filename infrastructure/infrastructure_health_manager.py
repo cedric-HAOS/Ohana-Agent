@@ -35,12 +35,17 @@ class InfrastructureHealthManager:
         self,
         observation: InfrastructureHealthUpdate,
     ) -> bool:
-        try:
-            service_type = ServiceType(observation.target_name)
-        except ValueError:
-            return False
+        service_runtime = self.runtime.get_service_runtime_by_name(
+            observation.target_name
+        )
 
-        service_runtime = self.runtime.get_service_runtime_by_type(service_type)
+        if service_runtime is None:
+            try:
+                service_type = ServiceType(observation.target_name)
+            except ValueError:
+                return False
+
+            service_runtime = self.runtime.get_service_runtime_by_type(service_type)
 
         if service_runtime is None:
             return False

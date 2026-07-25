@@ -1,6 +1,3 @@
-services:
-  - dns-primary
-
 queries:
   - example.com
 

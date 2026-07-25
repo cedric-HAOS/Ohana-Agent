@@ -42,6 +42,6 @@ def test_dns_example_configuration_is_valid() -> None:
         "config/plugins/dns.example.yaml",
     )
 
-    assert configuration.services == ["dns-primary"]
+    assert configuration.services == []
     assert configuration.queries == ["example.com"]
     assert configuration.policy.minimum_healthy_servers == 1

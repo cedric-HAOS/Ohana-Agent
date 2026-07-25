@@ -4,6 +4,13 @@ from pathlib import Path
 from typing import Any
 
 from bootstrap import build_production_agent
+from configuration.infrastructure import (
+    NodeConfig,
+    NodeEndpointConfig,
+    ServiceConfig,
+)
+from loader import InfrastructureLoader
+from observer.exporters import VisionInfrastructureMapper
 from scheduler.clock import FakeClock
 
 
@@ -52,8 +59,11 @@ def test_production_bootstrap_builds_dns_task() -> None:
     assert tasks[0].command == "dns.resolve"
     assert tasks[0].arguments == {
         "hostname": "example.com",
+        "server": "192.168.1.10",
+        "service_id": "dns-primary",
     }
     assert tasks[0].metadata == {
+        "managed_by": "dns",
         "service_id": "dns-primary",
         "server": "192.168.1.10",
     }
@@ -109,3 +119,98 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
     }
     assert observation_payload["metadata"]["hostname"] == ("example.com")
     assert observation_payload["metadata"]["server"] == ("192.168.1.10")
+
+
+def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> None:
+    clock = FakeClock(
+        current_time=datetime(
+            2026,
+            7,
+            15,
+            12,
+            0,
+            tzinfo=UTC,
+        )
+    )
+    client = FakeVisionClient()
+    agent = build_production_agent(
+        vision_client=client,
+        clock=clock,
+    )
+    configuration = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
+    configuration_with_secondary = configuration.model_copy(
+        update={
+            "nodes": [
+                *configuration.nodes,
+                NodeConfig(
+                    id="dns-02",
+                    name="DNS-02",
+                    endpoint=NodeEndpointConfig(
+                        type="ip",
+                        address="192.168.1.12",
+                    ),
+                ),
+            ],
+            "services": [
+                *configuration.services,
+                ServiceConfig(
+                    id="dns-secondary",
+                    name="DNS secondaire",
+                    type="dns",
+                    node="dns-02",
+                    port=53,
+                ),
+            ],
+        }
+    )
+
+    agent.start()
+    agent.apply_infrastructure_configuration(
+        configuration_with_secondary,
+        VisionInfrastructureMapper().to_payload(configuration_with_secondary),
+    )
+
+    tasks = agent.scheduler.list_tasks()
+    assert [task.arguments["service_id"] for task in tasks] == [
+        "dns-primary",
+        "dns-secondary",
+    ]
+    assert len(agent.scheduler.due_tasks()) == 2
+    assert agent.scheduler.running is True
+
+    configuration_without_primary = configuration_with_secondary.model_copy(
+        update={
+            "services": [
+                service
+                for service in configuration_with_secondary.services
+                if service.id != "dns-primary"
+            ]
+        }
+    )
+    agent.apply_infrastructure_configuration(
+        configuration_without_primary,
+        VisionInfrastructureMapper().to_payload(configuration_without_primary),
+    )
+
+    tasks = agent.scheduler.list_tasks()
+    assert [task.arguments["service_id"] for task in tasks] == ["dns-secondary"]
+    assert agent.scheduler.running is True
+
+    configuration_without_dns = configuration_without_primary.model_copy(
+        update={
+            "services": [
+                service
+                for service in configuration_without_primary.services
+                if service.type != "dns"
+            ]
+        }
+    )
+    agent.apply_infrastructure_configuration(
+        configuration_without_dns,
+        VisionInfrastructureMapper().to_payload(configuration_without_dns),
+    )
+
+    assert agent.scheduler.list_tasks() == []
+    assert agent.scheduler.running is True
+
+    agent.stop()

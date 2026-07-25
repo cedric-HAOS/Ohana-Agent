@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from administration import (
@@ -15,6 +15,7 @@ from builder import (
     DNSConfigurationBuilder,
     InfrastructureBuilder,
 )
+from configuration.infrastructure import InfrastructureConfig
 from configuration.infrastructure_validator import (
     InfrastructureValidator,
 )
@@ -45,7 +46,8 @@ from observer.exporters import (
 )
 from plugin.plugin_context import PluginContext
 from plugin.plugin_manager import PluginManager
-from plugins.dns.configured_dns_check import ConfiguredDNSCheck
+from plugins.dns.dns_check import DNSCheck
+from plugins.dns.dns_config import DNSConfig
 from plugins.dns.dns_plugin import DNSPlugin
 from production_agent import ProductionAgent
 from scheduler import (
@@ -55,6 +57,58 @@ from scheduler import (
     Task,
 )
 from scheduler.clock import Clock, SystemClock
+
+
+def _build_dns_tasks(
+    *,
+    dns_config: DNSConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one scheduled observation per DNS service and query."""
+    tasks: list[Task] = []
+
+    for server in dns_config.servers:
+        if not server.enabled:
+            continue
+
+        for query_index, hostname in enumerate(dns_config.queries):
+            tasks.append(
+                Task(
+                    id=(f"dns.resolve:{server.name}:{query_index}:{hostname}"),
+                    name=(f"Resolve {hostname} through {server.name}"),
+                    command="dns.resolve",
+                    trigger=IntervalTrigger(
+                        interval=timedelta(seconds=interval_seconds),
+                        start_at=start_at,
+                    ),
+                    arguments={
+                        "hostname": hostname,
+                        "server": server.address,
+                        "service_id": server.name,
+                    },
+                    metadata={
+                        "managed_by": "dns",
+                        "service_id": server.name,
+                        "server": server.address,
+                    },
+                )
+            )
+
+    return tasks
+
+
+def _replace_dns_tasks(
+    scheduler: Scheduler,
+    tasks: list[Task],
+) -> None:
+    """Atomically replace the scheduler tasks managed by the DNS plugin."""
+    for task in scheduler.list_tasks():
+        if task.command == "dns.resolve" or task.metadata.get("managed_by") == "dns":
+            scheduler.remove_task(task.id)
+
+    for task in tasks:
+        scheduler.add_task(task)
 
 
 def build_production_agent(
@@ -78,13 +132,6 @@ def build_production_agent(
         infrastructure,
         dns_plugin_config,
     )
-
-    enabled_servers = [server for server in dns_config.servers if server.enabled]
-
-    if len(enabled_servers) != 1:
-        raise ValueError(
-            "The first production deployment requires exactly one enabled DNS server."
-        )
 
     if not dns_config.queries:
         raise ValueError(
@@ -148,16 +195,11 @@ def build_production_agent(
         context=plugin_context,
     )
 
-    dns_server = enabled_servers[0]
-
-    plugin_manager.register(
-        DNSPlugin(
-            check=ConfiguredDNSCheck(
-                server=dns_server.address,
-            ),
-            config=dns_config,
-        )
+    dns_plugin = DNSPlugin(
+        check=DNSCheck(),
+        config=dns_config,
     )
+    plugin_manager.register(dns_plugin)
 
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
@@ -177,26 +219,35 @@ def build_production_agent(
         event_bus=event_bus,
     )
 
-    start_at = resolved_clock.now()
+    _replace_dns_tasks(
+        scheduler,
+        _build_dns_tasks(
+            dns_config=dns_config,
+            interval_seconds=dns_plugin_config.interval_seconds,
+            start_at=resolved_clock.now(),
+        ),
+    )
 
-    for hostname in dns_config.queries:
-        scheduler.add_task(
-            Task(
-                name=(f"Resolve {hostname} through {dns_server.name}"),
-                command="dns.resolve",
-                trigger=IntervalTrigger(
-                    interval=timedelta(seconds=(dns_plugin_config.interval_seconds)),
-                    start_at=start_at,
-                ),
-                arguments={
-                    "hostname": hostname,
-                },
-                metadata={
-                    "service_id": dns_server.name,
-                    "server": dns_server.address,
-                },
-            )
+    def reconfigure_infrastructure(
+        changed_configuration: InfrastructureConfig,
+    ) -> None:
+        updated_infrastructure = InfrastructureBuilder().build(changed_configuration)
+        updated_runtime = InfrastructureRuntime.from_infrastructure(
+            updated_infrastructure
         )
+        updated_dns_config = DNSConfigurationBuilder().build(
+            updated_infrastructure,
+            dns_plugin_config,
+        )
+        updated_tasks = _build_dns_tasks(
+            dns_config=updated_dns_config,
+            interval_seconds=dns_plugin_config.interval_seconds,
+            start_at=resolved_clock.now(),
+        )
+
+        observation_engine.health_manager.runtime = updated_runtime
+        dns_plugin.reconfigure(updated_dns_config)
+        _replace_dns_tasks(scheduler, updated_tasks)
 
     agent = ProductionAgent(
         scheduler=scheduler,
@@ -210,6 +261,7 @@ def build_production_agent(
         infrastructure_refresh_seconds=(
             configuration.vision.infrastructure_refresh_seconds
         ),
+        infrastructure_reconfigure=reconfigure_infrastructure,
     )
 
     if configuration.administration.enabled:
@@ -252,8 +304,9 @@ def build_production_agent(
             ),
             dhcp_repository=dhcp_repository,
             on_infrastructure_changed=lambda changed_configuration: (
-                agent.update_infrastructure_payload(
-                    VisionInfrastructureMapper().to_payload(changed_configuration)
+                agent.apply_infrastructure_configuration(
+                    changed_configuration,
+                    VisionInfrastructureMapper().to_payload(changed_configuration),
                 )
             ),
         )

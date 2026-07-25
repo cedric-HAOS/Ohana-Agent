@@ -148,3 +148,32 @@ def test_administration_server_updates_infrastructure(
     )
 
     assert len(updated["services"]) == 2  # type: ignore[arg-type]
+
+
+def test_administration_service_publishes_saved_infrastructure(
+    tmp_path: Path,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    changes = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        on_infrastructure_changed=changes.append,
+    )
+    payload = service.read_infrastructure().model_dump(mode="json")
+    payload["services"].append(
+        {
+            "id": "dns-secondary",
+            "name": "DNS secondaire",
+            "type": "dns",
+            "node": "infra-01",
+            "port": 53,
+        }
+    )
+
+    saved = service.write_infrastructure(payload)
+
+    assert changes == [saved]
+    assert changes[0].services[-1].id == "dns-secondary"

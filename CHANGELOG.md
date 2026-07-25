@@ -6,6 +6,26 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.2.1] — Découverte dynamique des services DNS
+
+## Modifié
+
+- Découverte automatique de tous les services de type `dns` depuis
+  `infrastructure.yaml`.
+- Suppression de la liste de services dupliquée dans `plugins/dns.yaml`.
+- Création d'une tâche d'observation pour chaque couple service DNS / requête.
+- Routage des observations par identifiant stable de service plutôt que par type.
+- Reconfiguration immédiate des tâches DNS après une modification enregistrée
+  depuis Ohana-Vision, sans redémarrage de l'Agent.
+- Prise en charge de zéro, un ou plusieurs services DNS activés.
+
+## Compatibilité
+
+- La clé historique `services` de `dns.yaml` reste acceptée mais n'est plus
+  utilisée, afin de ne pas invalider les installations existantes.
+
+---
+
 # [1.2.0] — Administration graphique — 2026-07-24
 
 ## Ajouté

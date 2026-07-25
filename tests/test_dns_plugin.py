@@ -501,3 +501,41 @@ def test_dns_plugin_execute_requires_hostname() -> None:
         match="requires a non-empty 'hostname' argument",
     ):
         plugin.execute()
+
+
+def test_dns_plugin_executes_against_task_server() -> None:
+    dns_check = FakeDNSCheck(
+        DNSCheckResult(
+            hostname="example.com",
+            server="192.168.1.12",
+            healthy=True,
+            address="93.184.216.34",
+        )
+    )
+    plugin = DNSPlugin(check=dns_check)
+
+    plugin.execute(
+        hostname="example.com",
+        server="192.168.1.12",
+        service_id="dns-secondary",
+    )
+
+    assert dns_check.server == "192.168.1.12"
+
+
+def test_dns_plugin_can_be_reconfigured() -> None:
+    plugin = DNSPlugin()
+    config = DNSConfig(
+        servers=[
+            DNSServerConfig(
+                name="dns-secondary",
+                address="192.168.1.12",
+            )
+        ],
+        queries=["example.com"],
+    )
+
+    plugin.reconfigure(config)
+
+    assert plugin.config is config
+    assert [server.name for server in plugin.servers] == ["dns-secondary"]

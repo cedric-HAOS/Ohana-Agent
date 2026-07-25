@@ -14,7 +14,7 @@ def test_dns_config_loader_loads_dns_yaml() -> None:
     config = loader.load("config/plugins/dns.yaml")
 
     assert isinstance(config, DNSPluginConfig)
-    assert config.services == ["dns-primary"]
+    assert config.services == []
     assert config.queries == [
         "example.com",
     ]
@@ -29,7 +29,7 @@ def test_dns_config_loader_accepts_path_object() -> None:
 
     config = loader.load(Path("config/plugins/dns.yaml"))
 
-    assert config.services == ["dns-primary"]
+    assert config.services == []
 
 
 def test_dns_config_loader_raises_for_missing_file(

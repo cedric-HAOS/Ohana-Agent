@@ -70,7 +70,9 @@ class InfrastructureBuilder:
                     type=node_endpoint.type,
                     address=node_endpoint.address,
                     port=service_config.port,
+                    enabled=service_config.enabled,
                 ),
+                enabled=service_config.enabled,
             )
 
             node.add_service(service)

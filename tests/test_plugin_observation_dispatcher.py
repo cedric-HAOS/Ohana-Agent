@@ -89,3 +89,17 @@ def test_dispatcher_rejects_invalid_plugin_command(
 
     with pytest.raises(ValueError):
         dispatcher.execute(command)
+
+
+def test_dispatcher_uses_service_id_as_observation_target() -> None:
+    command = PluginObservationDispatcher.parse(
+        "dns.resolve",
+        arguments={
+            "hostname": "example.com",
+            "server": "192.168.1.12",
+            "service_id": "dns-secondary",
+        },
+    )
+
+    assert command.target_name == "dns-secondary"
+    assert command.arguments["service_id"] == "dns-secondary"

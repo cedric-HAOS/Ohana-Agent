@@ -7,6 +7,8 @@ Ohana-Agent est le moteur d'observation de l'écosystème Ohana. Il charge une i
 Depuis la version 1.1.0, l'Agent est la source de vérité de la topologie :
 nœuds, services, équipements, liens et positions logiques sur la grille. La
 version 1.2.0 ajoute leur administration graphique sécurisée depuis Vision.
+La version 1.2.1 synchronise automatiquement les observations DNS avec les
+services ajoutés, modifiés ou supprimés depuis cette administration.
 
 ---
 
@@ -219,9 +221,6 @@ config/plugins/dns.yaml
 ```
 
 ```yaml
-services:
-  - dns-primary
-
 queries:
   - example.com
   - openai.com
@@ -229,6 +228,11 @@ queries:
 timeout: 2.0
 retries: 1
 ```
+
+Tous les services de type `dns` déclarés dans `infrastructure.yaml` sont
+découverts automatiquement. Une modification réalisée depuis Vision remplace
+immédiatement les tâches DNS : les services ajoutés commencent à produire des
+observations et les services supprimés ne sont plus interrogés.
 
 ---
 

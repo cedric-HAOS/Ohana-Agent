@@ -78,8 +78,15 @@ class DNSPlugin(Plugin):
                 "DNSPlugin.execute() requires a non-empty 'hostname' argument."
             )
 
+        server = kwargs.get("server")
+
+        if server is not None and (not isinstance(server, str) or not server.strip()):
+            raise ValueError(
+                "DNSPlugin.execute() requires 'server' to be a non-empty string."
+            )
+
         started_at = perf_counter()
-        result = self.check(hostname)
+        result = self.check(hostname, server=server)
         latency_ms = (perf_counter() - started_at) * 1000
 
         if result.healthy:
@@ -101,10 +108,18 @@ class DNSPlugin(Plugin):
             },
         )
 
-    def check(self, hostname: str) -> DNSCheckResult:
+    def check(
+        self,
+        hostname: str,
+        *,
+        server: str | None = None,
+    ) -> DNSCheckResult:
         self._publish(DNSCheckStarted(hostname=hostname))
 
-        result = self._check.check(hostname)
+        if server is None:
+            result = self._check.check(hostname)
+        else:
+            result = self._check.check(hostname, server=server)
 
         if result.healthy:
             self.runtime.record_success(
@@ -130,6 +145,13 @@ class DNSPlugin(Plugin):
             )
 
         return result
+
+    def reconfigure(self, config: DNSConfig) -> None:
+        """Replace DNS servers and policy without recreating the plugin."""
+        self.config = config
+        self.servers = [
+            DNSServer(config=server_config) for server_config in config.servers
+        ]
 
     def _publish(self, event: object) -> None:
         if self._event_bus is not None:

@@ -93,6 +93,24 @@ Principaux acquis :
 
 ---
 
+# v1.4.0 — Présence réseau des équipements
+
+**Statut : terminé.**
+
+Principaux acquis :
+
+- découverte des équipements adressables depuis la topologie ;
+- observation générique `network.reachable` ;
+- détection ICMP avec confirmation ARP locale ;
+- répartition temporelle des contrôles pour préserver la légèreté du scheduler ;
+- seuil d'échecs consécutifs avant déclaration d'absence ;
+- état intermédiaire `unknown` ;
+- absence d'impact sur la santé globale des capacités ;
+- replanification après modification de l'infrastructure ;
+- configuration et administration du plugin réseau.
+
+---
+
 # v2.0.0 — Actions contrôlées
 
 Objectif : passer progressivement de l'observation à l'action.

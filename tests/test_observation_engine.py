@@ -276,3 +276,39 @@ def test_observation_engine_updates_dns_service_by_identifier() -> None:
     assert secondary_runtime.health is HealthStatus.HEALTHY
     assert event.observation.service == "dns-secondary"
     assert event.observation.node == "DNS-02"
+
+
+def test_observation_engine_publishes_device_presence_without_global_health() -> None:
+    engine, runtime, event_publisher = build_engine()
+    service_runtime = runtime.get_service_runtime_by_type(ServiceType.DNS)
+
+    assert service_runtime is not None
+    assert service_runtime.health is HealthStatus.UNKNOWN
+
+    result = ObserverResult(
+        success=False,
+        latency=0.0,
+        health=HealthStatus.UNKNOWN,
+        check="network.reachable",
+        message="INFRA-01 did not respond (1/3 failed checks).",
+        metadata={
+            "target_type": "device",
+            "device_id": "infra-01",
+            "node_id": "INFRA-01",
+            "address": "192.168.1.10",
+        },
+    )
+
+    event = engine.process_result(
+        result,
+        target_name="infra-01",
+    )
+
+    assert service_runtime.health is HealthStatus.UNKNOWN
+    assert engine.health_manager.observations == []
+    assert event.observation.node == "INFRA-01"
+    assert event.observation.service == "infra-01"
+    assert event.observation.capability == "network.reachable"
+    assert event.observation.status is ObservationStatus.UNKNOWN
+    assert event.observation.metadata["device_id"] == "infra-01"
+    assert event_publisher.events == [event]

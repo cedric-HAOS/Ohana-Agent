@@ -1,0 +1,23 @@
+enabled: true
+
+# -----------------------------------------------------------------------------
+# Ohana-Agent
+# Example network presence plugin configuration
+# -----------------------------------------------------------------------------
+
+# Devices are discovered automatically from topology.devices in
+# infrastructure.yaml. A device is checked when it has an address directly or
+# references a node with an IP endpoint.
+
+# Maximum duration of one ICMP request.
+timeout: 1.0
+
+# Number of immediate retries after the first failed probe.
+retries: 0
+
+# Delay between two presence cycles.
+interval_seconds: 60
+
+# Number of consecutive failed cycles required before a device is declared
+# unavailable. Earlier failures are exported as unknown.
+failure_threshold: 3

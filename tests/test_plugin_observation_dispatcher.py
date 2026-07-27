@@ -103,3 +103,16 @@ def test_dispatcher_uses_service_id_as_observation_target() -> None:
 
     assert command.target_name == "dns-secondary"
     assert command.arguments["service_id"] == "dns-secondary"
+
+
+def test_dispatcher_uses_device_id_as_presence_target() -> None:
+    command = PluginObservationDispatcher.parse(
+        "network.reachable",
+        arguments={
+            "address": "192.168.1.10",
+            "device_id": "infra-01",
+        },
+    )
+
+    assert command.target_name == "infra-01"
+    assert command.arguments["device_id"] == "infra-01"

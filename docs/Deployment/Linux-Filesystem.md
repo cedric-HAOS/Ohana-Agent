@@ -12,7 +12,7 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.0.0.
+Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.4.0.
 
 ---
 
@@ -39,7 +39,10 @@ L’installation Linux respecte les principes suivants :
 │   │   ├── shikamaru.yaml
 │   │   ├── infrastructure.yaml
 │   │   └── plugins/
-│   │       └── dns.yaml
+│   │       ├── dns.yaml
+│   │       ├── ntp.yaml
+│   │       ├── mqtt.yaml
+│   │       └── network.yaml
 │   │
 │   └── systemd/
 │       └── system/
@@ -105,7 +108,9 @@ La structure retenue est :
 ├── infrastructure.yaml
 └── plugins/
     ├── dns.yaml
-    └── ntp.yaml
+    ├── ntp.yaml
+    ├── mqtt.yaml
+    └── network.yaml
 ```
 
 ### Configuration principale
@@ -186,6 +191,22 @@ Ce fichier contient la configuration propre au plugin d'observation MQTT :
 
 Les adresses et ports des brokers MQTT restent déclarés uniquement dans
 `infrastructure.yaml`.
+
+### Présence réseau
+
+```text
+/etc/ohana-agent/plugins/network.yaml
+```
+
+Ce fichier règle la vérification générique des équipements adressables :
+
+* activation du plugin ;
+* délai et nombre de tentatives immédiates ;
+* intervalle d’exécution ;
+* nombre d’échecs consécutifs avant déclaration d’absence.
+
+Les adresses des équipements restent déclarées dans `infrastructure.yaml`,
+directement sur l’équipement ou par l’intermédiaire de son nœud.
 
 ### Fichiers d’exemple
 
@@ -281,6 +302,7 @@ avec les chemins de configuration explicites :
 --dns-config /etc/ohana-agent/plugins/dns.yaml
 --ntp-config /etc/ohana-agent/plugins/ntp.yaml
 --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml
+--network-config /etc/ohana-agent/plugins/network.yaml
 ```
 
 Le service ne doit pas dépendre du répertoire courant pour retrouver ses fichiers.
@@ -395,6 +417,7 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--dns-config`     | `/etc/ohana-agent/plugins/dns.yaml`    |
 | `--ntp-config`     | `/etc/ohana-agent/plugins/ntp.yaml`    |
 | `--mqtt-config`    | `/etc/ohana-agent/plugins/mqtt.yaml`   |
+| `--network-config` | `/etc/ohana-agent/plugins/network.yaml` |
 | `--log-level`      | niveau choisi par le service            |
 
 Commande de référence :
@@ -406,6 +429,7 @@ Commande de référence :
   --dns-config /etc/ohana-agent/plugins/dns.yaml \
   --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
   --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \
+  --network-config /etc/ohana-agent/plugins/network.yaml \
   --log-level INFO
 ```
 
@@ -423,6 +447,7 @@ config/infrastructure.yaml
 config/plugins/dns.yaml
 config/plugins/ntp.yaml
 config/plugins/mqtt.yaml
+config/plugins/network.yaml
 ```
 
 Ils permettent de lancer localement :
@@ -463,9 +488,9 @@ Ils ne devront être ajoutés que lorsqu’un composant de production les utilis
 
 ---
 
-## Contrat pour la version 1.0.0
+## Contrat pour la version 1.4.0
 
-L’arborescence Linux de référence d’Ohana-Agent 1.0.0 est :
+L’arborescence Linux de référence d’Ohana-Agent 1.4.0 est :
 
 ```text
 Logiciel       /opt/ohana-agent/venv

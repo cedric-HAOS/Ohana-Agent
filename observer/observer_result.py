@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from infrastructure.enums import HealthStatus
+
 
 @dataclass(slots=True)
 class ObserverResult:
@@ -14,6 +16,7 @@ class ObserverResult:
     check: str | None = None
     description: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    health: HealthStatus | None = None
 
     @property
     def ok(self) -> bool:

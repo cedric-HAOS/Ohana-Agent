@@ -43,6 +43,38 @@ class InfrastructureObservationMapper:
             metadata=update.metadata.copy(),
         )
 
+    def map_device_update(
+        self,
+        update: InfrastructureHealthUpdate,
+        *,
+        device_id: str,
+        capability: str,
+        latency_ms: float | None = None,
+    ) -> Observation:
+        """Map a topology device update without changing runtime health."""
+        node_id = update.metadata.get("node_id")
+        resolved_node_id = (
+            node_id.strip()
+            if isinstance(node_id, str) and node_id.strip()
+            else device_id
+        )
+        metadata = update.metadata.copy()
+        metadata.setdefault("target_type", "device")
+        metadata.setdefault("device_id", device_id)
+        status = ObservationStatus(update.health.value)
+
+        return self._factory.create(
+            node=resolved_node_id,
+            service=device_id,
+            capability=capability,
+            status=status,
+            success=status is ObservationStatus.HEALTHY,
+            message=update.message,
+            source=update.source,
+            latency_ms=latency_ms,
+            metadata=metadata,
+        )
+
     def map_service_update(
         self,
         runtime: InfrastructureRuntime,

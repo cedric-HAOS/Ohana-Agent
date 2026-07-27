@@ -20,6 +20,7 @@ class InfrastructureValidator:
         self._validate_service_nodes_exist(config)
         self._validate_service_ports(config)
         self._validate_topology_device_ids_are_unique(config)
+        self._validate_topology_device_addresses(config)
         self._validate_topology_device_nodes_exist(config)
         self._validate_topology_node_references_are_unique(config)
         self._validate_topology_link_ids_are_unique(config)
@@ -100,6 +101,25 @@ class InfrastructureValidator:
             raise InfrastructureValidationError(
                 "Topology device identifiers must be unique."
             )
+
+    def _validate_topology_device_addresses(
+        self,
+        config: InfrastructureConfig,
+    ) -> None:
+        if config.topology is None:
+            return
+
+        for device in config.topology.devices:
+            if device.address is None:
+                continue
+
+            try:
+                ip_address(device.address)
+            except ValueError as exc:
+                raise InfrastructureValidationError(
+                    f"Invalid IP address for topology device "
+                    f"'{device.id}': {device.address}"
+                ) from exc
 
     def _validate_topology_device_nodes_exist(
         self,

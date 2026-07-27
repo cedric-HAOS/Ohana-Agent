@@ -23,6 +23,7 @@ Ohana-Agent :8765
     +-- plugins/dns.yaml
     +-- plugins/ntp.yaml
     +-- plugins/mqtt.yaml
+    +-- plugins/network.yaml
 ```
 
 Le jeton n'est jamais envoyé au navigateur. Vision le lit dans
@@ -55,11 +56,12 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
 L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
 dans l'API s'il n'est pas réellement enregistré dans l'Agent.
 
-La version 1.3.0 expose :
+La version 1.4.0 expose :
 
 - **DNS** — capacité `dns.resolve` ;
 - **NTP** — capacité `ntp.query` ;
-- **MQTT** — capacité `mqtt.roundtrip`.
+- **MQTT** — capacité `mqtt.roundtrip` ;
+- **Présence réseau** — capacité `network.reachable`.
 
 Pour chaque plugin, l'API fournit notamment :
 
@@ -99,11 +101,12 @@ configuration courante :
 
 - première requête et premier service DNS activé ;
 - premier service NTP activé ;
-- premier courtier MQTT activé.
+- premier courtier MQTT activé ;
+- premier équipement adressable de la topologie.
 
 Le résultat contient la réussite, le contrôle exécuté, le message, la latence,
-la date et les métadonnées non sensibles. Le test ne modifie pas la
-planification normale.
+la date et les métadonnées non sensibles. Le test ne modifie ni la
+planification normale ni l'historique des échecs de présence réseau.
 
 ## Architecture administrable
 

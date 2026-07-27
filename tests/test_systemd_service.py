@@ -25,6 +25,7 @@ def test_systemd_service_uses_reference_executable_and_configuration() -> None:
     assert "--dns-config /etc/ohana-agent/plugins/dns.yaml" in service
     assert "--ntp-config /etc/ohana-agent/plugins/ntp.yaml" in service
     assert "--mqtt-config /etc/ohana-agent/plugins/mqtt.yaml" in service
+    assert "--network-config /etc/ohana-agent/plugins/network.yaml" in service
 
 
 def test_systemd_service_runs_as_dedicated_user() -> None:

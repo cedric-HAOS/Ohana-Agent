@@ -49,11 +49,14 @@ class PluginObservationDispatcher:
 
         resolved_arguments = dict(arguments or {})
         service_id = resolved_arguments.get("service_id")
-        target_name = (
-            service_id.strip()
-            if isinstance(service_id, str) and service_id.strip()
-            else plugin_name
-        )
+        device_id = resolved_arguments.get("device_id")
+
+        if isinstance(service_id, str) and service_id.strip():
+            target_name = service_id.strip()
+        elif isinstance(device_id, str) and device_id.strip():
+            target_name = device_id.strip()
+        else:
+            target_name = plugin_name
 
         return PluginCommand(
             plugin_name=plugin_name,

@@ -6,6 +6,42 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.4.0] — Présence réseau des équipements — 2026-07-27
+
+## Ajouté
+
+- Plugin intégré `network` et capacité `network.reachable`.
+- Découverte automatique des équipements de topologie disposant d'une adresse
+  directe ou rattachés à un nœud avec endpoint IP.
+- Vérification légère par ICMP, complétée par la table ARP locale lorsqu'un
+  équipement ne répond pas au ping.
+- Répartition des contrôles sur tout l'intervalle pour éviter une rafale de
+  requêtes lorsque plusieurs équipements sont déclarés.
+- Validation des adresses IP portées directement par les équipements de
+  topologie.
+- Délai configurable, retries immédiats et seuil de plusieurs cycles échoués
+  avant de déclarer un équipement indisponible.
+- État `unknown` pendant la confirmation d'une absence ou lorsque la commande
+  système de vérification n'est pas disponible.
+- Observations de présence séparées de la santé globale des services et de
+  l'infrastructure.
+- Reconfiguration automatique des tâches après une modification de la
+  topologie depuis Ohana-Vision.
+- Administration, test immédiat sans modification de l'historique des échecs,
+  configuration CLI et unité systemd du plugin réseau.
+
+## Qualité
+
+- 1088 tests unitaires, d'intégration, HTTP et de packaging réussis.
+- Construction validée des artefacts wheel et sdist 1.4.0.
+
+## Contrat d'observation
+
+- `capability_id` : `network.reachable` ;
+- `service_id` : identifiant de l'équipement ;
+- `node_id` : nœud rattaché, ou identifiant de l'équipement en son absence ;
+- métadonnées : adresse, méthode, tentatives, échecs consécutifs et seuil.
+
 # [1.3.0] — Administration des plugins — 2026-07-27
 
 ## Ajouté

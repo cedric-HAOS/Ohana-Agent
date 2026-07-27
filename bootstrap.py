@@ -17,6 +17,7 @@ from builder import (
     DNSConfigurationBuilder,
     InfrastructureBuilder,
     MQTTConfigurationBuilder,
+    NetworkConfigurationBuilder,
     NTPConfigurationBuilder,
 )
 from configuration.dns import DNSPluginConfig
@@ -26,6 +27,7 @@ from configuration.infrastructure_validator import (
 )
 from configuration.loader import ConfigurationLoader
 from configuration.mqtt_plugin import MQTTPluginConfig
+from configuration.network import NetworkPluginConfig
 from configuration.ntp import NTPPluginConfig
 from core.events import EventBus
 from infrastructure import InfrastructureRuntime
@@ -36,6 +38,7 @@ from loader import (
     DNSConfigLoader,
     InfrastructureLoader,
     MQTTConfigLoader,
+    NetworkConfigLoader,
     NTPConfigLoader,
 )
 from observer import (
@@ -65,6 +68,9 @@ from plugins.dns.dns_plugin import DNSPlugin
 from plugins.mqtt.mqtt_check import MQTTCheck
 from plugins.mqtt.mqtt_config import MQTTConfig
 from plugins.mqtt.mqtt_plugin import MQTTPlugin
+from plugins.network.network_check import NetworkCheck
+from plugins.network.network_config import NetworkConfig
+from plugins.network.network_plugin import NetworkPlugin
 from plugins.ntp.ntp_check import NTPCheck
 from plugins.ntp.ntp_config import NTPConfig
 from plugins.ntp.ntp_plugin import NTPPlugin
@@ -183,6 +189,46 @@ def _build_mqtt_tasks(
     ]
 
 
+def _build_network_tasks(
+    *,
+    network_config: NetworkConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build presence observations spread evenly across one interval."""
+    devices = [device for device in network_config.devices if device.enabled]
+
+    if not devices:
+        return []
+
+    spacing_seconds = interval_seconds / len(devices)
+
+    return [
+        Task(
+            id=f"network.reachable:{device.name}",
+            name=f"Check network presence of {device.label}",
+            command="network.reachable",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at
+                + timedelta(seconds=device_index * spacing_seconds),
+            ),
+            arguments={
+                "address": device.address,
+                "device_id": device.name,
+                "label": device.label,
+                "node_id": device.node_id,
+            },
+            metadata={
+                "managed_by": "network",
+                "device_id": device.name,
+                "address": device.address,
+            },
+        )
+        for device_index, device in enumerate(devices)
+    ]
+
+
 def _replace_plugin_tasks(
     scheduler: Scheduler,
     tasks: list[Task],
@@ -208,8 +254,10 @@ def build_production_agent(
     dns_config_path: Path = Path("config/plugins/dns.yaml"),
     ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
     mqtt_config_path: Path = Path("config/plugins/mqtt.yaml"),
+    network_config_path: Path = Path("config/plugins/network.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
+    network_check: NetworkCheck | None = None,
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
     configuration = ConfigurationLoader.load(application_config_path)
@@ -218,6 +266,7 @@ def build_production_agent(
     InfrastructureValidator().validate(infrastructure_config)
     infrastructure = InfrastructureBuilder().build(infrastructure_config)
     current_infrastructure = infrastructure
+    current_infrastructure_config = infrastructure_config
     infrastructure_runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
 
     dns_plugin_config = DNSConfigLoader().load(dns_config_path)
@@ -241,6 +290,12 @@ def build_production_agent(
     mqtt_config = MQTTConfigurationBuilder().build(
         infrastructure,
         mqtt_plugin_config,
+    )
+
+    network_plugin_config = NetworkConfigLoader().load(network_config_path)
+    network_config = NetworkConfigurationBuilder().build(
+        infrastructure_config,
+        network_plugin_config,
     )
 
     event_bus = EventBus()
@@ -318,6 +373,12 @@ def build_production_agent(
     )
     plugin_manager.register(mqtt_plugin)
 
+    network_plugin = NetworkPlugin(
+        check=network_check or NetworkCheck(),
+        config=network_config,
+    )
+    plugin_manager.register(network_plugin)
+
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
         observation_engine=observation_engine,
@@ -375,11 +436,24 @@ def build_production_agent(
         ),
         plugin_name="mqtt",
     )
+    _replace_plugin_tasks(
+        scheduler,
+        (
+            _build_network_tasks(
+                network_config=network_config,
+                interval_seconds=network_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if network_plugin_config.enabled
+            else []
+        ),
+        plugin_name="network",
+    )
 
     def reconfigure_infrastructure(
         changed_configuration: InfrastructureConfig,
     ) -> None:
-        nonlocal current_infrastructure
+        nonlocal current_infrastructure, current_infrastructure_config
 
         updated_infrastructure = InfrastructureBuilder().build(changed_configuration)
         updated_runtime = InfrastructureRuntime.from_infrastructure(
@@ -396,6 +470,10 @@ def build_production_agent(
         updated_mqtt_config = MQTTConfigurationBuilder().build(
             updated_infrastructure,
             mqtt_plugin_config,
+        )
+        updated_network_config = NetworkConfigurationBuilder().build(
+            changed_configuration,
+            network_plugin_config,
         )
         updated_dns_tasks = (
             _build_dns_tasks(
@@ -424,11 +502,21 @@ def build_production_agent(
             if mqtt_plugin_config.enabled
             else []
         )
+        updated_network_tasks = (
+            _build_network_tasks(
+                network_config=updated_network_config,
+                interval_seconds=network_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if network_plugin_config.enabled
+            else []
+        )
 
         observation_engine.health_manager.runtime = updated_runtime
         dns_plugin.reconfigure(updated_dns_config)
         ntp_plugin.reconfigure(updated_ntp_config)
         mqtt_plugin.reconfigure(updated_mqtt_config)
+        network_plugin.reconfigure(updated_network_config)
         _replace_plugin_tasks(
             scheduler,
             updated_dns_tasks,
@@ -444,7 +532,13 @@ def build_production_agent(
             updated_mqtt_tasks,
             plugin_name="mqtt",
         )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_network_tasks,
+            plugin_name="network",
+        )
         current_infrastructure = updated_infrastructure
+        current_infrastructure_config = changed_configuration
 
     def apply_dns_configuration(configuration: DNSPluginConfig) -> None:
         nonlocal dns_plugin_config
@@ -514,6 +608,43 @@ def build_production_agent(
             plugin_name="mqtt",
         )
         mqtt_plugin_config = configuration
+
+    def apply_network_configuration(configuration: NetworkPluginConfig) -> None:
+        nonlocal network_plugin_config
+
+        updated_config = NetworkConfigurationBuilder().build(
+            current_infrastructure_config,
+            configuration,
+        )
+        network_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_network_tasks(
+                    network_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="network",
+        )
+        network_plugin_config = configuration
+
+    def test_network_plugin() -> ObserverResult:
+        devices = [device for device in network_plugin.config.devices if device.enabled]
+
+        if not devices:
+            raise ValueError("The network plugin has no addressable device.")
+
+        device = devices[0]
+        return network_plugin.test(
+            address=device.address,
+            device_id=device.name,
+            label=device.label,
+            node_id=device.node_id,
+        )
 
     def test_dns_plugin() -> ObserverResult:
         servers = [server for server in dns_plugin.servers if server.enabled]
@@ -641,6 +772,19 @@ def build_production_agent(
                         )
                     ),
                     test_plugin=test_mqtt_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="network",
+                    display_name="Présence réseau",
+                    capabilities=("network.reachable",),
+                    configuration_path=network_config_path,
+                    configuration_model=NetworkPluginConfig,
+                    apply_configuration=lambda config: (
+                        agent.apply_plugin_configuration(
+                            lambda: apply_network_configuration(config)
+                        )
+                    ),
+                    test_plugin=test_network_plugin,
                 ),
             ),
         )

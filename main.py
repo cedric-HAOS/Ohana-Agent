@@ -64,6 +64,12 @@ def parse_arguments() -> argparse.Namespace:
         help="MQTT observation plugin configuration file.",
     )
     parser.add_argument(
+        "--network-config",
+        type=Path,
+        default=Path("config/plugins/network.yaml"),
+        help="Network presence plugin configuration file.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=[
@@ -136,6 +142,7 @@ def main() -> int:
         dns_config_path=arguments.dns_config,
         ntp_config_path=arguments.ntp_config,
         mqtt_config_path=arguments.mqtt_config,
+        network_config_path=arguments.network_config,
     )
 
     install_signal_handlers(agent)

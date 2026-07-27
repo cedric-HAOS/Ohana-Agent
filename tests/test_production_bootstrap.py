@@ -11,6 +11,7 @@ from configuration.infrastructure import (
 )
 from loader import InfrastructureLoader
 from observer.exporters import VisionInfrastructureMapper
+from plugins.network.network_probe_result import NetworkProbeResult
 from scheduler.clock import FakeClock
 
 
@@ -31,6 +32,25 @@ class FakeVisionClient:
         payload: dict[str, Any],
     ) -> None:
         self.operations.append(("infrastructure", payload))
+
+
+class FakeNetworkCheck:
+    """Return a deterministic reachable result for bootstrap tests."""
+
+    def check(
+        self,
+        address: str,
+        *,
+        timeout: float,
+        retries: int,
+    ) -> NetworkProbeResult:
+        del timeout, retries
+        return NetworkProbeResult(
+            address=address,
+            reachable=True,
+            method="icmp",
+            latency_ms=1.0,
+        )
 
 
 def test_production_bootstrap_builds_dns_task() -> None:
@@ -54,18 +74,31 @@ def test_production_bootstrap_builds_dns_task() -> None:
     )
 
     tasks = agent.scheduler.list_tasks()
+    dns_tasks = [task for task in tasks if task.command == "dns.resolve"]
+    network_tasks = [task for task in tasks if task.command == "network.reachable"]
 
-    assert len(tasks) == 1
-    assert tasks[0].command == "dns.resolve"
-    assert tasks[0].arguments == {
+    assert len(dns_tasks) == 1
+    assert len(network_tasks) == 1
+    assert dns_tasks[0].arguments == {
         "hostname": "example.com",
         "server": "192.168.1.10",
         "service_id": "dns-primary",
     }
-    assert tasks[0].metadata == {
+    assert dns_tasks[0].metadata == {
         "managed_by": "dns",
         "service_id": "dns-primary",
         "server": "192.168.1.10",
+    }
+    assert network_tasks[0].arguments == {
+        "address": "192.168.1.10",
+        "device_id": "rpi-link",
+        "label": "RPI-LINK",
+        "node_id": "infra-01",
+    }
+    assert network_tasks[0].metadata == {
+        "managed_by": "network",
+        "device_id": "rpi-link",
+        "address": "192.168.1.10",
     }
     assert agent.infrastructure_retry_seconds == 10.0
     assert agent.infrastructure_refresh_seconds == 300.0
@@ -90,6 +123,7 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
     agent = build_production_agent(
         vision_client=vision_client,
         clock=clock,
+        network_check=FakeNetworkCheck(),
     )
 
     agent.start()
@@ -98,6 +132,7 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
 
     assert [operation for operation, _payload in vision_client.operations] == [
         "infrastructure",
+        "observation",
         "observation",
     ]
 
@@ -108,17 +143,28 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
     assert len(infrastructure_payload["topology"]["links"]) == 8
     assert len(infrastructure_payload["topology"]["layouts"]) == 1
 
-    observation_payload = vision_client.operations[1][1]
+    observations = {
+        payload["capability_id"]: payload
+        for operation, payload in vision_client.operations
+        if operation == "observation"
+    }
 
-    assert observation_payload["node_id"] == "infra-01"
-    assert observation_payload["service_id"] == "dns-primary"
-    assert observation_payload["capability_id"] == "dns.resolve"
-    assert observation_payload["status"] in {
+    dns_observation = observations["dns.resolve"]
+    assert dns_observation["node_id"] == "infra-01"
+    assert dns_observation["service_id"] == "dns-primary"
+    assert dns_observation["status"] in {
         "healthy",
         "unavailable",
     }
-    assert observation_payload["metadata"]["hostname"] == ("example.com")
-    assert observation_payload["metadata"]["server"] == ("192.168.1.10")
+    assert dns_observation["metadata"]["hostname"] == "example.com"
+    assert dns_observation["metadata"]["server"] == "192.168.1.10"
+
+    network_observation = observations["network.reachable"]
+    assert network_observation["node_id"] == "infra-01"
+    assert network_observation["service_id"] == "rpi-link"
+    assert network_observation["status"] == "healthy"
+    assert network_observation["metadata"]["device_id"] == "rpi-link"
+    assert network_observation["metadata"]["address"] == "192.168.1.10"
 
 
 def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> None:
@@ -170,12 +216,20 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
         VisionInfrastructureMapper().to_payload(configuration_with_secondary),
     )
 
-    tasks = agent.scheduler.list_tasks()
+    tasks = [
+        task
+        for task in agent.scheduler.list_tasks()
+        if task.command == "dns.resolve"
+    ]
     assert [task.arguments["service_id"] for task in tasks] == [
         "dns-primary",
         "dns-secondary",
     ]
-    assert len(agent.scheduler.due_tasks()) == 2
+    assert len([
+        task
+        for task in agent.scheduler.due_tasks()
+        if task.command == "dns.resolve"
+    ]) == 2
     assert agent.scheduler.running is True
 
     configuration_without_primary = configuration_with_secondary.model_copy(
@@ -192,7 +246,11 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
         VisionInfrastructureMapper().to_payload(configuration_without_primary),
     )
 
-    tasks = agent.scheduler.list_tasks()
+    tasks = [
+        task
+        for task in agent.scheduler.list_tasks()
+        if task.command == "dns.resolve"
+    ]
     assert [task.arguments["service_id"] for task in tasks] == ["dns-secondary"]
     assert agent.scheduler.running is True
 
@@ -210,7 +268,11 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
         VisionInfrastructureMapper().to_payload(configuration_without_dns),
     )
 
-    assert agent.scheduler.list_tasks() == []
+    assert [
+        task
+        for task in agent.scheduler.list_tasks()
+        if task.command == "dns.resolve"
+    ] == []
     assert agent.scheduler.running is True
 
     agent.stop()

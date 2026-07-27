@@ -385,3 +385,26 @@ def test_validator_rejects_duplicate_grid_position() -> None:
         match="contains duplicate grid positions",
     ):
         InfrastructureValidator().validate(config)
+
+
+def test_validator_rejects_invalid_topology_device_address() -> None:
+    config = build_valid_topology_config()
+    assert config.topology is not None
+    invalid_device = config.topology.devices[0].model_copy(
+        update={"address": "not-an-ip"}
+    )
+    invalid_topology = config.topology.model_copy(
+        update={
+            "devices": [
+                invalid_device,
+                *config.topology.devices[1:],
+            ]
+        }
+    )
+    config = config.model_copy(update={"topology": invalid_topology})
+
+    with pytest.raises(
+        InfrastructureValidationError,
+        match="Invalid IP address for topology device 'router'",
+    ):
+        InfrastructureValidator().validate(config)

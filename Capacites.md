@@ -53,6 +53,11 @@ Exemples :
 - routage ;
 - accès Internet.
 
+La présence `network.reachable` est une observation technique complémentaire.
+Elle indique qu'un équipement est visible sur le réseau, sans affirmer que ses
+services ou ses capacités fonctionnelles sont disponibles. Elle n'entre donc
+pas directement dans la santé globale de l'infrastructure.
+
 ---
 
 # Communication

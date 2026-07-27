@@ -4,6 +4,7 @@ from configuration.loader import ConfigurationLoader
 from loader.dns_config_loader import DNSConfigLoader
 from loader.infrastructure_loader import InfrastructureLoader
 from loader.mqtt_config_loader import MQTTConfigLoader
+from loader.network_config_loader import NetworkConfigLoader
 from loader.ntp_config_loader import NTPConfigLoader
 
 
@@ -74,3 +75,16 @@ def test_mqtt_example_configuration_is_valid() -> None:
     assert configuration.qos == 1
     assert configuration.authentication.username is None
     assert configuration.tls.enabled is False
+
+
+def test_network_example_configuration_is_valid() -> None:
+    """Load the example network presence plugin configuration."""
+    configuration = NetworkConfigLoader().load(
+        "config/plugins/network.example.yaml",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.timeout == 1.0
+    assert configuration.retries == 0
+    assert configuration.interval_seconds == 60
+    assert configuration.failure_threshold == 3

@@ -121,6 +121,21 @@ Jamais sur le nom du plugin.
 
 ---
 
+# Plugins intégrés
+
+Ohana-Agent fournit actuellement :
+
+- `dns` pour `dns.resolve` ;
+- `ntp` pour `ntp.query` ;
+- `mqtt` pour `mqtt.roundtrip` ;
+- `network` pour `network.reachable`.
+
+Le plugin réseau constitue une exception volontairement limitée : il observe la
+présence d'un équipement, mais cette présence ne remplace jamais l'observation
+d'une capacité fonctionnelle.
+
+---
+
 # Les observations
 
 Les plugins produisent des observations.

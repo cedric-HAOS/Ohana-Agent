@@ -49,11 +49,37 @@ class ObservationEngine:
                 "ObserverResult must define a check or an explicit source."
             )
 
+        if result.metadata.get("target_type") == "device":
+            return self.process_device_update(
+                update,
+                device_id=target_name,
+                capability=capability,
+                latency_ms=result.latency,
+            )
+
         return self.process_service_update(
             update,
             capability=capability,
             latency_ms=result.latency,
         )
+
+    def process_device_update(
+        self,
+        update: InfrastructureHealthUpdate,
+        *,
+        device_id: str,
+        capability: str,
+        latency_ms: float | None = None,
+    ) -> ObservationPublished:
+        """Publish a topology presence update outside global health."""
+        observation = self.mapper.map_device_update(
+            update,
+            device_id=device_id,
+            capability=capability,
+            latency_ms=latency_ms,
+        )
+
+        return self.publisher.publish(observation)
 
     def process_service_update(
         self,

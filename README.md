@@ -10,7 +10,8 @@ version 1.2.0 ajoute leur administration graphique sécurisée depuis Vision.
 La version 1.2.1 synchronise automatiquement les observations DNS avec les
 services ajoutés, modifiés ou supprimés depuis cette administration. La version
 1.3.0 ajoute les capacités NTP et MQTT ainsi que l’administration graphique des
-plugins DNS, NTP et MQTT.
+plugins DNS, NTP et MQTT. La version 1.4.0 ajoute une présence réseau légère
+des équipements déclarés dans la topologie.
 
 ---
 
@@ -19,8 +20,9 @@ plugins DNS, NTP et MQTT.
 Ohana-Agent expose une API locale permettant à Ohana-Vision de modifier
 l’infrastructure, le DHCP et la configuration des plugins intégrés.
 
-L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DNS, NTP
-et MQTT peuvent être activés, reconfigurés et testés sans redémarrer l’Agent.
+L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DNS, NTP,
+MQTT et Présence réseau peuvent être activés, reconfigurés et testés sans
+redémarrer l’Agent.
 Les secrets MQTT restent masqués.
 
 - l'API écoute par défaut sur `127.0.0.1:8765` ;
@@ -58,17 +60,47 @@ Les plugins référencent les services par identifiant et ne dupliquent pas les 
 
 ## Plugins indépendants
 
-Chaque capacité est fournie par un plugin spécialisé. Les plugins DNS, NTP et
-MQTT utilisent le même pipeline d'observation standardisé.
+Chaque capacité est fournie par un plugin spécialisé. Les plugins DNS, NTP,
+MQTT et réseau utilisent le même pipeline d'observation standardisé.
 
 ```text
 plugins/
 ├── dns/
-├── ntp/
-└── mqtt/
+├── mqtt/
+├── network/
+└── ntp/
 ```
 
 Chaque plugin possède sa configuration et produit des observations standardisées.
+
+## Présence réseau des équipements
+
+Le plugin `network` découvre automatiquement les équipements de
+`topology.devices` qui possèdent une adresse ou qui référencent un nœud avec un
+endpoint IP. Il produit la capacité `network.reachable`.
+
+La vérification reste volontairement légère :
+
+- un contrôle par équipement et par intervalle, réparti dans le temps pour
+  éviter un pic de requêtes ;
+- ICMP en première intention ;
+- confirmation par la table ARP locale lorsque l'équipement ne répond pas au
+  ping ;
+- état `unknown` avant d'atteindre le seuil d'échecs consécutifs ;
+- aucun impact sur la santé globale des services.
+
+Configuration :
+
+```yaml
+enabled: true
+timeout: 1.0
+retries: 0
+interval_seconds: 60
+failure_threshold: 3
+```
+
+Un équipement joignable n'est pas nécessairement fonctionnel : les plugins DNS,
+NTP ou MQTT continuent de vérifier les capacités réelles.
 
 ## Observations standardisées
 
@@ -328,7 +360,8 @@ ohana-agent \
   --infrastructure config/infrastructure.yaml \
   --dns-config config/plugins/dns.yaml \
   --ntp-config config/plugins/ntp.yaml \
-  --mqtt-config config/plugins/mqtt.yaml
+  --mqtt-config config/plugins/mqtt.yaml \
+  --network-config config/plugins/network.yaml
 ```
 
 Version :
@@ -367,7 +400,7 @@ Le code courant comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugins DNS, NTP et MQTT ;
+- plugins DNS, NTP, MQTT et présence réseau ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

@@ -70,6 +70,11 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/plugins/mqtt.yaml"
 
+    [[ -f "${CONFIG_ROOT}/plugins/network.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/network.yaml"
+
     [[ -e "${PACKAGE_SOURCE}" ]] \
         || fail "Package source not found: ${PACKAGE_SOURCE}"
 

@@ -52,6 +52,12 @@ def parse_arguments() -> argparse.Namespace:
         help="DNS plugin configuration file.",
     )
     parser.add_argument(
+        "--ntp-config",
+        type=Path,
+        default=Path("config/plugins/ntp.yaml"),
+        help="NTP plugin configuration file.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=[
@@ -122,6 +128,7 @@ def main() -> int:
         application_config_path=arguments.config,
         infrastructure_config_path=arguments.infrastructure,
         dns_config_path=arguments.dns_config,
+        ntp_config_path=arguments.ntp_config,
     )
 
     install_signal_handlers(agent)

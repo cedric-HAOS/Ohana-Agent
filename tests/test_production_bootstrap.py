@@ -214,3 +214,79 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
     assert agent.scheduler.running is True
 
     agent.stop()
+
+
+def test_production_bootstrap_reconfigures_ntp_tasks_from_infrastructure() -> None:
+    clock = FakeClock(
+        current_time=datetime(
+            2026,
+            7,
+            15,
+            12,
+            0,
+            tzinfo=UTC,
+        )
+    )
+    client = FakeVisionClient()
+    agent = build_production_agent(
+        vision_client=client,
+        clock=clock,
+    )
+    configuration = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
+    configuration_with_ntp = configuration.model_copy(
+        update={
+            "services": [
+                *configuration.services,
+                ServiceConfig(
+                    id="ntp-primary",
+                    name="NTP principal",
+                    type="ntp",
+                    node="infra-01",
+                    port=123,
+                ),
+            ]
+        }
+    )
+
+    agent.start()
+    agent.apply_infrastructure_configuration(
+        configuration_with_ntp,
+        VisionInfrastructureMapper().to_payload(configuration_with_ntp),
+    )
+
+    tasks = agent.scheduler.list_tasks()
+    ntp_tasks = [task for task in tasks if task.command == "ntp.query"]
+
+    assert len(ntp_tasks) == 1
+    assert ntp_tasks[0].arguments == {
+        "server": "192.168.1.10",
+        "port": 123,
+        "service_id": "ntp-primary",
+    }
+    assert ntp_tasks[0].metadata == {
+        "managed_by": "ntp",
+        "service_id": "ntp-primary",
+        "server": "192.168.1.10",
+        "port": 123,
+    }
+
+    configuration_without_ntp = configuration_with_ntp.model_copy(
+        update={
+            "services": [
+                service
+                for service in configuration_with_ntp.services
+                if service.type != "ntp"
+            ]
+        }
+    )
+    agent.apply_infrastructure_configuration(
+        configuration_without_ntp,
+        VisionInfrastructureMapper().to_payload(configuration_without_ntp),
+    )
+
+    assert [
+        task for task in agent.scheduler.list_tasks() if task.command == "ntp.query"
+    ] == []
+    assert agent.scheduler.running is True
+
+    agent.stop()

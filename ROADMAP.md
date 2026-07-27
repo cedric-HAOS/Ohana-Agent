@@ -75,8 +75,13 @@ Principaux acquis :
 
 # v1.3.0 — Capacités supplémentaires
 
-Objectifs envisagés :
+**Statut : en cours.**
 
+Objectifs :
+
+- plugin NTP et observation `ntp.query` ;
+- plugin DHCP ;
+- plugin MQTT ;
 - reprise plus fine après erreurs transitoires ;
 - métriques internes de synchronisation ;
 - diagnostics de connectivité avec Vision ;

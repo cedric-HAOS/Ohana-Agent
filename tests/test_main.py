@@ -39,6 +39,7 @@ def test_parse_arguments_uses_default_configuration_paths(
     assert arguments.config == Path("config/shikamaru.yaml")
     assert arguments.infrastructure == Path("config/infrastructure.yaml")
     assert arguments.dns_config == Path("config/plugins/dns.yaml")
+    assert arguments.ntp_config == Path("config/plugins/ntp.yaml")
     assert arguments.log_level == "INFO"
 
 
@@ -56,6 +57,8 @@ def test_parse_arguments_accepts_custom_paths(
             "custom/infrastructure.yaml",
             "--dns-config",
             "custom/dns.yaml",
+            "--ntp-config",
+            "custom/ntp.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -66,6 +69,7 @@ def test_parse_arguments_accepts_custom_paths(
     assert arguments.config == Path("custom/application.yaml")
     assert arguments.infrastructure == Path("custom/infrastructure.yaml")
     assert arguments.dns_config == Path("custom/dns.yaml")
+    assert arguments.ntp_config == Path("custom/ntp.yaml")
     assert arguments.log_level == "DEBUG"
 
 
@@ -210,6 +214,8 @@ def test_main_builds_and_runs_production_agent(
             "custom/infrastructure.yaml",
             "--dns-config",
             "custom/dns.yaml",
+            "--ntp-config",
+            "custom/ntp.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -228,6 +234,7 @@ def test_main_builds_and_runs_production_agent(
         application_config_path: Path,
         infrastructure_config_path: Path,
         dns_config_path: Path,
+        ntp_config_path: Path,
     ) -> FakeAgent:
         calls.append(
             (
@@ -235,6 +242,7 @@ def test_main_builds_and_runs_production_agent(
                 application_config_path,
                 infrastructure_config_path,
                 dns_config_path,
+                ntp_config_path,
             )
         )
         return fake_agent
@@ -277,6 +285,7 @@ def test_main_builds_and_runs_production_agent(
             Path("custom/application.yaml"),
             Path("custom/infrastructure.yaml"),
             Path("custom/dns.yaml"),
+            Path("custom/ntp.yaml"),
         ),
         (
             "install_signal_handlers",
@@ -352,6 +361,8 @@ def test_parse_arguments_accepts_linux_configuration_paths(
             "/etc/ohana-agent/infrastructure.yaml",
             "--dns-config",
             "/etc/ohana-agent/plugins/dns.yaml",
+            "--ntp-config",
+            "/etc/ohana-agent/plugins/ntp.yaml",
         ],
     )
 
@@ -365,4 +376,7 @@ def test_parse_arguments_accepts_linux_configuration_paths(
     )
     assert arguments.dns_config == Path(
         "/etc/ohana-agent/plugins/dns.yaml",
+    )
+    assert arguments.ntp_config == Path(
+        "/etc/ohana-agent/plugins/ntp.yaml",
     )

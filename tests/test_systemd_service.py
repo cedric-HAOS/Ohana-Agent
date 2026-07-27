@@ -23,6 +23,7 @@ def test_systemd_service_uses_reference_executable_and_configuration() -> None:
     assert "--config /etc/ohana-agent/shikamaru.yaml" in service
     assert "--infrastructure /etc/ohana-agent/infrastructure.yaml" in service
     assert "--dns-config /etc/ohana-agent/plugins/dns.yaml" in service
+    assert "--ntp-config /etc/ohana-agent/plugins/ntp.yaml" in service
 
 
 def test_systemd_service_runs_as_dedicated_user() -> None:

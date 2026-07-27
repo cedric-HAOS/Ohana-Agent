@@ -8,7 +8,8 @@ Depuis la version 1.1.0, l'Agent est la source de vérité de la topologie :
 nœuds, services, équipements, liens et positions logiques sur la grille. La
 version 1.2.0 ajoute leur administration graphique sécurisée depuis Vision.
 La version 1.2.1 synchronise automatiquement les observations DNS avec les
-services ajoutés, modifiés ou supprimés depuis cette administration.
+services ajoutés, modifiés ou supprimés depuis cette administration. Le
+développement courant ajoute la même découverte dynamique pour la capacité NTP.
 
 ---
 
@@ -52,14 +53,16 @@ Les plugins référencent les services par identifiant et ne dupliquent pas les 
 
 ## Plugins indépendants
 
-Chaque capacité est fournie par un plugin spécialisé. Le plugin DNS constitue l'implémentation de référence.
+Chaque capacité est fournie par un plugin spécialisé. Les plugins DNS et NTP
+utilisent le même pipeline d'observation standardisé.
 
 ```text
 plugins/
-└── dns/
+├── dns/
+└── ntp/
 ```
 
-Chaque plugin possède sa configuration, son runtime, ses statistiques et ses observations.
+Chaque plugin possède sa configuration et produit des observations standardisées.
 
 ## Observations standardisées
 
@@ -234,6 +237,26 @@ découverts automatiquement. Une modification réalisée depuis Vision remplace
 immédiatement les tâches DNS : les services ajoutés commencent à produire des
 observations et les services supprimés ne sont plus interrogés.
 
+## Plugin NTP
+
+```text
+config/plugins/ntp.yaml
+```
+
+```yaml
+timeout: 2.0
+retries: 1
+interval_seconds: 60
+
+policy:
+  maximum_offset_ms: 1000.0
+  maximum_stratum: 15
+```
+
+Les services de type `ntp` sont découverts dans `infrastructure.yaml`. Chaque
+service activé produit une observation `ntp.query` contenant notamment le
+décalage d'horloge, le temps aller-retour et la strate du serveur.
+
 ---
 
 # Installation de développement
@@ -266,7 +289,8 @@ python -m pip install -e ".[development]"
 ohana-agent \
   --config config/shikamaru.yaml \
   --infrastructure config/infrastructure.yaml \
-  --dns-config config/plugins/dns.yaml
+  --dns-config config/plugins/dns.yaml \
+  --ntp-config config/plugins/ntp.yaml
 ```
 
 Version :
@@ -279,9 +303,9 @@ ohana-agent --version
 
 # Tests et qualité
 
-La version 1.1.0 est validée par :
+Le code courant est validé par :
 
-- **1000 tests** ;
+- plus de 1000 tests ;
 - Ruff ;
 - tests d'intégration Agent ↔ Vision ;
 - démarrage dans les deux ordres ;
@@ -297,7 +321,7 @@ pytest -q
 
 # État actuel
 
-La version 1.1.0 comprend notamment :
+Le code courant comprend notamment :
 
 - infrastructure déclarative ;
 - topologie déclarative sur grille ;
@@ -305,7 +329,7 @@ La version 1.1.0 comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugin DNS ;
+- plugins DNS et NTP ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

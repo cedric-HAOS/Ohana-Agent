@@ -3,6 +3,7 @@
 from configuration.loader import ConfigurationLoader
 from loader.dns_config_loader import DNSConfigLoader
 from loader.infrastructure_loader import InfrastructureLoader
+from loader.ntp_config_loader import NTPConfigLoader
 
 
 def test_shikamaru_example_configuration_is_valid() -> None:
@@ -45,3 +46,16 @@ def test_dns_example_configuration_is_valid() -> None:
     assert configuration.services == []
     assert configuration.queries == ["example.com"]
     assert configuration.policy.minimum_healthy_servers == 1
+
+
+def test_ntp_example_configuration_is_valid() -> None:
+    """Load the example NTP plugin configuration."""
+    configuration = NTPConfigLoader().load(
+        "config/plugins/ntp.example.yaml",
+    )
+
+    assert configuration.timeout == 2.0
+    assert configuration.retries == 1
+    assert configuration.interval_seconds == 60
+    assert configuration.policy.maximum_offset_ms == 1000.0
+    assert configuration.policy.maximum_stratum == 15

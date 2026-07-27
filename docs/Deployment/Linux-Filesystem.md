@@ -104,7 +104,8 @@ La structure retenue est :
 ├── shikamaru.yaml
 ├── infrastructure.yaml
 └── plugins/
-    └── dns.yaml
+    ├── dns.yaml
+    └── ntp.yaml
 ```
 
 ### Configuration principale
@@ -144,12 +145,30 @@ Ce fichier décrit l’infrastructure observée :
 
 Ce fichier contient la configuration propre au plugin DNS :
 
-* services DNS observés ;
 * requêtes de contrôle ;
 * délais ;
 * tentatives ;
 * intervalle d’exécution ;
 * politique de santé.
+
+Les adresses des serveurs DNS restent déclarées uniquement dans
+`infrastructure.yaml`.
+
+### Plugin NTP
+
+```text
+/etc/ohana-agent/plugins/ntp.yaml
+```
+
+Ce fichier contient la configuration propre au plugin NTP :
+
+* délai et nombre de tentatives ;
+* intervalle d'exécution ;
+* décalage d'horloge maximal ;
+* strate maximale acceptée.
+
+Les adresses et ports des serveurs NTP restent déclarés uniquement dans
+`infrastructure.yaml`.
 
 ### Fichiers d’exemple
 
@@ -243,6 +262,7 @@ avec les chemins de configuration explicites :
 --config /etc/ohana-agent/shikamaru.yaml
 --infrastructure /etc/ohana-agent/infrastructure.yaml
 --dns-config /etc/ohana-agent/plugins/dns.yaml
+--ntp-config /etc/ohana-agent/plugins/ntp.yaml
 ```
 
 Le service ne doit pas dépendre du répertoire courant pour retrouver ses fichiers.
@@ -355,6 +375,7 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--config`         | `/etc/ohana-agent/shikamaru.yaml`      |
 | `--infrastructure` | `/etc/ohana-agent/infrastructure.yaml` |
 | `--dns-config`     | `/etc/ohana-agent/plugins/dns.yaml`    |
+| `--ntp-config`     | `/etc/ohana-agent/plugins/ntp.yaml`    |
 | `--log-level`      | niveau choisi par le service            |
 
 Commande de référence :
@@ -364,6 +385,7 @@ Commande de référence :
   --config /etc/ohana-agent/shikamaru.yaml \
   --infrastructure /etc/ohana-agent/infrastructure.yaml \
   --dns-config /etc/ohana-agent/plugins/dns.yaml \
+  --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
   --log-level INFO
 ```
 
@@ -379,6 +401,7 @@ Les chemins présents dans le dépôt restent valides pour le développement :
 config/shikamaru.yaml
 config/infrastructure.yaml
 config/plugins/dns.yaml
+config/plugins/ntp.yaml
 ```
 
 Ils permettent de lancer localement :

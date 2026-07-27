@@ -6,6 +6,22 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [Non publié] — Plugin NTP
+
+## Ajouté
+
+- Client SNTP natif sans dépendance Python supplémentaire.
+- Découverte automatique des services de type `ntp` dans
+  `infrastructure.yaml`.
+- Observation `ntp.query` avec décalage d'horloge, temps aller-retour, strate,
+  version NTP et indicateur de synchronisation.
+- Politique de santé configurable par décalage maximal et strate maximale.
+- Reconfiguration immédiate des tâches NTP après modification de
+  l'infrastructure depuis Ohana-Vision.
+- Configuration, CLI, service systemd, packaging et tests d'intégration dédiés.
+
+---
+
 # [1.2.1] — Découverte dynamique des services DNS
 
 ## Modifié

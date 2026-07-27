@@ -154,6 +154,7 @@ def main() -> int:
             "--config",
             "--infrastructure",
             "--dns-config",
+            "--ntp-config",
             "--log-level",
             "--version",
         }

@@ -14,6 +14,7 @@ from administration import (
 from builder import (
     DNSConfigurationBuilder,
     InfrastructureBuilder,
+    NTPConfigurationBuilder,
 )
 from configuration.infrastructure import InfrastructureConfig
 from configuration.infrastructure_validator import (
@@ -25,7 +26,7 @@ from infrastructure import InfrastructureRuntime
 from infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from loader import DNSConfigLoader, InfrastructureLoader
+from loader import DNSConfigLoader, InfrastructureLoader, NTPConfigLoader
 from observer import (
     InfrastructureObservationMapper,
     ObservationEngine,
@@ -49,6 +50,9 @@ from plugin.plugin_manager import PluginManager
 from plugins.dns.dns_check import DNSCheck
 from plugins.dns.dns_config import DNSConfig
 from plugins.dns.dns_plugin import DNSPlugin
+from plugins.ntp.ntp_check import NTPCheck
+from plugins.ntp.ntp_config import NTPConfig
+from plugins.ntp.ntp_plugin import NTPPlugin
 from production_agent import ProductionAgent
 from scheduler import (
     DispatcherTaskExecutor,
@@ -98,13 +102,51 @@ def _build_dns_tasks(
     return tasks
 
 
-def _replace_dns_tasks(
+def _build_ntp_tasks(
+    *,
+    ntp_config: NTPConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one scheduled observation per enabled NTP service."""
+    return [
+        Task(
+            id=f"ntp.query:{server.name}",
+            name=f"Query time through {server.name}",
+            command="ntp.query",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "server": server.address,
+                "port": server.port,
+                "service_id": server.name,
+            },
+            metadata={
+                "managed_by": "ntp",
+                "service_id": server.name,
+                "server": server.address,
+                "port": server.port,
+            },
+        )
+        for server in ntp_config.servers
+        if server.enabled
+    ]
+
+
+def _replace_plugin_tasks(
     scheduler: Scheduler,
     tasks: list[Task],
+    *,
+    plugin_name: str,
 ) -> None:
-    """Atomically replace the scheduler tasks managed by the DNS plugin."""
+    """Atomically replace scheduler tasks managed by one plugin."""
     for task in scheduler.list_tasks():
-        if task.command == "dns.resolve" or task.metadata.get("managed_by") == "dns":
+        if (
+            task.command.startswith(f"{plugin_name}.")
+            or task.metadata.get("managed_by") == plugin_name
+        ):
             scheduler.remove_task(task.id)
 
     for task in tasks:
@@ -116,6 +158,7 @@ def build_production_agent(
     application_config_path: Path = Path("config/shikamaru.yaml"),
     infrastructure_config_path: Path = Path("config/infrastructure.yaml"),
     dns_config_path: Path = Path("config/plugins/dns.yaml"),
+    ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
 ) -> ProductionAgent:
@@ -137,6 +180,12 @@ def build_production_agent(
         raise ValueError(
             "The production DNS configuration must declare at least one query."
         )
+
+    ntp_plugin_config = NTPConfigLoader().load(ntp_config_path)
+    ntp_config = NTPConfigurationBuilder().build(
+        infrastructure,
+        ntp_plugin_config,
+    )
 
     event_bus = EventBus()
 
@@ -201,6 +250,12 @@ def build_production_agent(
     )
     plugin_manager.register(dns_plugin)
 
+    ntp_plugin = NTPPlugin(
+        check=NTPCheck(),
+        config=ntp_config,
+    )
+    plugin_manager.register(ntp_plugin)
+
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
         observation_engine=observation_engine,
@@ -219,13 +274,23 @@ def build_production_agent(
         event_bus=event_bus,
     )
 
-    _replace_dns_tasks(
+    _replace_plugin_tasks(
         scheduler,
         _build_dns_tasks(
             dns_config=dns_config,
             interval_seconds=dns_plugin_config.interval_seconds,
             start_at=resolved_clock.now(),
         ),
+        plugin_name="dns",
+    )
+    _replace_plugin_tasks(
+        scheduler,
+        _build_ntp_tasks(
+            ntp_config=ntp_config,
+            interval_seconds=ntp_plugin_config.interval_seconds,
+            start_at=resolved_clock.now(),
+        ),
+        plugin_name="ntp",
     )
 
     def reconfigure_infrastructure(
@@ -239,15 +304,34 @@ def build_production_agent(
             updated_infrastructure,
             dns_plugin_config,
         )
-        updated_tasks = _build_dns_tasks(
+        updated_ntp_config = NTPConfigurationBuilder().build(
+            updated_infrastructure,
+            ntp_plugin_config,
+        )
+        updated_dns_tasks = _build_dns_tasks(
             dns_config=updated_dns_config,
             interval_seconds=dns_plugin_config.interval_seconds,
+            start_at=resolved_clock.now(),
+        )
+        updated_ntp_tasks = _build_ntp_tasks(
+            ntp_config=updated_ntp_config,
+            interval_seconds=ntp_plugin_config.interval_seconds,
             start_at=resolved_clock.now(),
         )
 
         observation_engine.health_manager.runtime = updated_runtime
         dns_plugin.reconfigure(updated_dns_config)
-        _replace_dns_tasks(scheduler, updated_tasks)
+        ntp_plugin.reconfigure(updated_ntp_config)
+        _replace_plugin_tasks(
+            scheduler,
+            updated_dns_tasks,
+            plugin_name="dns",
+        )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_ntp_tasks,
+            plugin_name="ntp",
+        )
 
     agent = ProductionAgent(
         scheduler=scheduler,

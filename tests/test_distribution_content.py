@@ -198,12 +198,14 @@ def test_sdist_contains_configuration_examples_only(
         "config/shikamaru.example.yaml",
         "config/infrastructure.example.yaml",
         "config/plugins/dns.example.yaml",
+        "config/plugins/ntp.example.yaml",
     }
 
     forbidden_active_configuration = {
         "config/shikamaru.yaml",
         "config/infrastructure.yaml",
         "config/plugins/dns.yaml",
+        "config/plugins/ntp.yaml",
     }
 
     assert required_examples <= sdist_members

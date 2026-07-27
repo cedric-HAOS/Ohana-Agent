@@ -60,6 +60,11 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/plugins/dns.yaml"
 
+    [[ -f "${CONFIG_ROOT}/plugins/ntp.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/ntp.yaml"
+
     [[ -e "${PACKAGE_SOURCE}" ]] \
         || fail "Package source not found: ${PACKAGE_SOURCE}"
 

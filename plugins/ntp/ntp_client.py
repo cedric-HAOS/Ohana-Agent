@@ -133,17 +133,11 @@ class NTPClient:
         transmit_time = NTPClient._unpack_timestamp(payload, 40)
 
         offset_ms = (
-            ((receive_time - request_time) + (transmit_time - response_time))
-            / 2
-            * 1000
+            ((receive_time - request_time) + (transmit_time - response_time)) / 2 * 1000
         )
         round_trip_ms = max(
             0.0,
-            (
-                (response_time - request_time)
-                - (transmit_time - receive_time)
-            )
-            * 1000,
+            ((response_time - request_time) - (transmit_time - receive_time)) * 1000,
         )
 
         return NTPResult(

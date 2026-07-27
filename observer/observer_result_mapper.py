@@ -24,11 +24,7 @@ class ObserverResultMapper:
         health = (
             result.health
             if result.health is not None
-            else (
-                HealthStatus.HEALTHY
-                if result.success
-                else HealthStatus.UNHEALTHY
-            )
+            else (HealthStatus.HEALTHY if result.success else HealthStatus.UNHEALTHY)
         )
 
         resolved_source = source or result.check

@@ -82,9 +82,7 @@ class NTPPlugin(Plugin):
         return ObserverResult(
             success=success,
             latency=(
-                result.round_trip_ms
-                if result.round_trip_ms is not None
-                else elapsed_ms
+                result.round_trip_ms if result.round_trip_ms is not None else elapsed_ms
             ),
             message=message,
             check="ntp.query",

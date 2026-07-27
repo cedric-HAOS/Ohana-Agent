@@ -49,9 +49,7 @@ def test_system_network_probe_uses_icmp_success() -> None:
 
     assert result.reachable is True
     assert result.method == "icmp"
-    assert runner.commands == [
-        ["ping", "-c", "1", "-W", "1", "192.168.1.10"]
-    ]
+    assert runner.commands == [["ping", "-c", "1", "-W", "1", "192.168.1.10"]]
 
 
 def test_system_network_probe_accepts_arp_confirmation() -> None:
@@ -61,9 +59,7 @@ def test_system_network_probe_accepts_arp_confirmation() -> None:
             completed(
                 ["ip", "neigh"],
                 0,
-                stdout=(
-                    "192.168.1.10 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE"
-                ),
+                stdout=("192.168.1.10 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE"),
             ),
         ]
     )

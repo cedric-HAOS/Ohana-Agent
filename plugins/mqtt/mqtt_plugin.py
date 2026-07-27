@@ -92,9 +92,7 @@ class MQTTPlugin(Plugin):
         return ObserverResult(
             success=result.healthy,
             latency=(
-                result.round_trip_ms
-                if result.round_trip_ms is not None
-                else elapsed_ms
+                result.round_trip_ms if result.round_trip_ms is not None else elapsed_ms
             ),
             message=self._message(result),
             check="mqtt.roundtrip",

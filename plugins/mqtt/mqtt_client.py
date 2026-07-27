@@ -296,4 +296,3 @@ class MQTTRoundTripClient:
             return int(code) == 0
         except (TypeError, ValueError):
             return code == 0
-

@@ -39,9 +39,7 @@ class MQTTConfigurationBuilder:
             tls=MQTTTLSConfig(
                 enabled=config.tls.enabled,
                 ca_file=(
-                    str(config.tls.ca_file)
-                    if config.tls.ca_file is not None
-                    else None
+                    str(config.tls.ca_file) if config.tls.ca_file is not None else None
                 ),
                 insecure=config.tls.insecure,
             ),
@@ -58,11 +56,7 @@ class MQTTConfigurationBuilder:
             raise LookupError(f"MQTT service {service.name!r} has no endpoint.")
 
         default_port = 8883 if tls_enabled else 1883
-        port = (
-            default_port
-            if service.endpoint.port is None
-            else service.endpoint.port
-        )
+        port = default_port if service.endpoint.port is None else service.endpoint.port
 
         if not 1 <= port <= 65_535:
             raise ValueError(

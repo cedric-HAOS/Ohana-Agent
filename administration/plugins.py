@@ -93,9 +93,7 @@ class PluginAdministrationRepository:
             last_execution_at=self._last_execution(tasks),
             next_run_at=self._next_run(tasks),
             last_error=(
-                last_failed_task.last_error
-                if last_failed_task is not None
-                else None
+                last_failed_task.last_error if last_failed_task is not None else None
             ),
             configuration=self._public_configuration(
                 identifier,
@@ -130,9 +128,7 @@ class PluginAdministrationRepository:
             and bool(getattr(configuration, "enabled", True))
             and not getattr(configuration, "queries", [])
         ):
-            raise ValueError(
-                "An enabled DNS plugin must declare at least one query."
-            )
+            raise ValueError("An enabled DNS plugin must declare at least one query.")
 
         original_content = binding.configuration_path.read_text(encoding="utf-8")
         self._write_configuration(
@@ -196,9 +192,10 @@ class PluginAdministrationRepository:
         binding: PluginAdministrationBinding,
     ) -> BaseModel:
         try:
-            payload = yaml.safe_load(
-                binding.configuration_path.read_text(encoding="utf-8")
-            ) or {}
+            payload = (
+                yaml.safe_load(binding.configuration_path.read_text(encoding="utf-8"))
+                or {}
+            )
         except OSError as error:
             raise OSError(
                 "Unable to read plugin configuration "
@@ -265,9 +262,7 @@ class PluginAdministrationRepository:
     @staticmethod
     def _last_execution(tasks: list[Task]) -> Any:
         executions = [
-            task.last_execution
-            for task in tasks
-            if task.last_execution is not None
+            task.last_execution for task in tasks if task.last_execution is not None
         ]
         return max(executions, default=None)
 

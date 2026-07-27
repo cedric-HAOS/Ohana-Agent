@@ -210,8 +210,7 @@ def _build_network_tasks(
             command="network.reachable",
             trigger=IntervalTrigger(
                 interval=timedelta(seconds=interval_seconds),
-                start_at=start_at
-                + timedelta(seconds=device_index * spacing_seconds),
+                start_at=start_at + timedelta(seconds=device_index * spacing_seconds),
             ),
             arguments={
                 "address": device.address,
@@ -740,10 +739,8 @@ def build_production_agent(
                     capabilities=("dns.resolve",),
                     configuration_path=dns_config_path,
                     configuration_model=DNSPluginConfig,
-                    apply_configuration=lambda config: (
-                        agent.apply_plugin_configuration(
-                            lambda: apply_dns_configuration(config)
-                        )
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_dns_configuration(config)
                     ),
                     test_plugin=test_dns_plugin,
                 ),
@@ -753,10 +750,8 @@ def build_production_agent(
                     capabilities=("ntp.query",),
                     configuration_path=ntp_config_path,
                     configuration_model=NTPPluginConfig,
-                    apply_configuration=lambda config: (
-                        agent.apply_plugin_configuration(
-                            lambda: apply_ntp_configuration(config)
-                        )
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_ntp_configuration(config)
                     ),
                     test_plugin=test_ntp_plugin,
                 ),
@@ -766,10 +761,8 @@ def build_production_agent(
                     capabilities=("mqtt.roundtrip",),
                     configuration_path=mqtt_config_path,
                     configuration_model=MQTTPluginConfig,
-                    apply_configuration=lambda config: (
-                        agent.apply_plugin_configuration(
-                            lambda: apply_mqtt_configuration(config)
-                        )
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_mqtt_configuration(config)
                     ),
                     test_plugin=test_mqtt_plugin,
                 ),
@@ -779,10 +772,8 @@ def build_production_agent(
                     capabilities=("network.reachable",),
                     configuration_path=network_config_path,
                     configuration_model=NetworkPluginConfig,
-                    apply_configuration=lambda config: (
-                        agent.apply_plugin_configuration(
-                            lambda: apply_network_configuration(config)
-                        )
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_network_configuration(config)
                     ),
                     test_plugin=test_network_plugin,
                 ),

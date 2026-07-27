@@ -44,9 +44,7 @@ def test_mqtt_plugin_config_accepts_authentication_and_tls() -> None:
 
 def test_mqtt_plugin_config_rejects_password_without_username() -> None:
     with pytest.raises(ValidationError, match="requires a username"):
-        MQTTPluginConfig.model_validate(
-            {"authentication": {"password": "secret"}}
-        )
+        MQTTPluginConfig.model_validate({"authentication": {"password": "secret"}})
 
 
 def test_mqtt_plugin_config_rejects_wildcard_topic_prefix() -> None:
@@ -56,6 +54,4 @@ def test_mqtt_plugin_config_rejects_wildcard_topic_prefix() -> None:
 
 def test_mqtt_plugin_config_rejects_tls_options_when_disabled() -> None:
     with pytest.raises(ValidationError, match="require TLS"):
-        MQTTPluginConfig.model_validate(
-            {"tls": {"enabled": False, "insecure": True}}
-        )
+        MQTTPluginConfig.model_validate({"tls": {"enabled": False, "insecure": True}})

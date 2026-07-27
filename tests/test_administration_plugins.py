@@ -59,9 +59,7 @@ policy:
     )
     manager = PluginManager(context=context)
     manager.register(DNSPlugin())
-    clock = FakeClock(
-        current_time=datetime(2026, 7, 27, 10, 0, tzinfo=UTC)
-    )
+    clock = FakeClock(current_time=datetime(2026, 7, 27, 10, 0, tzinfo=UTC))
     scheduler = Scheduler(clock=clock)
     scheduler.add_task(
         Task(
@@ -146,9 +144,7 @@ def test_plugin_administration_persists_and_applies_configuration(
     assert applied[-1].enabled is False
     assert applied[-1].queries == ["ohana.lan"]
 
-    payload = yaml.safe_load(
-        (tmp_path / "dns.yaml").read_text(encoding="utf-8")
-    )
+    payload = yaml.safe_load((tmp_path / "dns.yaml").read_text(encoding="utf-8"))
     assert payload["enabled"] is False
     assert payload["interval_seconds"] == 120
 
@@ -209,9 +205,7 @@ def test_plugin_administration_restores_configuration_when_apply_fails(
     else:
         raise AssertionError("The failing reconfiguration must be propagated")
 
-    restored = yaml.safe_load(
-        (tmp_path / "dns.yaml").read_text(encoding="utf-8")
-    )
+    restored = yaml.safe_load((tmp_path / "dns.yaml").read_text(encoding="utf-8"))
     assert restored["interval_seconds"] == 60
     assert restored["queries"] == ["example.com"]
     assert applied[-1].interval_seconds == 60
@@ -243,9 +237,7 @@ def test_enabled_dns_plugin_rejects_an_empty_query_list(
         )
 
     assert applied == []
-    persisted = yaml.safe_load(
-        (tmp_path / "dns.yaml").read_text(encoding="utf-8")
-    )
+    persisted = yaml.safe_load((tmp_path / "dns.yaml").read_text(encoding="utf-8"))
     assert persisted["queries"] == ["example.com"]
 
 
@@ -327,8 +319,6 @@ tls:
     )
 
     assert applied[-1].authentication.password == "super-secret"
-    persisted = yaml.safe_load(
-        configuration_path.read_text(encoding="utf-8")
-    )
+    persisted = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
     assert persisted["authentication"]["password"] == "super-secret"
     assert persisted["interval_seconds"] == 120

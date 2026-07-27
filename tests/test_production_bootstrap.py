@@ -217,19 +217,22 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
     )
 
     tasks = [
-        task
-        for task in agent.scheduler.list_tasks()
-        if task.command == "dns.resolve"
+        task for task in agent.scheduler.list_tasks() if task.command == "dns.resolve"
     ]
     assert [task.arguments["service_id"] for task in tasks] == [
         "dns-primary",
         "dns-secondary",
     ]
-    assert len([
-        task
-        for task in agent.scheduler.due_tasks()
-        if task.command == "dns.resolve"
-    ]) == 2
+    assert (
+        len(
+            [
+                task
+                for task in agent.scheduler.due_tasks()
+                if task.command == "dns.resolve"
+            ]
+        )
+        == 2
+    )
     assert agent.scheduler.running is True
 
     configuration_without_primary = configuration_with_secondary.model_copy(
@@ -247,9 +250,7 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
     )
 
     tasks = [
-        task
-        for task in agent.scheduler.list_tasks()
-        if task.command == "dns.resolve"
+        task for task in agent.scheduler.list_tasks() if task.command == "dns.resolve"
     ]
     assert [task.arguments["service_id"] for task in tasks] == ["dns-secondary"]
     assert agent.scheduler.running is True
@@ -269,9 +270,7 @@ def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> No
     )
 
     assert [
-        task
-        for task in agent.scheduler.list_tasks()
-        if task.command == "dns.resolve"
+        task for task in agent.scheduler.list_tasks() if task.command == "dns.resolve"
     ] == []
     assert agent.scheduler.running is True
 

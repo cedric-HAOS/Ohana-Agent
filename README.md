@@ -8,15 +8,20 @@ Depuis la version 1.1.0, l'Agent est la source de vérité de la topologie :
 nœuds, services, équipements, liens et positions logiques sur la grille. La
 version 1.2.0 ajoute leur administration graphique sécurisée depuis Vision.
 La version 1.2.1 synchronise automatiquement les observations DNS avec les
-services ajoutés, modifiés ou supprimés depuis cette administration. Le
-développement courant ajoute la même découverte dynamique pour la capacité NTP.
+services ajoutés, modifiés ou supprimés depuis cette administration. La version
+1.3.0 ajoute les capacités NTP et MQTT ainsi que l’administration graphique des
+plugins DNS, NTP et MQTT.
 
 ---
 
 # Administration graphique
 
 Ohana-Agent expose une API locale permettant à Ohana-Vision de modifier
-l'infrastructure et le serveur DHCP sans édition manuelle de YAML.
+l’infrastructure, le DHCP et la configuration des plugins intégrés.
+
+L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DNS, NTP
+et MQTT peuvent être activés, reconfigurés et testés sans redémarrer l’Agent.
+Les secrets MQTT restent masqués.
 
 - l'API écoute par défaut sur `127.0.0.1:8765` ;
 - chaque requête exige le jeton partagé installé dans
@@ -53,13 +58,14 @@ Les plugins référencent les services par identifiant et ne dupliquent pas les 
 
 ## Plugins indépendants
 
-Chaque capacité est fournie par un plugin spécialisé. Les plugins DNS et NTP
-utilisent le même pipeline d'observation standardisé.
+Chaque capacité est fournie par un plugin spécialisé. Les plugins DNS, NTP et
+MQTT utilisent le même pipeline d'observation standardisé.
 
 ```text
 plugins/
 ├── dns/
-└── ntp/
+├── ntp/
+└── mqtt/
 ```
 
 Chaque plugin possède sa configuration et produit des observations standardisées.
@@ -361,7 +367,7 @@ Le code courant comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugins DNS et NTP ;
+- plugins DNS, NTP et MQTT ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

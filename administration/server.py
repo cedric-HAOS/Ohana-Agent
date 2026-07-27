@@ -24,6 +24,7 @@ from administration.models import (
     AdministrationCapabilities,
     DHCPConfiguration,
 )
+from administration.plugins import PluginAdministrationRepository
 from configuration.infrastructure import InfrastructureConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -38,12 +39,14 @@ class AdministrationService:
         *,
         infrastructure_repository: InfrastructureConfigurationRepository,
         dhcp_repository: DnsmasqDHCPRepository | None = None,
+        plugin_repository: PluginAdministrationRepository | None = None,
         on_infrastructure_changed: (
             Callable[[InfrastructureConfig], None] | None
         ) = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
+        self.plugin_repository = plugin_repository
         self.on_infrastructure_changed = on_infrastructure_changed
 
     def capabilities(self) -> AdministrationCapabilities:
@@ -59,6 +62,15 @@ class AdministrationService:
                     "dhcp.read",
                     "dhcp.write",
                     "dhcp.leases.read",
+                ]
+            )
+
+        if self.plugin_repository is not None:
+            operations.extend(
+                [
+                    "plugins.read",
+                    "plugins.write",
+                    "plugins.test",
                 ]
             )
 
@@ -100,6 +112,38 @@ class AdministrationService:
 
         configuration = DHCPConfiguration.model_validate(payload)
         return self.dhcp_repository.write(configuration)
+
+    def list_plugins(self) -> object:
+        """Return all registered and administrable plugins."""
+        if self.plugin_repository is None:
+            raise LookupError("Plugin administration is unavailable")
+
+        return self.plugin_repository.list()
+
+    def read_plugin(self, identifier: str) -> object:
+        """Return one plugin configuration and runtime state."""
+        if self.plugin_repository is None:
+            raise LookupError("Plugin administration is unavailable")
+
+        return self.plugin_repository.read(identifier)
+
+    def write_plugin(
+        self,
+        identifier: str,
+        payload: dict[str, Any],
+    ) -> object:
+        """Persist and immediately apply one plugin configuration."""
+        if self.plugin_repository is None:
+            raise LookupError("Plugin administration is unavailable")
+
+        return self.plugin_repository.write(identifier, payload)
+
+    def test_plugin(self, identifier: str) -> object:
+        """Execute one immediate plugin capability check."""
+        if self.plugin_repository is None:
+            raise LookupError("Plugin administration is unavailable")
+
+        return self.plugin_repository.test(identifier)
 
 
 class AdministrationHTTPServer:
@@ -186,12 +230,23 @@ class AdministrationHTTPServer:
                 if not self._authorized(expected_token):
                     return
 
+                path = self.path.split("?", 1)[0]
                 routes: dict[str, Callable[[], object]] = {
                     "/v1/capabilities": service.capabilities,
                     "/v1/infrastructure": service.read_infrastructure,
                     "/v1/dhcp": service.read_dhcp,
+                    "/v1/plugins": service.list_plugins,
                 }
-                operation = routes.get(self.path)
+                operation = routes.get(path)
+
+                if operation is None and path.startswith("/v1/plugins/"):
+                    identifier = path.removeprefix("/v1/plugins/")
+
+                    if identifier and "/" not in identifier:
+                        plugin_identifier = identifier
+
+                        def operation() -> object:
+                            return service.read_plugin(plugin_identifier)
 
                 if operation is None:
                     self._write_error(
@@ -207,11 +262,24 @@ class AdministrationHTTPServer:
                 if not self._authorized(expected_token):
                     return
 
+                path = self.path.split("?", 1)[0]
                 routes: dict[str, Callable[[dict[str, Any]], object]] = {
                     "/v1/infrastructure": service.write_infrastructure,
                     "/v1/dhcp": service.write_dhcp,
                 }
-                operation = routes.get(self.path)
+                operation = routes.get(path)
+
+                if operation is None and path.startswith("/v1/plugins/"):
+                    identifier = path.removeprefix("/v1/plugins/")
+
+                    if identifier and "/" not in identifier:
+                        plugin_identifier = identifier
+
+                        def operation(payload: object) -> object:
+                            return service.write_plugin(
+                                plugin_identifier,
+                                payload,
+                            )
 
                 if operation is None:
                     self._write_error(
@@ -227,6 +295,27 @@ class AdministrationHTTPServer:
 
                 self._execute(
                     lambda: operation(payload),
+                )
+
+            def do_POST(self) -> None:  # noqa: N802
+                """Handle immediate administration actions."""
+                if not self._authorized(expected_token):
+                    return
+
+                path = self.path.split("?", 1)[0]
+                prefix = "/v1/plugins/"
+                suffix = "/test"
+
+                if path.startswith(prefix) and path.endswith(suffix):
+                    identifier = path[len(prefix) : -len(suffix)]
+
+                    if identifier and "/" not in identifier:
+                        self._execute(lambda: service.test_plugin(identifier))
+                        return
+
+                self._write_error(
+                    HTTPStatus.NOT_FOUND,
+                    "Administration endpoint not found",
                 )
 
             def log_message(
@@ -349,7 +438,9 @@ class AdministrationHTTPServer:
                 payload: object,
             ) -> None:
                 if hasattr(payload, "model_dump"):
-                    payload = payload.model_dump(mode="json")  # type: ignore[union-attr]
+                    payload = payload.model_dump(  # type: ignore[union-attr]
+                        mode="json"
+                    )
 
                 content = json.dumps(
                     payload,

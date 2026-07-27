@@ -14,6 +14,8 @@ class DNSPolicyConfig(Config):
 class DNSPluginConfig(Config):
     """Declarative configuration for the DNS plugin."""
 
+    enabled: bool = True
+
     # Kept for backward compatibility with existing dns.yaml files.
     # DNS services are now discovered automatically from infrastructure.yaml.
     services: list[str] = Field(default_factory=list)

@@ -1,3 +1,5 @@
+enabled: true
+
 # -----------------------------------------------------------------------------
 # Ohana-Agent
 # Example NTP plugin configuration

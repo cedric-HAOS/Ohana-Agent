@@ -1,8 +1,9 @@
 # Administration graphique d'Ohana-Agent
 
-Ohana-Vision permet de gérer les baux DHCP et l'architecture sans exposer les
-fichiers YAML à l'utilisateur. Ohana-Agent reste la source de vérité et le seul
-composant autorisé à valider puis écrire les configurations.
+Ohana-Vision permet de gérer les baux DHCP, l'architecture et les plugins sans
+exposer les fichiers YAML à l'utilisateur. Ohana-Agent reste la source de vérité
+et le seul composant autorisé à valider, écrire puis appliquer les
+configurations.
 
 ## Flux
 
@@ -19,7 +20,9 @@ Ohana-Agent :8765
     |
     +-- infrastructure.yaml
     +-- fichiers dnsmasq gérés
-    +-- demande de rechargement systemd
+    +-- plugins/dns.yaml
+    +-- plugins/ntp.yaml
+    +-- plugins/mqtt.yaml
 ```
 
 Le jeton n'est jamais envoyé au navigateur. Vision le lit dans
@@ -35,9 +38,72 @@ avec l'Agent sur la boucle locale.
 | `PUT` | `/v1/infrastructure` | Valider et remplacer l'architecture |
 | `GET` | `/v1/dhcp` | Lire les paramètres, réservations et baux |
 | `PUT` | `/v1/dhcp` | Valider et remplacer la configuration DHCP |
+| `GET` | `/v1/plugins` | Lister les plugins administrables et leur état |
+| `GET` | `/v1/plugins/{plugin_id}` | Lire un plugin et sa configuration publique |
+| `PUT` | `/v1/plugins/{plugin_id}` | Valider, enregistrer et appliquer sa configuration |
+| `POST` | `/v1/plugins/{plugin_id}/test` | Exécuter un contrôle immédiat |
 
-Les opérations DHCP ne sont annoncées que lorsqu'elles sont activées dans la
-configuration de l'Agent.
+Les opérations sont annoncées explicitement par `/v1/capabilities` :
+
+- `infrastructure.read` et `infrastructure.write` ;
+- `dhcp.read`, `dhcp.write` et `dhcp.leases.read` lorsque DHCP est activé ;
+- `plugins.read`, `plugins.write` et `plugins.test` lorsque l'administration des
+  plugins est disponible.
+
+## Plugins administrables
+
+L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
+dans l'API s'il n'est pas réellement enregistré dans l'Agent.
+
+La version 1.3.0 expose :
+
+- **DNS** — capacité `dns.resolve` ;
+- **NTP** — capacité `ntp.query` ;
+- **MQTT** — capacité `mqtt.roundtrip`.
+
+Pour chaque plugin, l'API fournit notamment :
+
+- la version et l'état de cycle de vie ;
+- l'activation ;
+- le nombre de tâches planifiées et d'exécutions ;
+- les dates de dernière et prochaine exécution ;
+- la dernière erreur connue ;
+- la configuration modifiable.
+
+DHCP conserve son contrat d'administration dédié. Il n'est pas présenté comme
+un plugin tant qu'aucun véritable plugin d'observation DHCP n'est enregistré
+dans le `PluginManager`.
+
+## Reconfiguration immédiate
+
+Une écriture `PUT /v1/plugins/{plugin_id}` suit ce déroulement :
+
+1. validation du document par le modèle Pydantic du plugin ;
+2. écriture atomique du fichier YAML ;
+3. reconfiguration du plugin déjà enregistré ;
+4. suppression puis reconstruction de ses tâches planifiées ;
+5. restauration du fichier et de la configuration précédente si l'application
+   échoue.
+
+L'activation ou la désactivation est appliquée sans redémarrer l'Agent. Un
+plugin désactivé reste enregistré, mais ses tâches sont retirées du scheduler.
+
+Les mots de passe MQTT ne sont jamais retournés. L'API indique uniquement si un
+mot de passe existe. Une valeur vide lors d'une modification conserve le secret
+déjà enregistré.
+
+## Test immédiat
+
+`POST /v1/plugins/{plugin_id}/test` exécute un contrôle ponctuel avec la
+configuration courante :
+
+- première requête et premier service DNS activé ;
+- premier service NTP activé ;
+- premier courtier MQTT activé.
+
+Le résultat contient la réussite, le contrôle exécuté, le message, la latence,
+la date et les métadonnées non sensibles. Le test ne modifie pas la
+planification normale.
 
 ## Architecture administrable
 

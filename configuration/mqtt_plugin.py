@@ -48,6 +48,8 @@ class MQTTPluginTLSConfig(Config):
 class MQTTPluginConfig(Config):
     """Declarative configuration for the MQTT observation plugin."""
 
+    enabled: bool = True
+
     timeout: PositiveFloat = 5.0
     retries: int = Field(default=1, ge=0)
     interval_seconds: PositiveInt = 60

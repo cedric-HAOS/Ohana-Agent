@@ -177,3 +177,92 @@ def test_administration_service_publishes_saved_infrastructure(
 
     assert changes == [saved]
     assert changes[0].services[-1].id == "dns-secondary"
+
+
+class FakePluginAdministrationRepository:
+    """Return deterministic plugin administration documents."""
+
+    def list(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "plugins": [
+                {
+                    "id": "dns",
+                    "name": "DNS",
+                }
+            ],
+        }
+
+    def read(self, identifier: str) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "id": identifier,
+            "enabled": True,
+        }
+
+    def write(
+        self,
+        identifier: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "id": identifier,
+            **payload,
+        }
+
+    def test(self, identifier: str) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "plugin_id": identifier,
+            "success": True,
+        }
+
+
+def test_administration_server_exposes_plugin_routes(
+    tmp_path: Path,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=(
+                InfrastructureConfigurationRepository(infrastructure_path)
+            ),
+            plugin_repository=(
+                FakePluginAdministrationRepository()  # type: ignore[arg-type]
+            ),
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+
+    try:
+        capabilities = request_json(server, "/v1/capabilities")
+        plugins = request_json(server, "/v1/plugins")
+        plugin = request_json(server, "/v1/plugins/dns")
+        updated = request_json(
+            server,
+            "/v1/plugins/dns",
+            method="PUT",
+            payload={
+                "enabled": False,
+                "configuration": {},
+            },
+        )
+        tested = request_json(
+            server,
+            "/v1/plugins/dns/test",
+            method="POST",
+        )
+    finally:
+        server.stop()
+
+    assert "plugins.read" in capabilities["operations"]
+    assert "plugins.write" in capabilities["operations"]
+    assert "plugins.test" in capabilities["operations"]
+    assert plugins["plugins"][0]["id"] == "dns"  # type: ignore[index]
+    assert plugin["id"] == "dns"
+    assert updated["enabled"] is False
+    assert tested["success"] is True

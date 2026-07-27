@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from ipaddress import IPv4Address
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -153,3 +154,61 @@ class AdministrationCapabilities(AdministrationModel):
 
     schema_version: Literal[1] = 1
     operations: list[str] = Field(default_factory=list)
+
+
+PluginAdministrationStatus = Literal[
+    "active",
+    "idle",
+    "disabled",
+    "degraded",
+    "error",
+]
+
+
+class PluginAdministrationState(AdministrationModel):
+    """Editable plugin configuration enriched with runtime information."""
+
+    schema_version: Literal[1] = 1
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str = ""
+    version: str = Field(min_length=1)
+    lifecycle_state: str = Field(min_length=1)
+    status: PluginAdministrationStatus
+    enabled: bool = True
+    capabilities: list[str] = Field(default_factory=list)
+    interval_seconds: int = Field(default=0, ge=0)
+    task_count: int = Field(default=0, ge=0)
+    execution_count: int = Field(default=0, ge=0)
+    last_execution_at: datetime | None = None
+    next_run_at: datetime | None = None
+    last_error: str | None = None
+    configuration: dict[str, Any] = Field(default_factory=dict)
+
+
+class PluginAdministrationCollection(AdministrationModel):
+    """Collection returned by the plugin administration endpoint."""
+
+    schema_version: Literal[1] = 1
+    plugins: list[PluginAdministrationState] = Field(default_factory=list)
+
+
+class PluginConfigurationUpdate(AdministrationModel):
+    """Complete editable document accepted for one plugin."""
+
+    schema_version: Literal[1] = 1
+    enabled: bool = True
+    configuration: dict[str, Any] = Field(default_factory=dict)
+
+
+class PluginTestResult(AdministrationModel):
+    """Result of an immediate plugin capability test."""
+
+    schema_version: Literal[1] = 1
+    plugin_id: str = Field(min_length=1)
+    success: bool
+    check: str | None = None
+    message: str | None = None
+    latency_ms: float = Field(ge=0)
+    tested_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)

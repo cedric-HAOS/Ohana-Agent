@@ -73,21 +73,23 @@ Principaux acquis :
 
 ---
 
-# v1.3.0 — Capacités supplémentaires
+# v1.3.0 — Plugins et administration
 
-**Statut : en cours.**
+**Statut : terminé.**
 
-Objectifs :
+Principaux acquis :
 
-- plugin NTP et observation `ntp.query` ;
-- plugin DHCP ;
-- plugin MQTT ;
-- reprise plus fine après erreurs transitoires ;
-- métriques internes de synchronisation ;
-- diagnostics de connectivité avec Vision ;
-- visibilité sur l'état des plugins ;
-- amélioration de l'endurance et des tests ARM64/Linux ;
-- journalisation d'exploitation enrichie.
+- plugins NTP et MQTT intégrés au pipeline d’observation ;
+- contrat d’administration versionné des plugins ;
+- inventaire fondé sur les plugins réellement enregistrés ;
+- exposition des plugins DNS, NTP et MQTT ;
+- activation, désactivation et modification de leur configuration ;
+- reconfiguration et replanification sans redémarrage ;
+- test immédiat de chaque capacité ;
+- restauration automatique en cas d’échec d’application ;
+- protection des secrets MQTT ;
+- DHCP conservé dans son administration dédiée tant qu’il ne constitue pas un
+  plugin d’observation du `PluginManager`.
 
 ---
 

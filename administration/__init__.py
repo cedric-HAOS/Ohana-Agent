@@ -14,6 +14,14 @@ from administration.models import (
     DHCPLease,
     DHCPReservation,
     DHCPSettings,
+    PluginAdministrationCollection,
+    PluginAdministrationState,
+    PluginConfigurationUpdate,
+    PluginTestResult,
+)
+from administration.plugins import (
+    PluginAdministrationBinding,
+    PluginAdministrationRepository,
 )
 from administration.server import (
     AdministrationHTTPServer,
@@ -32,4 +40,10 @@ __all__ = [
     "DHCPSettings",
     "DnsmasqDHCPRepository",
     "InfrastructureConfigurationRepository",
+    "PluginTestResult",
+    "PluginConfigurationUpdate",
+    "PluginAdministrationState",
+    "PluginAdministrationRepository",
+    "PluginAdministrationCollection",
+    "PluginAdministrationBinding",
 ]

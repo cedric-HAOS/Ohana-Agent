@@ -192,6 +192,14 @@ class ProductionAgent:
             if self.vision_client is not None:
                 self._synchronize_infrastructure()
 
+    def apply_plugin_configuration(
+        self,
+        reconfigure: Callable[[], None],
+    ) -> None:
+        """Apply one plugin reconfiguration outside concurrent scheduler ticks."""
+        with self._runtime_lock:
+            reconfigure()
+
     def apply_infrastructure_configuration(
         self,
         configuration: InfrastructureConfig,

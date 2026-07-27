@@ -1,3 +1,5 @@
+enabled: true
+
 # -----------------------------------------------------------------------------
 # Ohana-Agent
 # Example MQTT observation plugin configuration

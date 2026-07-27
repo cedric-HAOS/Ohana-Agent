@@ -10,6 +10,8 @@ from administration import (
     AdministrationService,
     DnsmasqDHCPRepository,
     InfrastructureConfigurationRepository,
+    PluginAdministrationBinding,
+    PluginAdministrationRepository,
 )
 from builder import (
     DNSConfigurationBuilder,
@@ -17,11 +19,14 @@ from builder import (
     MQTTConfigurationBuilder,
     NTPConfigurationBuilder,
 )
+from configuration.dns import DNSPluginConfig
 from configuration.infrastructure import InfrastructureConfig
 from configuration.infrastructure_validator import (
     InfrastructureValidator,
 )
 from configuration.loader import ConfigurationLoader
+from configuration.mqtt_plugin import MQTTPluginConfig
+from configuration.ntp import NTPPluginConfig
 from core.events import EventBus
 from infrastructure import InfrastructureRuntime
 from infrastructure.infrastructure_health_manager import (
@@ -40,6 +45,7 @@ from observer import (
     ObservationExportHandler,
     ObservationExportPipeline,
     ObservationPublished,
+    ObserverResult,
     ObserverResultMapper,
     PluginObservationDispatcher,
     PluginObservationExecutor,
@@ -211,6 +217,7 @@ def build_production_agent(
     infrastructure_config = InfrastructureLoader().load(infrastructure_config_path)
     InfrastructureValidator().validate(infrastructure_config)
     infrastructure = InfrastructureBuilder().build(infrastructure_config)
+    current_infrastructure = infrastructure
     infrastructure_runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
 
     dns_plugin_config = DNSConfigLoader().load(dns_config_path)
@@ -331,28 +338,40 @@ def build_production_agent(
 
     _replace_plugin_tasks(
         scheduler,
-        _build_dns_tasks(
-            dns_config=dns_config,
-            interval_seconds=dns_plugin_config.interval_seconds,
-            start_at=resolved_clock.now(),
+        (
+            _build_dns_tasks(
+                dns_config=dns_config,
+                interval_seconds=dns_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if dns_plugin_config.enabled
+            else []
         ),
         plugin_name="dns",
     )
     _replace_plugin_tasks(
         scheduler,
-        _build_ntp_tasks(
-            ntp_config=ntp_config,
-            interval_seconds=ntp_plugin_config.interval_seconds,
-            start_at=resolved_clock.now(),
+        (
+            _build_ntp_tasks(
+                ntp_config=ntp_config,
+                interval_seconds=ntp_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if ntp_plugin_config.enabled
+            else []
         ),
         plugin_name="ntp",
     )
     _replace_plugin_tasks(
         scheduler,
-        _build_mqtt_tasks(
-            mqtt_config=mqtt_config,
-            interval_seconds=mqtt_plugin_config.interval_seconds,
-            start_at=resolved_clock.now(),
+        (
+            _build_mqtt_tasks(
+                mqtt_config=mqtt_config,
+                interval_seconds=mqtt_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if mqtt_plugin_config.enabled
+            else []
         ),
         plugin_name="mqtt",
     )
@@ -360,6 +379,8 @@ def build_production_agent(
     def reconfigure_infrastructure(
         changed_configuration: InfrastructureConfig,
     ) -> None:
+        nonlocal current_infrastructure
+
         updated_infrastructure = InfrastructureBuilder().build(changed_configuration)
         updated_runtime = InfrastructureRuntime.from_infrastructure(
             updated_infrastructure
@@ -376,20 +397,32 @@ def build_production_agent(
             updated_infrastructure,
             mqtt_plugin_config,
         )
-        updated_dns_tasks = _build_dns_tasks(
-            dns_config=updated_dns_config,
-            interval_seconds=dns_plugin_config.interval_seconds,
-            start_at=resolved_clock.now(),
+        updated_dns_tasks = (
+            _build_dns_tasks(
+                dns_config=updated_dns_config,
+                interval_seconds=dns_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if dns_plugin_config.enabled
+            else []
         )
-        updated_ntp_tasks = _build_ntp_tasks(
-            ntp_config=updated_ntp_config,
-            interval_seconds=ntp_plugin_config.interval_seconds,
-            start_at=resolved_clock.now(),
+        updated_ntp_tasks = (
+            _build_ntp_tasks(
+                ntp_config=updated_ntp_config,
+                interval_seconds=ntp_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if ntp_plugin_config.enabled
+            else []
         )
-        updated_mqtt_tasks = _build_mqtt_tasks(
-            mqtt_config=updated_mqtt_config,
-            interval_seconds=mqtt_plugin_config.interval_seconds,
-            start_at=resolved_clock.now(),
+        updated_mqtt_tasks = (
+            _build_mqtt_tasks(
+                mqtt_config=updated_mqtt_config,
+                interval_seconds=mqtt_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if mqtt_plugin_config.enabled
+            else []
         )
 
         observation_engine.health_manager.runtime = updated_runtime
@@ -410,6 +443,113 @@ def build_production_agent(
             scheduler,
             updated_mqtt_tasks,
             plugin_name="mqtt",
+        )
+        current_infrastructure = updated_infrastructure
+
+    def apply_dns_configuration(configuration: DNSPluginConfig) -> None:
+        nonlocal dns_plugin_config
+
+        updated_config = DNSConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+        )
+        dns_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_dns_tasks(
+                    dns_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="dns",
+        )
+        dns_plugin_config = configuration
+
+    def apply_ntp_configuration(configuration: NTPPluginConfig) -> None:
+        nonlocal ntp_plugin_config
+
+        updated_config = NTPConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+        )
+        ntp_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_ntp_tasks(
+                    ntp_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="ntp",
+        )
+        ntp_plugin_config = configuration
+
+    def apply_mqtt_configuration(configuration: MQTTPluginConfig) -> None:
+        nonlocal mqtt_plugin_config
+
+        updated_config = MQTTConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+        )
+        mqtt_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_mqtt_tasks(
+                    mqtt_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="mqtt",
+        )
+        mqtt_plugin_config = configuration
+
+    def test_dns_plugin() -> ObserverResult:
+        servers = [server for server in dns_plugin.servers if server.enabled]
+
+        if not dns_plugin.config.queries:
+            raise ValueError("The DNS plugin has no configured query.")
+
+        if not servers:
+            raise ValueError("The DNS plugin has no enabled DNS service.")
+
+        return dns_plugin.execute(
+            hostname=dns_plugin.config.queries[0],
+            server=servers[0].address,
+        )
+
+    def test_ntp_plugin() -> ObserverResult:
+        servers = [server for server in ntp_plugin.config.servers if server.enabled]
+
+        if not servers:
+            raise ValueError("The NTP plugin has no enabled NTP service.")
+
+        return ntp_plugin.execute(
+            server=servers[0].address,
+            port=servers[0].port,
+        )
+
+    def test_mqtt_plugin() -> ObserverResult:
+        brokers = [broker for broker in mqtt_plugin.config.brokers if broker.enabled]
+
+        if not brokers:
+            raise ValueError("The MQTT plugin has no enabled MQTT service.")
+
+        return mqtt_plugin.execute(
+            broker=brokers[0].address,
+            port=brokers[0].port,
+            service_id=brokers[0].name,
         )
 
     agent = ProductionAgent(
@@ -459,6 +599,52 @@ def build_production_agent(
                 reload_request_path=(dhcp_config.reload_request_path),
             )
 
+        plugin_repository = PluginAdministrationRepository(
+            plugin_manager=plugin_manager,
+            scheduler=scheduler,
+            bindings=(
+                PluginAdministrationBinding(
+                    identifier="dns",
+                    display_name="DNS",
+                    capabilities=("dns.resolve",),
+                    configuration_path=dns_config_path,
+                    configuration_model=DNSPluginConfig,
+                    apply_configuration=lambda config: (
+                        agent.apply_plugin_configuration(
+                            lambda: apply_dns_configuration(config)
+                        )
+                    ),
+                    test_plugin=test_dns_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="ntp",
+                    display_name="NTP",
+                    capabilities=("ntp.query",),
+                    configuration_path=ntp_config_path,
+                    configuration_model=NTPPluginConfig,
+                    apply_configuration=lambda config: (
+                        agent.apply_plugin_configuration(
+                            lambda: apply_ntp_configuration(config)
+                        )
+                    ),
+                    test_plugin=test_ntp_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="mqtt",
+                    display_name="MQTT",
+                    capabilities=("mqtt.roundtrip",),
+                    configuration_path=mqtt_config_path,
+                    configuration_model=MQTTPluginConfig,
+                    apply_configuration=lambda config: (
+                        agent.apply_plugin_configuration(
+                            lambda: apply_mqtt_configuration(config)
+                        )
+                    ),
+                    test_plugin=test_mqtt_plugin,
+                ),
+            ),
+        )
+
         administration_service = AdministrationService(
             infrastructure_repository=(
                 InfrastructureConfigurationRepository(
@@ -466,6 +652,7 @@ def build_production_agent(
                 )
             ),
             dhcp_repository=dhcp_repository,
+            plugin_repository=plugin_repository,
             on_infrastructure_changed=lambda changed_configuration: (
                 agent.apply_infrastructure_configuration(
                     changed_configuration,

@@ -1,3 +1,5 @@
+enabled: true
+
 # -----------------------------------------------------------------------------
 # Ohana-Agent
 # Example DNS plugin configuration

@@ -6,10 +6,23 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
-# [Non publié] — Plugins NTP et MQTT
+# [1.3.0] — Administration des plugins — 2026-07-27
 
 ## Ajouté
 
+- Contrat public d’administration des plugins avec inventaire, lecture,
+  modification et test immédiat.
+- Exposition des états de cycle de vie, de planification, d’exécution et de la
+  dernière erreur connue.
+- Activation et désactivation persistantes des plugins DNS, NTP et MQTT.
+- Reconfiguration à chaud et reconstruction des tâches du scheduler sans
+  redémarrage de l’Agent.
+- Écriture atomique avec restauration de la configuration précédente en cas
+  d’échec d’application.
+- Masquage du mot de passe MQTT et conservation du secret lorsque le champ est
+  laissé vide par Vision.
+- Tests immédiats `dns.resolve`, `ntp.query` et `mqtt.roundtrip`.
+- Capacités `plugins.read`, `plugins.write` et `plugins.test`.
 - Client SNTP natif sans dépendance Python supplémentaire.
 - Découverte automatique des services de type `ntp` dans
   `infrastructure.yaml`.
@@ -29,6 +42,11 @@ Le projet suit les principes de **Semantic Versioning**.
   l'infrastructure depuis Ohana-Vision.
 - Dépendance réseau `paho-mqtt` limitée à la couche d'observation MQTT, sans
   modification du transport MQTT interne du noyau.
+
+## Qualité
+
+- 1070 tests unitaires, d’intégration, HTTP et de packaging réussis.
+- Construction validée des artefacts wheel et sdist 1.3.0.
 
 ---
 

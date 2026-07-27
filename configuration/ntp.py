@@ -15,6 +15,8 @@ class NTPPolicyConfig(Config):
 class NTPPluginConfig(Config):
     """Declarative configuration for the NTP plugin."""
 
+    enabled: bool = True
+
     timeout: PositiveFloat = 2.0
     retries: int = Field(default=1, ge=0)
     interval_seconds: PositiveInt = 60

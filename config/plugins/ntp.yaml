@@ -1,0 +1,7 @@
+timeout: 2.0
+retries: 1
+interval_seconds: 60
+
+policy:
+  maximum_offset_ms: 1000.0
+  maximum_stratum: 15

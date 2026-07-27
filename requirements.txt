@@ -3,3 +3,4 @@ PyYAML
 pytest
 ruff
 dnspython>=2.7.0
+paho-mqtt>=2,<3

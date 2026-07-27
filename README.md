@@ -257,6 +257,37 @@ Les services de type `ntp` sont découverts dans `infrastructure.yaml`. Chaque
 service activé produit une observation `ntp.query` contenant notamment le
 décalage d'horloge, le temps aller-retour et la strate du serveur.
 
+## Plugin MQTT
+
+```text
+config/plugins/mqtt.yaml
+```
+
+```yaml
+timeout: 5.0
+retries: 1
+interval_seconds: 60
+keepalive_seconds: 60
+client_id_prefix: ohana-agent
+topic_prefix: ohana/agent/check
+qos: 1
+
+authentication:
+  username: null
+  password: null
+
+tls:
+  enabled: false
+  ca_file: null
+  insecure: false
+```
+
+Les services de type `mqtt` sont découverts dans `infrastructure.yaml`. Pour
+chaque broker activé, l'Agent se connecte, s'abonne à un topic temporaire,
+publie un message unique et attend de recevoir ce même message. L'observation
+`mqtt.roundtrip` valide ainsi la connexion, l'abonnement, la publication et la
+distribution du message.
+
 ---
 
 # Installation de développement
@@ -290,7 +321,8 @@ ohana-agent \
   --config config/shikamaru.yaml \
   --infrastructure config/infrastructure.yaml \
   --dns-config config/plugins/dns.yaml \
-  --ntp-config config/plugins/ntp.yaml
+  --ntp-config config/plugins/ntp.yaml \
+  --mqtt-config config/plugins/mqtt.yaml
 ```
 
 Version :

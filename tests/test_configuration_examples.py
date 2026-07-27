@@ -3,6 +3,7 @@
 from configuration.loader import ConfigurationLoader
 from loader.dns_config_loader import DNSConfigLoader
 from loader.infrastructure_loader import InfrastructureLoader
+from loader.mqtt_config_loader import MQTTConfigLoader
 from loader.ntp_config_loader import NTPConfigLoader
 
 
@@ -59,3 +60,17 @@ def test_ntp_example_configuration_is_valid() -> None:
     assert configuration.interval_seconds == 60
     assert configuration.policy.maximum_offset_ms == 1000.0
     assert configuration.policy.maximum_stratum == 15
+
+
+def test_mqtt_example_configuration_is_valid() -> None:
+    """Load the example MQTT observation plugin configuration."""
+    configuration = MQTTConfigLoader().load(
+        "config/plugins/mqtt.example.yaml",
+    )
+
+    assert configuration.timeout == 5.0
+    assert configuration.retries == 1
+    assert configuration.interval_seconds == 60
+    assert configuration.qos == 1
+    assert configuration.authentication.username is None
+    assert configuration.tls.enabled is False

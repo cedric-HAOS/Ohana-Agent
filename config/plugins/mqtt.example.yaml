@@ -1,0 +1,40 @@
+# -----------------------------------------------------------------------------
+# Ohana-Agent
+# Example MQTT observation plugin configuration
+# -----------------------------------------------------------------------------
+
+# MQTT services are discovered automatically from infrastructure.yaml.
+# Add or remove services with type "mqtt" in the infrastructure definition.
+
+# Maximum duration of each connection, subscription or round-trip wait.
+timeout: 5.0
+
+# Number of retries after the first failed round trip.
+retries: 1
+
+# Delay between two observation cycles.
+interval_seconds: 60
+
+# MQTT keepalive sent to the broker.
+keepalive_seconds: 60
+
+# Prefixes used for temporary client identifiers and unique test topics.
+client_id_prefix: ohana-agent
+topic_prefix: ohana/agent/check
+
+# QoS used for both subscription and publication: 0, 1 or 2.
+qos: 1
+
+authentication:
+  # Use a dedicated read/write MQTT account in production.
+  username: null
+  password: null
+
+tls:
+  enabled: false
+
+  # Optional CA certificate path when TLS is enabled.
+  ca_file: null
+
+  # Keep false in production. True disables certificate hostname validation.
+  insecure: false

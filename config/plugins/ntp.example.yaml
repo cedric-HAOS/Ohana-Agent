@@ -1,0 +1,23 @@
+# -----------------------------------------------------------------------------
+# Ohana-Agent
+# Example NTP plugin configuration
+# -----------------------------------------------------------------------------
+
+# NTP services are discovered automatically from infrastructure.yaml.
+# Add or remove services with type "ntp" in the infrastructure definition.
+
+# Maximum duration of one SNTP request.
+timeout: 2.0
+
+# Number of retries after the first failed request.
+retries: 1
+
+# Delay between two observation cycles.
+interval_seconds: 60
+
+policy:
+  # Maximum accepted absolute difference between the Agent and NTP server.
+  maximum_offset_ms: 1000.0
+
+  # Maximum accepted NTP stratum. Valid server strata range from 1 to 15.
+  maximum_stratum: 15

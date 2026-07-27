@@ -56,11 +56,13 @@ def test_install_script_does_not_manage_configuration() -> None:
     assert '"${CONFIG_ROOT}/infrastructure.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/dns.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/ntp.yaml"' in script
+    assert '"${CONFIG_ROOT}/plugins/mqtt.yaml"' in script
 
     assert "shikamaru.example.yaml" not in script
     assert "infrastructure.example.yaml" not in script
     assert "dns.example.yaml" not in script
     assert "ntp.example.yaml" not in script
+    assert "mqtt.example.yaml" not in script
 
 
 def test_install_script_enables_without_starting_service() -> None:
@@ -91,6 +93,7 @@ def test_update_script_preserves_configuration_and_service_state() -> None:
     assert "infrastructure.yaml" not in script
     assert "dns.yaml" not in script
     assert "ntp.yaml" not in script
+    assert "mqtt.yaml" not in script
 
     assert "systemctl is-active --quiet" in script
     assert "SERVICE_WAS_ACTIVE=false" in script

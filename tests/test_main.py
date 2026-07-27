@@ -40,6 +40,7 @@ def test_parse_arguments_uses_default_configuration_paths(
     assert arguments.infrastructure == Path("config/infrastructure.yaml")
     assert arguments.dns_config == Path("config/plugins/dns.yaml")
     assert arguments.ntp_config == Path("config/plugins/ntp.yaml")
+    assert arguments.mqtt_config == Path("config/plugins/mqtt.yaml")
     assert arguments.log_level == "INFO"
 
 
@@ -59,6 +60,8 @@ def test_parse_arguments_accepts_custom_paths(
             "custom/dns.yaml",
             "--ntp-config",
             "custom/ntp.yaml",
+            "--mqtt-config",
+            "custom/mqtt.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -70,6 +73,7 @@ def test_parse_arguments_accepts_custom_paths(
     assert arguments.infrastructure == Path("custom/infrastructure.yaml")
     assert arguments.dns_config == Path("custom/dns.yaml")
     assert arguments.ntp_config == Path("custom/ntp.yaml")
+    assert arguments.mqtt_config == Path("custom/mqtt.yaml")
     assert arguments.log_level == "DEBUG"
 
 
@@ -216,6 +220,8 @@ def test_main_builds_and_runs_production_agent(
             "custom/dns.yaml",
             "--ntp-config",
             "custom/ntp.yaml",
+            "--mqtt-config",
+            "custom/mqtt.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -235,6 +241,7 @@ def test_main_builds_and_runs_production_agent(
         infrastructure_config_path: Path,
         dns_config_path: Path,
         ntp_config_path: Path,
+        mqtt_config_path: Path,
     ) -> FakeAgent:
         calls.append(
             (
@@ -243,6 +250,7 @@ def test_main_builds_and_runs_production_agent(
                 infrastructure_config_path,
                 dns_config_path,
                 ntp_config_path,
+                mqtt_config_path,
             )
         )
         return fake_agent
@@ -286,6 +294,7 @@ def test_main_builds_and_runs_production_agent(
             Path("custom/infrastructure.yaml"),
             Path("custom/dns.yaml"),
             Path("custom/ntp.yaml"),
+            Path("custom/mqtt.yaml"),
         ),
         (
             "install_signal_handlers",
@@ -363,6 +372,8 @@ def test_parse_arguments_accepts_linux_configuration_paths(
             "/etc/ohana-agent/plugins/dns.yaml",
             "--ntp-config",
             "/etc/ohana-agent/plugins/ntp.yaml",
+            "--mqtt-config",
+            "/etc/ohana-agent/plugins/mqtt.yaml",
         ],
     )
 
@@ -379,4 +390,7 @@ def test_parse_arguments_accepts_linux_configuration_paths(
     )
     assert arguments.ntp_config == Path(
         "/etc/ohana-agent/plugins/ntp.yaml",
+    )
+    assert arguments.mqtt_config == Path(
+        "/etc/ohana-agent/plugins/mqtt.yaml",
     )

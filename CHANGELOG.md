@@ -6,7 +6,7 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
-# [Non publié] — Plugin NTP
+# [Non publié] — Plugins NTP et MQTT
 
 ## Ajouté
 
@@ -19,6 +19,16 @@ Le projet suit les principes de **Semantic Versioning**.
 - Reconfiguration immédiate des tâches NTP après modification de
   l'infrastructure depuis Ohana-Vision.
 - Configuration, CLI, service systemd, packaging et tests d'intégration dédiés.
+- Plugin `mqtt.roundtrip` réalisant une connexion, un abonnement, une
+  publication et la réception du message de test.
+- Découverte automatique des services de type `mqtt` depuis
+  `infrastructure.yaml`.
+- Authentification MQTT, QoS et TLS configurables sans exposer les secrets dans
+  les observations.
+- Reconfiguration immédiate des tâches MQTT après modification de
+  l'infrastructure depuis Ohana-Vision.
+- Dépendance réseau `paho-mqtt` limitée à la couche d'observation MQTT, sans
+  modification du transport MQTT interne du noyau.
 
 ---
 

@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.2.1"
+    assert project["version"] == "1.3.0"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"
@@ -51,6 +51,7 @@ def test_package_declares_runtime_dependencies() -> None:
         "PyYAML>=6.0",
         "pydantic>=2,<3",
         "dnspython>=2.7,<3",
+        "paho-mqtt>=2,<3",
     ]
 
     assert "pytest" not in dependencies

@@ -14,6 +14,7 @@ from administration import (
 from builder import (
     DNSConfigurationBuilder,
     InfrastructureBuilder,
+    MQTTConfigurationBuilder,
     NTPConfigurationBuilder,
 )
 from configuration.infrastructure import InfrastructureConfig
@@ -26,7 +27,12 @@ from infrastructure import InfrastructureRuntime
 from infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from loader import DNSConfigLoader, InfrastructureLoader, NTPConfigLoader
+from loader import (
+    DNSConfigLoader,
+    InfrastructureLoader,
+    MQTTConfigLoader,
+    NTPConfigLoader,
+)
 from observer import (
     InfrastructureObservationMapper,
     ObservationEngine,
@@ -50,6 +56,9 @@ from plugin.plugin_manager import PluginManager
 from plugins.dns.dns_check import DNSCheck
 from plugins.dns.dns_config import DNSConfig
 from plugins.dns.dns_plugin import DNSPlugin
+from plugins.mqtt.mqtt_check import MQTTCheck
+from plugins.mqtt.mqtt_config import MQTTConfig
+from plugins.mqtt.mqtt_plugin import MQTTPlugin
 from plugins.ntp.ntp_check import NTPCheck
 from plugins.ntp.ntp_config import NTPConfig
 from plugins.ntp.ntp_plugin import NTPPlugin
@@ -135,6 +144,39 @@ def _build_ntp_tasks(
     ]
 
 
+def _build_mqtt_tasks(
+    *,
+    mqtt_config: MQTTConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one scheduled round-trip observation per enabled MQTT broker."""
+    return [
+        Task(
+            id=f"mqtt.roundtrip:{broker.name}",
+            name=f"Test MQTT round trip through {broker.name}",
+            command="mqtt.roundtrip",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "broker": broker.address,
+                "port": broker.port,
+                "service_id": broker.name,
+            },
+            metadata={
+                "managed_by": "mqtt",
+                "service_id": broker.name,
+                "broker": broker.address,
+                "port": broker.port,
+            },
+        )
+        for broker in mqtt_config.brokers
+        if broker.enabled
+    ]
+
+
 def _replace_plugin_tasks(
     scheduler: Scheduler,
     tasks: list[Task],
@@ -159,6 +201,7 @@ def build_production_agent(
     infrastructure_config_path: Path = Path("config/infrastructure.yaml"),
     dns_config_path: Path = Path("config/plugins/dns.yaml"),
     ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
+    mqtt_config_path: Path = Path("config/plugins/mqtt.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
 ) -> ProductionAgent:
@@ -185,6 +228,12 @@ def build_production_agent(
     ntp_config = NTPConfigurationBuilder().build(
         infrastructure,
         ntp_plugin_config,
+    )
+
+    mqtt_plugin_config = MQTTConfigLoader().load(mqtt_config_path)
+    mqtt_config = MQTTConfigurationBuilder().build(
+        infrastructure,
+        mqtt_plugin_config,
     )
 
     event_bus = EventBus()
@@ -256,6 +305,12 @@ def build_production_agent(
     )
     plugin_manager.register(ntp_plugin)
 
+    mqtt_plugin = MQTTPlugin(
+        check=MQTTCheck(),
+        config=mqtt_config,
+    )
+    plugin_manager.register(mqtt_plugin)
+
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
         observation_engine=observation_engine,
@@ -292,6 +347,15 @@ def build_production_agent(
         ),
         plugin_name="ntp",
     )
+    _replace_plugin_tasks(
+        scheduler,
+        _build_mqtt_tasks(
+            mqtt_config=mqtt_config,
+            interval_seconds=mqtt_plugin_config.interval_seconds,
+            start_at=resolved_clock.now(),
+        ),
+        plugin_name="mqtt",
+    )
 
     def reconfigure_infrastructure(
         changed_configuration: InfrastructureConfig,
@@ -308,6 +372,10 @@ def build_production_agent(
             updated_infrastructure,
             ntp_plugin_config,
         )
+        updated_mqtt_config = MQTTConfigurationBuilder().build(
+            updated_infrastructure,
+            mqtt_plugin_config,
+        )
         updated_dns_tasks = _build_dns_tasks(
             dns_config=updated_dns_config,
             interval_seconds=dns_plugin_config.interval_seconds,
@@ -318,10 +386,16 @@ def build_production_agent(
             interval_seconds=ntp_plugin_config.interval_seconds,
             start_at=resolved_clock.now(),
         )
+        updated_mqtt_tasks = _build_mqtt_tasks(
+            mqtt_config=updated_mqtt_config,
+            interval_seconds=mqtt_plugin_config.interval_seconds,
+            start_at=resolved_clock.now(),
+        )
 
         observation_engine.health_manager.runtime = updated_runtime
         dns_plugin.reconfigure(updated_dns_config)
         ntp_plugin.reconfigure(updated_ntp_config)
+        mqtt_plugin.reconfigure(updated_mqtt_config)
         _replace_plugin_tasks(
             scheduler,
             updated_dns_tasks,
@@ -331,6 +405,11 @@ def build_production_agent(
             scheduler,
             updated_ntp_tasks,
             plugin_name="ntp",
+        )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_mqtt_tasks,
+            plugin_name="mqtt",
         )
 
     agent = ProductionAgent(

@@ -199,6 +199,7 @@ def test_sdist_contains_configuration_examples_only(
         "config/infrastructure.example.yaml",
         "config/plugins/dns.example.yaml",
         "config/plugins/ntp.example.yaml",
+        "config/plugins/mqtt.example.yaml",
     }
 
     forbidden_active_configuration = {
@@ -206,6 +207,7 @@ def test_sdist_contains_configuration_examples_only(
         "config/infrastructure.yaml",
         "config/plugins/dns.yaml",
         "config/plugins/ntp.yaml",
+        "config/plugins/mqtt.yaml",
     }
 
     assert required_examples <= sdist_members

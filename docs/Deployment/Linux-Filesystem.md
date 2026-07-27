@@ -170,6 +170,23 @@ Ce fichier contient la configuration propre au plugin NTP :
 Les adresses et ports des serveurs NTP restent déclarés uniquement dans
 `infrastructure.yaml`.
 
+### Plugin MQTT
+
+```text
+/etc/ohana-agent/plugins/mqtt.yaml
+```
+
+Ce fichier contient la configuration propre au plugin d'observation MQTT :
+
+* délais, tentatives et intervalle d'exécution ;
+* préfixes du client et du topic temporaire ;
+* niveau de QoS ;
+* authentification éventuelle ;
+* paramètres TLS éventuels.
+
+Les adresses et ports des brokers MQTT restent déclarés uniquement dans
+`infrastructure.yaml`.
+
 ### Fichiers d’exemple
 
 Les fichiers `.example.yaml` appartiennent au dépôt et à la documentation du projet.
@@ -263,6 +280,7 @@ avec les chemins de configuration explicites :
 --infrastructure /etc/ohana-agent/infrastructure.yaml
 --dns-config /etc/ohana-agent/plugins/dns.yaml
 --ntp-config /etc/ohana-agent/plugins/ntp.yaml
+--mqtt-config /etc/ohana-agent/plugins/mqtt.yaml
 ```
 
 Le service ne doit pas dépendre du répertoire courant pour retrouver ses fichiers.
@@ -376,6 +394,7 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--infrastructure` | `/etc/ohana-agent/infrastructure.yaml` |
 | `--dns-config`     | `/etc/ohana-agent/plugins/dns.yaml`    |
 | `--ntp-config`     | `/etc/ohana-agent/plugins/ntp.yaml`    |
+| `--mqtt-config`    | `/etc/ohana-agent/plugins/mqtt.yaml`   |
 | `--log-level`      | niveau choisi par le service            |
 
 Commande de référence :
@@ -386,6 +405,7 @@ Commande de référence :
   --infrastructure /etc/ohana-agent/infrastructure.yaml \
   --dns-config /etc/ohana-agent/plugins/dns.yaml \
   --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
+  --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \
   --log-level INFO
 ```
 
@@ -402,6 +422,7 @@ config/shikamaru.yaml
 config/infrastructure.yaml
 config/plugins/dns.yaml
 config/plugins/ntp.yaml
+config/plugins/mqtt.yaml
 ```
 
 Ils permettent de lancer localement :

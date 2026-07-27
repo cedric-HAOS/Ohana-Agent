@@ -290,3 +290,81 @@ def test_production_bootstrap_reconfigures_ntp_tasks_from_infrastructure() -> No
     assert agent.scheduler.running is True
 
     agent.stop()
+
+
+def test_production_bootstrap_reconfigures_mqtt_tasks_from_infrastructure() -> None:
+    clock = FakeClock(
+        current_time=datetime(
+            2026,
+            7,
+            15,
+            12,
+            0,
+            tzinfo=UTC,
+        )
+    )
+    client = FakeVisionClient()
+    agent = build_production_agent(
+        vision_client=client,
+        clock=clock,
+    )
+    configuration = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
+    configuration_with_mqtt = configuration.model_copy(
+        update={
+            "services": [
+                *configuration.services,
+                ServiceConfig(
+                    id="mqtt-primary",
+                    name="MQTT principal",
+                    type="mqtt",
+                    node="infra-01",
+                    port=1883,
+                ),
+            ]
+        }
+    )
+
+    agent.start()
+    agent.apply_infrastructure_configuration(
+        configuration_with_mqtt,
+        VisionInfrastructureMapper().to_payload(configuration_with_mqtt),
+    )
+
+    tasks = agent.scheduler.list_tasks()
+    mqtt_tasks = [task for task in tasks if task.command == "mqtt.roundtrip"]
+
+    assert len(mqtt_tasks) == 1
+    assert mqtt_tasks[0].arguments == {
+        "broker": "192.168.1.10",
+        "port": 1883,
+        "service_id": "mqtt-primary",
+    }
+    assert mqtt_tasks[0].metadata == {
+        "managed_by": "mqtt",
+        "service_id": "mqtt-primary",
+        "broker": "192.168.1.10",
+        "port": 1883,
+    }
+
+    configuration_without_mqtt = configuration_with_mqtt.model_copy(
+        update={
+            "services": [
+                service
+                for service in configuration_with_mqtt.services
+                if service.type != "mqtt"
+            ]
+        }
+    )
+    agent.apply_infrastructure_configuration(
+        configuration_without_mqtt,
+        VisionInfrastructureMapper().to_payload(configuration_without_mqtt),
+    )
+
+    assert [
+        task
+        for task in agent.scheduler.list_tasks()
+        if task.command == "mqtt.roundtrip"
+    ] == []
+    assert agent.scheduler.running is True
+
+    agent.stop()

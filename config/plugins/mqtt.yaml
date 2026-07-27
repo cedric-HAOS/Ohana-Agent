@@ -1,0 +1,16 @@
+timeout: 5.0
+retries: 1
+interval_seconds: 60
+keepalive_seconds: 60
+client_id_prefix: ohana-agent
+topic_prefix: ohana/agent/check
+qos: 1
+
+authentication:
+  username: null
+  password: null
+
+tls:
+  enabled: false
+  ca_file: null
+  insecure: false

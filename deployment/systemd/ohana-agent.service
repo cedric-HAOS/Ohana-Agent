@@ -15,6 +15,7 @@ ExecStart=/opt/ohana-agent/venv/bin/ohana-agent \
     --infrastructure /etc/ohana-agent/infrastructure.yaml \
     --dns-config /etc/ohana-agent/plugins/dns.yaml \
     --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
+    --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \
     --log-level INFO
 
 Restart=on-failure

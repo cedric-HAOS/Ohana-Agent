@@ -22,6 +22,7 @@ def test_systemd_service_uses_reference_executable_and_configuration() -> None:
     assert "/opt/ohana-agent/venv/bin/ohana-agent" in service
     assert "--config /etc/ohana-agent/shikamaru.yaml" in service
     assert "--infrastructure /etc/ohana-agent/infrastructure.yaml" in service
+    assert "--dhcp-config /etc/ohana-agent/plugins/dhcp.yaml" in service
     assert "--dns-config /etc/ohana-agent/plugins/dns.yaml" in service
     assert "--ntp-config /etc/ohana-agent/plugins/ntp.yaml" in service
     assert "--mqtt-config /etc/ohana-agent/plugins/mqtt.yaml" in service

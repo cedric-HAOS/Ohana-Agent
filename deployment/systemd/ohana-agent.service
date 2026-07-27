@@ -13,6 +13,7 @@ Group=ohana-agent
 ExecStart=/opt/ohana-agent/venv/bin/ohana-agent \
     --config /etc/ohana-agent/shikamaru.yaml \
     --infrastructure /etc/ohana-agent/infrastructure.yaml \
+    --dhcp-config /etc/ohana-agent/plugins/dhcp.yaml \
     --dns-config /etc/ohana-agent/plugins/dns.yaml \
     --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
     --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \

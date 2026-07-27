@@ -11,6 +11,7 @@ from configuration.infrastructure import (
 )
 from loader import InfrastructureLoader
 from observer.exporters import VisionInfrastructureMapper
+from plugins.dhcp.dhcp_check_result import DHCPCheckResult
 from plugins.network.network_probe_result import NetworkProbeResult
 from scheduler.clock import FakeClock
 
@@ -32,6 +33,37 @@ class FakeVisionClient:
         payload: dict[str, Any],
     ) -> None:
         self.operations.append(("infrastructure", payload))
+
+
+class FakeDHCPCheck:
+    """Return deterministic local DHCP state for bootstrap tests."""
+
+    def check(
+        self,
+        server: str,
+        *,
+        port: int,
+        service_id: str,
+        main_config_path: Path,
+        leases_path: Path,
+        service_status_command: tuple[str, ...] | None,
+        timeout: float,
+    ) -> DHCPCheckResult:
+        del main_config_path, leases_path, service_status_command, timeout
+        return DHCPCheckResult(
+            server=server,
+            port=port,
+            service_id=service_id,
+            healthy=True,
+            service_active=True,
+            range_start="192.168.1.100",
+            range_end="192.168.1.199",
+            pool_size=100,
+            lease_count=12,
+            available_address_count=88,
+            pool_usage_percent=12.0,
+            status_output="active",
+        )
 
 
 class FakeNetworkCheck:
@@ -74,11 +106,24 @@ def test_production_bootstrap_builds_dns_task() -> None:
     )
 
     tasks = agent.scheduler.list_tasks()
+    dhcp_tasks = [task for task in tasks if task.command == "dhcp.status"]
     dns_tasks = [task for task in tasks if task.command == "dns.resolve"]
     network_tasks = [task for task in tasks if task.command == "network.reachable"]
 
+    assert len(dhcp_tasks) == 1
     assert len(dns_tasks) == 1
     assert len(network_tasks) == 1
+    assert dhcp_tasks[0].arguments == {
+        "server": "192.168.1.10",
+        "port": 67,
+        "service_id": "dhcp-primary",
+    }
+    assert dhcp_tasks[0].metadata == {
+        "managed_by": "dhcp",
+        "service_id": "dhcp-primary",
+        "server": "192.168.1.10",
+        "port": 67,
+    }
     assert dns_tasks[0].arguments == {
         "hostname": "example.com",
         "server": "192.168.1.10",
@@ -124,6 +169,7 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
         vision_client=vision_client,
         clock=clock,
         network_check=FakeNetworkCheck(),
+        dhcp_check=FakeDHCPCheck(),
     )
 
     agent.start()
@@ -132,6 +178,7 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
 
     assert [operation for operation, _payload in vision_client.operations] == [
         "infrastructure",
+        "observation",
         "observation",
         "observation",
     ]
@@ -148,6 +195,14 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
         for operation, payload in vision_client.operations
         if operation == "observation"
     }
+
+    dhcp_observation = observations["dhcp.status"]
+    assert dhcp_observation["node_id"] == "infra-01"
+    assert dhcp_observation["service_id"] == "dhcp-primary"
+    assert dhcp_observation["status"] == "healthy"
+    assert dhcp_observation["metadata"]["lease_count"] == 12
+    assert dhcp_observation["metadata"]["available_address_count"] == 88
+    assert dhcp_observation["metadata"]["pool_usage_percent"] == 12.0
 
     dns_observation = observations["dns.resolve"]
     assert dns_observation["node_id"] == "infra-01"
@@ -425,6 +480,35 @@ def test_production_bootstrap_reconfigures_mqtt_tasks_from_infrastructure() -> N
         task
         for task in agent.scheduler.list_tasks()
         if task.command == "mqtt.roundtrip"
+    ] == []
+    assert agent.scheduler.running is True
+
+    agent.stop()
+
+
+def test_production_bootstrap_removes_dhcp_task_with_service() -> None:
+    clock = FakeClock(current_time=datetime(2026, 7, 15, 12, 0, tzinfo=UTC))
+    agent = build_production_agent(
+        vision_client=FakeVisionClient(),
+        clock=clock,
+    )
+    configuration = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
+    without_dhcp = configuration.model_copy(
+        update={
+            "services": [
+                service for service in configuration.services if service.type != "dhcp"
+            ]
+        }
+    )
+
+    agent.start()
+    agent.apply_infrastructure_configuration(
+        without_dhcp,
+        VisionInfrastructureMapper().to_payload(without_dhcp),
+    )
+
+    assert [
+        task for task in agent.scheduler.list_tasks() if task.command == "dhcp.status"
     ] == []
     assert agent.scheduler.running is True
 

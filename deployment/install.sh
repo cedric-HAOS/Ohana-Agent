@@ -55,6 +55,11 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/infrastructure.yaml"
 
+    [[ -f "${CONFIG_ROOT}/plugins/dhcp.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/dhcp.yaml"
+
     [[ -f "${CONFIG_ROOT}/plugins/dns.yaml" ]] \
         || fail \
             "Configuration file not found: " \

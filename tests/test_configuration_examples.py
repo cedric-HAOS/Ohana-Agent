@@ -1,6 +1,7 @@
 """Tests for the example configuration files."""
 
 from configuration.loader import ConfigurationLoader
+from loader.dhcp_config_loader import DHCPConfigLoader
 from loader.dns_config_loader import DNSConfigLoader
 from loader.infrastructure_loader import InfrastructureLoader
 from loader.mqtt_config_loader import MQTTConfigLoader
@@ -37,6 +38,19 @@ def test_infrastructure_example_configuration_is_valid() -> None:
     assert configuration.infrastructure.id == "ohana-house"
     assert configuration.nodes
     assert configuration.services
+
+
+def test_dhcp_example_configuration_is_valid() -> None:
+    """Load the example DHCP observation plugin configuration."""
+    configuration = DHCPConfigLoader().load(
+        "config/plugins/dhcp.example.yaml",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.timeout == 3.0
+    assert configuration.interval_seconds == 60
+    assert configuration.policy.maximum_pool_usage_percent == 90.0
+    assert configuration.check_service_active is True
 
 
 def test_dns_example_configuration_is_valid() -> None:

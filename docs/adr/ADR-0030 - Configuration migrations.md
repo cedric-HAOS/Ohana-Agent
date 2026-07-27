@@ -22,6 +22,7 @@ Ohana-Agent charge plusieurs fichiers de configuration déclarative :
 ```text
 config/shikamaru.yaml
 config/infrastructure.yaml
+config/plugins/dhcp.yaml
 config/plugins/dns.yaml
 ```
 

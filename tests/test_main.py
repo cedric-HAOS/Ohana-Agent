@@ -38,6 +38,7 @@ def test_parse_arguments_uses_default_configuration_paths(
 
     assert arguments.config == Path("config/shikamaru.yaml")
     assert arguments.infrastructure == Path("config/infrastructure.yaml")
+    assert arguments.dhcp_config == Path("config/plugins/dhcp.yaml")
     assert arguments.dns_config == Path("config/plugins/dns.yaml")
     assert arguments.ntp_config == Path("config/plugins/ntp.yaml")
     assert arguments.mqtt_config == Path("config/plugins/mqtt.yaml")
@@ -57,6 +58,8 @@ def test_parse_arguments_accepts_custom_paths(
             "custom/application.yaml",
             "--infrastructure",
             "custom/infrastructure.yaml",
+            "--dhcp-config",
+            "custom/dhcp.yaml",
             "--dns-config",
             "custom/dns.yaml",
             "--ntp-config",
@@ -74,6 +77,7 @@ def test_parse_arguments_accepts_custom_paths(
 
     assert arguments.config == Path("custom/application.yaml")
     assert arguments.infrastructure == Path("custom/infrastructure.yaml")
+    assert arguments.dhcp_config == Path("custom/dhcp.yaml")
     assert arguments.dns_config == Path("custom/dns.yaml")
     assert arguments.ntp_config == Path("custom/ntp.yaml")
     assert arguments.mqtt_config == Path("custom/mqtt.yaml")
@@ -220,6 +224,8 @@ def test_main_builds_and_runs_production_agent(
             "custom/application.yaml",
             "--infrastructure",
             "custom/infrastructure.yaml",
+            "--dhcp-config",
+            "custom/dhcp.yaml",
             "--dns-config",
             "custom/dns.yaml",
             "--ntp-config",
@@ -245,6 +251,7 @@ def test_main_builds_and_runs_production_agent(
         *,
         application_config_path: Path,
         infrastructure_config_path: Path,
+        dhcp_config_path: Path,
         dns_config_path: Path,
         ntp_config_path: Path,
         mqtt_config_path: Path,
@@ -255,6 +262,7 @@ def test_main_builds_and_runs_production_agent(
                 "build_production_agent",
                 application_config_path,
                 infrastructure_config_path,
+                dhcp_config_path,
                 dns_config_path,
                 ntp_config_path,
                 mqtt_config_path,
@@ -300,6 +308,7 @@ def test_main_builds_and_runs_production_agent(
             "build_production_agent",
             Path("custom/application.yaml"),
             Path("custom/infrastructure.yaml"),
+            Path("custom/dhcp.yaml"),
             Path("custom/dns.yaml"),
             Path("custom/ntp.yaml"),
             Path("custom/mqtt.yaml"),
@@ -377,6 +386,8 @@ def test_parse_arguments_accepts_linux_configuration_paths(
             "/etc/ohana-agent/shikamaru.yaml",
             "--infrastructure",
             "/etc/ohana-agent/infrastructure.yaml",
+            "--dhcp-config",
+            "/etc/ohana-agent/plugins/dhcp.yaml",
             "--dns-config",
             "/etc/ohana-agent/plugins/dns.yaml",
             "--ntp-config",
@@ -395,6 +406,9 @@ def test_parse_arguments_accepts_linux_configuration_paths(
     )
     assert arguments.infrastructure == Path(
         "/etc/ohana-agent/infrastructure.yaml",
+    )
+    assert arguments.dhcp_config == Path(
+        "/etc/ohana-agent/plugins/dhcp.yaml",
     )
     assert arguments.dns_config == Path(
         "/etc/ohana-agent/plugins/dns.yaml",

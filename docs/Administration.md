@@ -20,6 +20,7 @@ Ohana-Agent :8765
     |
     +-- infrastructure.yaml
     +-- fichiers dnsmasq gérés
+    +-- plugins/dhcp.yaml
     +-- plugins/dns.yaml
     +-- plugins/ntp.yaml
     +-- plugins/mqtt.yaml
@@ -56,8 +57,9 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
 L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
 dans l'API s'il n'est pas réellement enregistré dans l'Agent.
 
-La version 1.4.0 expose :
+La version 1.5.0 expose :
 
+- **DHCP** — capacité `dhcp.status` ;
 - **DNS** — capacité `dns.resolve` ;
 - **NTP** — capacité `ntp.query` ;
 - **MQTT** — capacité `mqtt.roundtrip` ;
@@ -72,9 +74,10 @@ Pour chaque plugin, l'API fournit notamment :
 - la dernière erreur connue ;
 - la configuration modifiable.
 
-DHCP conserve son contrat d'administration dédié. Il n'est pas présenté comme
-un plugin tant qu'aucun véritable plugin d'observation DHCP n'est enregistré
-dans le `PluginManager`.
+DHCP conserve aussi son contrat d’administration dédié pour modifier les
+paramètres dnsmasq, les réservations et lire les baux. Le plugin `dhcp` est
+strictement observationnel : il mesure l’état du service et l’occupation de la
+plage sans modifier ces fichiers.
 
 ## Reconfiguration immédiate
 
@@ -94,11 +97,17 @@ Les mots de passe MQTT ne sont jamais retournés. L'API indique uniquement si un
 mot de passe existe. Une valeur vide lors d'une modification conserve le secret
 déjà enregistré.
 
+Pour DHCP, l’API peut modifier l’intervalle, le seuil d’occupation et
+l’activation du contrôle de service. Le nœud et les chemins dnsmasq restent
+issus de `shikamaru.yaml`. La commande système exécutée est définie dans le code
+d’Agent et ne provient jamais du document reçu depuis Vision.
+
 ## Test immédiat
 
 `POST /v1/plugins/{plugin_id}/test` exécute un contrôle ponctuel avec la
 configuration courante :
 
+- premier service DHCP activé ;
 - première requête et premier service DNS activé ;
 - premier service NTP activé ;
 - premier courtier MQTT activé ;

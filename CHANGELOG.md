@@ -6,6 +6,46 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.5.0] — Observation DHCP — 2026-07-27
+
+## Ajouté
+
+- Plugin intégré `dhcp` et capacité `dhcp.status`.
+- Découverte automatique des services de type `dhcp` depuis
+  `infrastructure.yaml`.
+- Vérification locale de l’état `dnsmasq` sans demande de bail artificielle.
+- Réutilisation du lecteur dnsmasq existant pour la configuration et les baux.
+- Lecture de la plage IPv4 configurée et des baux dnsmasq actifs.
+- Exclusion des baux expirés, des adresses hors plage et des doublons.
+- Calcul du nombre d’adresses disponibles et du taux d’occupation de la plage.
+- Seuil configurable transformant une occupation excessive en observation
+  indisponible.
+- Reconfiguration à chaud, reconstruction des tâches et test immédiat depuis
+  l’administration des plugins.
+- Nouvel argument `--dhcp-config`, fichier de configuration et intégration au
+  service systemd.
+- Déclaration du service `dhcp-primary` dans l’infrastructure de production.
+
+## Sécurité
+
+- La commande `systemctl is-active dnsmasq.service` est définie dans le code et
+  ne peut pas être remplacée par une requête d’administration.
+- Le plugin lit les fichiers dnsmasq mais ne les modifie jamais.
+- L’administration existante des paramètres et réservations DHCP reste séparée
+  du plugin d’observation.
+
+## Qualité
+
+- 1115 tests unitaires, d’intégration, HTTP et de packaging réussis.
+- Construction et installation validées des artefacts wheel et sdist 1.5.0.
+
+## Contrat d’observation
+
+- `capability_id` : `dhcp.status` ;
+- `service_id` : identifiant du service DHCP ;
+- métadonnées : état du service, plage, taille du pool, baux actifs, baux
+  expirés et taux d’occupation.
+
 # [1.4.0] — Présence réseau des équipements — 2026-07-27
 
 ## Ajouté

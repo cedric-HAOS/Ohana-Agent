@@ -46,6 +46,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Infrastructure configuration file.",
     )
     parser.add_argument(
+        "--dhcp-config",
+        type=Path,
+        default=Path("config/plugins/dhcp.yaml"),
+        help="DHCP observation plugin configuration file.",
+    )
+    parser.add_argument(
         "--dns-config",
         type=Path,
         default=Path("config/plugins/dns.yaml"),
@@ -139,6 +145,7 @@ def main() -> int:
     agent = build_production_agent(
         application_config_path=arguments.config,
         infrastructure_config_path=arguments.infrastructure,
+        dhcp_config_path=arguments.dhcp_config,
         dns_config_path=arguments.dns_config,
         ntp_config_path=arguments.ntp_config,
         mqtt_config_path=arguments.mqtt_config,

@@ -87,10 +87,14 @@ def test_wheel_contains_runtime_modules(
         "application.py",
         "bootstrap.py",
         "production_agent.py",
+        "builder/dhcp_configuration_builder.py",
         "configuration/configuration.py",
+        "configuration/dhcp.py",
         "core/event_bus.py",
         "infrastructure/infrastructure.py",
+        "loader/dhcp_config_loader.py",
         "observer/observation.py",
+        "plugins/dhcp/dhcp_plugin.py",
     }
 
     assert required_modules <= wheel_members
@@ -197,6 +201,7 @@ def test_sdist_contains_configuration_examples_only(
     required_examples = {
         "config/shikamaru.example.yaml",
         "config/infrastructure.example.yaml",
+        "config/plugins/dhcp.example.yaml",
         "config/plugins/dns.example.yaml",
         "config/plugins/ntp.example.yaml",
         "config/plugins/mqtt.example.yaml",
@@ -206,6 +211,7 @@ def test_sdist_contains_configuration_examples_only(
     forbidden_active_configuration = {
         "config/shikamaru.yaml",
         "config/infrastructure.yaml",
+        "config/plugins/dhcp.yaml",
         "config/plugins/dns.yaml",
         "config/plugins/ntp.yaml",
         "config/plugins/mqtt.yaml",

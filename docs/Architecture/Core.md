@@ -117,6 +117,7 @@ Chaque plugin possède son propre fichier YAML.
 Exemple :
 
 ```text id="9c0xq7"
+config/plugins/dhcp.yaml
 config/plugins/dns.yaml
 ```
 

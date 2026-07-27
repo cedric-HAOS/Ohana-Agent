@@ -1,0 +1,13 @@
+# Local dnsmasq DHCP observation.
+enabled: true
+
+# The dnsmasq paths and local node come from shikamaru.yaml.
+
+# Disable this check in development when systemd is not available.
+check_service_active: true
+
+timeout: 3.0
+interval_seconds: 60
+
+policy:
+  maximum_pool_usage_percent: 90.0

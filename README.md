@@ -10,8 +10,9 @@ version 1.2.0 ajoute leur administration graphique sécurisée depuis Vision.
 La version 1.2.1 synchronise automatiquement les observations DNS avec les
 services ajoutés, modifiés ou supprimés depuis cette administration. La version
 1.3.0 ajoute les capacités NTP et MQTT ainsi que l’administration graphique des
-plugins DNS, NTP et MQTT. La version 1.4.0 ajoute une présence réseau légère
-des équipements déclarés dans la topologie.
+plugins. La version 1.4.0 ajoute une présence réseau légère des équipements
+déclarés dans la topologie. La version 1.5.0 ajoute l’observation DHCP locale,
+en complément de l’administration dnsmasq existante.
 
 ---
 
@@ -20,9 +21,9 @@ des équipements déclarés dans la topologie.
 Ohana-Agent expose une API locale permettant à Ohana-Vision de modifier
 l’infrastructure, le DHCP et la configuration des plugins intégrés.
 
-L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DNS, NTP,
-MQTT et Présence réseau peuvent être activés, reconfigurés et testés sans
-redémarrer l’Agent.
+L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DHCP,
+DNS, NTP, MQTT et Présence réseau peuvent être activés, reconfigurés et testés
+sans redémarrer l’Agent.
 Les secrets MQTT restent masqués.
 
 - l'API écoute par défaut sur `127.0.0.1:8765` ;
@@ -60,11 +61,12 @@ Les plugins référencent les services par identifiant et ne dupliquent pas les 
 
 ## Plugins indépendants
 
-Chaque capacité est fournie par un plugin spécialisé. Les plugins DNS, NTP,
-MQTT et réseau utilisent le même pipeline d'observation standardisé.
+Chaque capacité est fournie par un plugin spécialisé. Les plugins DHCP, DNS,
+NTP, MQTT et réseau utilisent le même pipeline d'observation standardisé.
 
 ```text
 plugins/
+├── dhcp/
 ├── dns/
 ├── mqtt/
 ├── network/
@@ -255,6 +257,33 @@ topology:
           row: 1
 ```
 
+## Plugin DHCP
+
+```text
+config/plugins/dhcp.yaml
+```
+
+```yaml
+enabled: true
+check_service_active: true
+timeout: 3.0
+interval_seconds: 60
+
+policy:
+  maximum_pool_usage_percent: 90.0
+```
+
+Le service DHCP du nœud déclaré par `administration.dhcp.server_node_id` est
+découvert dans `infrastructure.yaml`. Les chemins dnsmasq déjà définis dans
+`shikamaru.yaml` sont réutilisés sans duplication. Le plugin produit
+`dhcp.status` en vérifiant l’état local de `dnsmasq`, la plage configurée, les
+baux actifs et le taux d’occupation. Il ne demande pas de bail factice et ne
+modifie jamais la configuration DHCP.
+
+La commande de contrôle `systemctl is-active dnsmasq.service` est interne à
+l’Agent : l’administration graphique peut seulement activer ou désactiver ce
+contrôle, pas remplacer la commande exécutée.
+
 ## Plugin DNS
 
 ```text
@@ -358,6 +387,7 @@ python -m pip install -e ".[development]"
 ohana-agent \
   --config config/shikamaru.yaml \
   --infrastructure config/infrastructure.yaml \
+  --dhcp-config config/plugins/dhcp.yaml \
   --dns-config config/plugins/dns.yaml \
   --ntp-config config/plugins/ntp.yaml \
   --mqtt-config config/plugins/mqtt.yaml \
@@ -400,7 +430,7 @@ Le code courant comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugins DNS, NTP, MQTT et présence réseau ;
+- plugins DHCP, DNS, NTP, MQTT et présence réseau ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

@@ -3,24 +3,31 @@ from pathlib import Path
 import yaml
 
 
-def test_real_infrastructure_yaml_declares_dns_service() -> None:
+def test_real_infrastructure_yaml_declares_core_services() -> None:
     path = Path("config/infrastructure.yaml")
 
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
 
     node = data["nodes"][0]
-    service = data["services"][0]
+    services = {service["id"]: service for service in data["services"]}
 
     assert node["id"] == "infra-01"
     assert node["name"] == "INFRA-01"
     assert node["endpoint"]["type"] == "ip"
     assert node["endpoint"]["address"] == "192.168.1.10"
 
-    assert service["id"] == "dns-primary"
-    assert service["name"] == "DNS principal"
-    assert service["type"] == "dns"
-    assert service["node"] == "infra-01"
-    assert service["port"] == 53
+    dhcp = services["dhcp-primary"]
+    assert dhcp["name"] == "DHCP principal"
+    assert dhcp["type"] == "dhcp"
+    assert dhcp["node"] == "infra-01"
+    assert dhcp["port"] == 67
+    assert dhcp["implementation"] == "dnsmasq"
+
+    dns = services["dns-primary"]
+    assert dns["name"] == "DNS principal"
+    assert dns["type"] == "dns"
+    assert dns["node"] == "infra-01"
+    assert dns["port"] == 53
 
 
 def test_real_infrastructure_yaml_declares_complete_topology() -> None:

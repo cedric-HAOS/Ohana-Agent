@@ -18,6 +18,15 @@ nodes:
       address: 192.168.1.10
 
 services:
+  - id: dhcp-primary
+    name: DHCP principal
+    type: dhcp
+    node: infra-01
+    port: 67
+    implementation: dnsmasq
+    enabled: true
+    critical: true
+
   - id: dns-primary
     name: DNS principal
     type: dns

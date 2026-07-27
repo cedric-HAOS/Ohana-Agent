@@ -54,6 +54,7 @@ def test_install_script_does_not_manage_configuration() -> None:
 
     assert '"${CONFIG_ROOT}/shikamaru.yaml"' in script
     assert '"${CONFIG_ROOT}/infrastructure.yaml"' in script
+    assert '"${CONFIG_ROOT}/plugins/dhcp.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/dns.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/ntp.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/mqtt.yaml"' in script
@@ -61,6 +62,7 @@ def test_install_script_does_not_manage_configuration() -> None:
 
     assert "shikamaru.example.yaml" not in script
     assert "infrastructure.example.yaml" not in script
+    assert "dhcp.example.yaml" not in script
     assert "dns.example.yaml" not in script
     assert "ntp.example.yaml" not in script
     assert "mqtt.example.yaml" not in script
@@ -93,6 +95,7 @@ def test_update_script_preserves_configuration_and_service_state() -> None:
     assert "/etc/ohana-agent" not in script
     assert "shikamaru.yaml" not in script
     assert "infrastructure.yaml" not in script
+    assert "dhcp.yaml" not in script
     assert "dns.yaml" not in script
     assert "ntp.yaml" not in script
     assert "mqtt.yaml" not in script

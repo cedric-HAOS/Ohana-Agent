@@ -12,7 +12,7 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.4.0.
+Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.5.0.
 
 ---
 
@@ -39,6 +39,7 @@ L’installation Linux respecte les principes suivants :
 │   │   ├── shikamaru.yaml
 │   │   ├── infrastructure.yaml
 │   │   └── plugins/
+│   │       ├── dhcp.yaml
 │   │       ├── dns.yaml
 │   │       ├── ntp.yaml
 │   │       ├── mqtt.yaml
@@ -107,6 +108,7 @@ La structure retenue est :
 ├── shikamaru.yaml
 ├── infrastructure.yaml
 └── plugins/
+    ├── dhcp.yaml
     ├── dns.yaml
     ├── ntp.yaml
     ├── mqtt.yaml
@@ -141,6 +143,23 @@ Ce fichier décrit l’infrastructure observée :
 * endpoints ;
 * services ;
 * capacités associées.
+
+### Plugin DHCP
+
+```text
+/etc/ohana-agent/plugins/dhcp.yaml
+```
+
+Ce fichier contient la configuration du plugin d’observation DHCP :
+
+* activation du contrôle de l’unité `dnsmasq.service` ;
+* délai et intervalle d’exécution ;
+* taux maximal d’occupation de la plage.
+
+L’adresse et le port du service DHCP restent déclarés dans
+`infrastructure.yaml`. Le nœud local et les chemins dnsmasq sont réutilisés
+depuis la section `administration.dhcp` de `shikamaru.yaml`. La commande
+`systemctl` est interne à l’Agent et n’est pas configurable depuis l’API.
 
 ### Plugin DNS
 
@@ -299,6 +318,7 @@ avec les chemins de configuration explicites :
 ```text
 --config /etc/ohana-agent/shikamaru.yaml
 --infrastructure /etc/ohana-agent/infrastructure.yaml
+--dhcp-config /etc/ohana-agent/plugins/dhcp.yaml
 --dns-config /etc/ohana-agent/plugins/dns.yaml
 --ntp-config /etc/ohana-agent/plugins/ntp.yaml
 --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml
@@ -414,6 +434,7 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | ------------------ | --------------------------------------- |
 | `--config`         | `/etc/ohana-agent/shikamaru.yaml`      |
 | `--infrastructure` | `/etc/ohana-agent/infrastructure.yaml` |
+| `--dhcp-config`    | `/etc/ohana-agent/plugins/dhcp.yaml`   |
 | `--dns-config`     | `/etc/ohana-agent/plugins/dns.yaml`    |
 | `--ntp-config`     | `/etc/ohana-agent/plugins/ntp.yaml`    |
 | `--mqtt-config`    | `/etc/ohana-agent/plugins/mqtt.yaml`   |
@@ -426,6 +447,7 @@ Commande de référence :
 /opt/ohana-agent/venv/bin/ohana-agent \
   --config /etc/ohana-agent/shikamaru.yaml \
   --infrastructure /etc/ohana-agent/infrastructure.yaml \
+  --dhcp-config /etc/ohana-agent/plugins/dhcp.yaml \
   --dns-config /etc/ohana-agent/plugins/dns.yaml \
   --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
   --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \
@@ -444,6 +466,7 @@ Les chemins présents dans le dépôt restent valides pour le développement :
 ```text
 config/shikamaru.yaml
 config/infrastructure.yaml
+config/plugins/dhcp.yaml
 config/plugins/dns.yaml
 config/plugins/ntp.yaml
 config/plugins/mqtt.yaml
@@ -488,9 +511,9 @@ Ils ne devront être ajoutés que lorsqu’un composant de production les utilis
 
 ---
 
-## Contrat pour la version 1.4.0
+## Contrat pour la version 1.5.0
 
-L’arborescence Linux de référence d’Ohana-Agent 1.4.0 est :
+L’arborescence Linux de référence d’Ohana-Agent 1.5.0 est :
 
 ```text
 Logiciel       /opt/ohana-agent/venv

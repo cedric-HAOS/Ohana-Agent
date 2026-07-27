@@ -111,6 +111,23 @@ Principaux acquis :
 
 ---
 
+# v1.5.0 — Observation DHCP
+
+**Statut : terminé.**
+
+Principaux acquis :
+
+- plugin DHCP enregistré dans le `PluginManager` ;
+- découverte des services DHCP depuis l’infrastructure ;
+- observation `dhcp.status` du service dnsmasq local ;
+- lecture de la plage et des baux sans allocation artificielle ;
+- calcul de l’occupation de la plage et seuil de santé configurable ;
+- reconfiguration, planification et test immédiat sans redémarrage ;
+- commande système interne non modifiable depuis Vision ;
+- maintien de l’administration DHCP dédiée pour les paramètres et réservations.
+
+---
+
 # v2.0.0 — Actions contrôlées
 
 Objectif : passer progressivement de l'observation à l'action.

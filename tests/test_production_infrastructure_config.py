@@ -14,14 +14,21 @@ def test_production_infrastructure_declares_infra_01() -> None:
     assert node.endpoint.address == "192.168.1.10"
 
 
-def test_production_infrastructure_declares_primary_dns() -> None:
+def test_production_infrastructure_declares_primary_dhcp_and_dns() -> None:
     config = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
 
-    assert len(config.services) == 1
+    services = {service.id: service for service in config.services}
 
-    service = config.services[0]
+    assert set(services) == {"dhcp-primary", "dns-primary"}
 
-    assert service.id == "dns-primary"
-    assert service.type == "dns"
-    assert service.node == "infra-01"
-    assert service.port == 53
+    dhcp = services["dhcp-primary"]
+    assert dhcp.type == "dhcp"
+    assert dhcp.node == "infra-01"
+    assert dhcp.port == 67
+    assert dhcp.implementation == "dnsmasq"
+    assert dhcp.critical is True
+
+    dns = services["dns-primary"]
+    assert dns.type == "dns"
+    assert dns.node == "infra-01"
+    assert dns.port == 53

@@ -14,12 +14,14 @@ from administration import (
     PluginAdministrationRepository,
 )
 from builder import (
+    DHCPConfigurationBuilder,
     DNSConfigurationBuilder,
     InfrastructureBuilder,
     MQTTConfigurationBuilder,
     NetworkConfigurationBuilder,
     NTPConfigurationBuilder,
 )
+from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
 from configuration.infrastructure import InfrastructureConfig
 from configuration.infrastructure_validator import (
@@ -35,6 +37,7 @@ from infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
 from loader import (
+    DHCPConfigLoader,
     DNSConfigLoader,
     InfrastructureLoader,
     MQTTConfigLoader,
@@ -62,6 +65,9 @@ from observer.exporters import (
 )
 from plugin.plugin_context import PluginContext
 from plugin.plugin_manager import PluginManager
+from plugins.dhcp.dhcp_check import DHCPCheck
+from plugins.dhcp.dhcp_config import DHCPConfig
+from plugins.dhcp.dhcp_plugin import DHCPPlugin
 from plugins.dns.dns_check import DNSCheck
 from plugins.dns.dns_config import DNSConfig
 from plugins.dns.dns_plugin import DNSPlugin
@@ -82,6 +88,39 @@ from scheduler import (
     Task,
 )
 from scheduler.clock import Clock, SystemClock
+
+
+def _build_dhcp_tasks(
+    *,
+    dhcp_config: DHCPConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one scheduled status observation per DHCP service."""
+    return [
+        Task(
+            id=f"dhcp.status:{server.name}",
+            name=f"Observe DHCP service {server.name}",
+            command="dhcp.status",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "server": server.address,
+                "port": server.port,
+                "service_id": server.name,
+            },
+            metadata={
+                "managed_by": "dhcp",
+                "service_id": server.name,
+                "server": server.address,
+                "port": server.port,
+            },
+        )
+        for server in dhcp_config.servers
+        if server.enabled
+    ]
 
 
 def _build_dns_tasks(
@@ -250,6 +289,7 @@ def build_production_agent(
     *,
     application_config_path: Path = Path("config/shikamaru.yaml"),
     infrastructure_config_path: Path = Path("config/infrastructure.yaml"),
+    dhcp_config_path: Path = Path("config/plugins/dhcp.yaml"),
     dns_config_path: Path = Path("config/plugins/dns.yaml"),
     ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
     mqtt_config_path: Path = Path("config/plugins/mqtt.yaml"),
@@ -257,9 +297,11 @@ def build_production_agent(
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
     network_check: NetworkCheck | None = None,
+    dhcp_check: DHCPCheck | None = None,
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
     configuration = ConfigurationLoader.load(application_config_path)
+    dhcp_service_config = configuration.administration.dhcp
 
     infrastructure_config = InfrastructureLoader().load(infrastructure_config_path)
     InfrastructureValidator().validate(infrastructure_config)
@@ -267,6 +309,15 @@ def build_production_agent(
     current_infrastructure = infrastructure
     current_infrastructure_config = infrastructure_config
     infrastructure_runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
+
+    dhcp_plugin_config = DHCPConfigLoader().load(dhcp_config_path)
+    dhcp_config = DHCPConfigurationBuilder().build(
+        infrastructure,
+        dhcp_plugin_config,
+        server_node_id=dhcp_service_config.server_node_id,
+        main_config_path=dhcp_service_config.main_config_path,
+        leases_path=dhcp_service_config.leases_path,
+    )
 
     dns_plugin_config = DNSConfigLoader().load(dns_config_path)
     dns_config = DNSConfigurationBuilder().build(
@@ -354,6 +405,12 @@ def build_production_agent(
         context=plugin_context,
     )
 
+    dhcp_plugin = DHCPPlugin(
+        check=dhcp_check or DHCPCheck(),
+        config=dhcp_config,
+    )
+    plugin_manager.register(dhcp_plugin)
+
     dns_plugin = DNSPlugin(
         check=DNSCheck(),
         config=dns_config,
@@ -396,6 +453,19 @@ def build_production_agent(
         event_bus=event_bus,
     )
 
+    _replace_plugin_tasks(
+        scheduler,
+        (
+            _build_dhcp_tasks(
+                dhcp_config=dhcp_config,
+                interval_seconds=dhcp_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if dhcp_plugin_config.enabled
+            else []
+        ),
+        plugin_name="dhcp",
+    )
     _replace_plugin_tasks(
         scheduler,
         (
@@ -458,6 +528,13 @@ def build_production_agent(
         updated_runtime = InfrastructureRuntime.from_infrastructure(
             updated_infrastructure
         )
+        updated_dhcp_config = DHCPConfigurationBuilder().build(
+            updated_infrastructure,
+            dhcp_plugin_config,
+            server_node_id=dhcp_service_config.server_node_id,
+            main_config_path=dhcp_service_config.main_config_path,
+            leases_path=dhcp_service_config.leases_path,
+        )
         updated_dns_config = DNSConfigurationBuilder().build(
             updated_infrastructure,
             dns_plugin_config,
@@ -473,6 +550,15 @@ def build_production_agent(
         updated_network_config = NetworkConfigurationBuilder().build(
             changed_configuration,
             network_plugin_config,
+        )
+        updated_dhcp_tasks = (
+            _build_dhcp_tasks(
+                dhcp_config=updated_dhcp_config,
+                interval_seconds=dhcp_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if dhcp_plugin_config.enabled
+            else []
         )
         updated_dns_tasks = (
             _build_dns_tasks(
@@ -512,10 +598,16 @@ def build_production_agent(
         )
 
         observation_engine.health_manager.runtime = updated_runtime
+        dhcp_plugin.reconfigure(updated_dhcp_config)
         dns_plugin.reconfigure(updated_dns_config)
         ntp_plugin.reconfigure(updated_ntp_config)
         mqtt_plugin.reconfigure(updated_mqtt_config)
         network_plugin.reconfigure(updated_network_config)
+        _replace_plugin_tasks(
+            scheduler,
+            updated_dhcp_tasks,
+            plugin_name="dhcp",
+        )
         _replace_plugin_tasks(
             scheduler,
             updated_dns_tasks,
@@ -538,6 +630,32 @@ def build_production_agent(
         )
         current_infrastructure = updated_infrastructure
         current_infrastructure_config = changed_configuration
+
+    def apply_dhcp_configuration(configuration: DHCPPluginConfig) -> None:
+        nonlocal dhcp_plugin_config
+
+        updated_config = DHCPConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+            server_node_id=dhcp_service_config.server_node_id,
+            main_config_path=dhcp_service_config.main_config_path,
+            leases_path=dhcp_service_config.leases_path,
+        )
+        dhcp_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_dhcp_tasks(
+                    dhcp_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="dhcp",
+        )
+        dhcp_plugin_config = configuration
 
     def apply_dns_configuration(configuration: DNSPluginConfig) -> None:
         nonlocal dns_plugin_config
@@ -631,6 +749,18 @@ def build_production_agent(
         )
         network_plugin_config = configuration
 
+    def test_dhcp_plugin() -> ObserverResult:
+        servers = [server for server in dhcp_plugin.config.servers if server.enabled]
+
+        if not servers:
+            raise ValueError("The DHCP plugin has no enabled DHCP service.")
+
+        return dhcp_plugin.execute(
+            server=servers[0].address,
+            port=servers[0].port,
+            service_id=servers[0].name,
+        )
+
     def test_network_plugin() -> ObserverResult:
         devices = [device for device in network_plugin.config.devices if device.enabled]
 
@@ -713,26 +843,41 @@ def build_production_agent(
         dhcp_repository = None
 
         if administration_config.dhcp.enabled:
-            dhcp_config = administration_config.dhcp
+            administration_dhcp_config = administration_config.dhcp
             dhcp_repository = DnsmasqDHCPRepository(
-                main_config_path=dhcp_config.main_config_path,
+                main_config_path=administration_dhcp_config.main_config_path,
                 reservation_paths={
-                    "infrastructure": (dhcp_config.infrastructure_reservations_path),
-                    "servers": dhcp_config.server_reservations_path,
-                    "network": dhcp_config.network_reservations_path,
-                    "home_automation": (dhcp_config.home_automation_reservations_path),
-                    "critical": dhcp_config.critical_reservations_path,
+                    "infrastructure": (
+                        administration_dhcp_config.infrastructure_reservations_path
+                    ),
+                    "servers": administration_dhcp_config.server_reservations_path,
+                    "network": administration_dhcp_config.network_reservations_path,
+                    "home_automation": (
+                        administration_dhcp_config.home_automation_reservations_path
+                    ),
+                    "critical": administration_dhcp_config.critical_reservations_path,
                 },
-                leases_path=dhcp_config.leases_path,
-                server_node_id=dhcp_config.server_node_id,
-                validation_command=(dhcp_config.validation_command),
-                reload_request_path=(dhcp_config.reload_request_path),
+                leases_path=administration_dhcp_config.leases_path,
+                server_node_id=administration_dhcp_config.server_node_id,
+                validation_command=administration_dhcp_config.validation_command,
+                reload_request_path=administration_dhcp_config.reload_request_path,
             )
 
         plugin_repository = PluginAdministrationRepository(
             plugin_manager=plugin_manager,
             scheduler=scheduler,
             bindings=(
+                PluginAdministrationBinding(
+                    identifier="dhcp",
+                    display_name="DHCP",
+                    capabilities=("dhcp.status",),
+                    configuration_path=dhcp_config_path,
+                    configuration_model=DHCPPluginConfig,
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_dhcp_configuration(config)
+                    ),
+                    test_plugin=test_dhcp_plugin,
+                ),
                 PluginAdministrationBinding(
                     identifier="dns",
                     display_name="DNS",

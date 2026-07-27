@@ -75,7 +75,7 @@ class DnsmasqDHCPRepository:
 
     def read_configuration(self) -> DHCPConfiguration:
         """Read the supported dnsmasq directives."""
-        settings = self._read_settings()
+        settings = self.read_settings()
         reservations: list[DHCPReservation] = []
 
         for category, path in self.reservation_paths.items():
@@ -166,7 +166,8 @@ class DnsmasqDHCPRepository:
 
         return leases
 
-    def _read_settings(self) -> DHCPSettings:
+    def read_settings(self) -> DHCPSettings:
+        """Read the supported dnsmasq settings without reservations."""
         if not self.main_config_path.is_file():
             return DEFAULT_SETTINGS.model_copy(deep=True)
 

@@ -37,6 +37,15 @@ def test_network_configuration_builder_discovers_addressable_devices() -> None:
                         "node": "infra-01",
                     },
                     {
+                        "id": "camera-disabled",
+                        "label": "Camera disabled",
+                        "kind": "camera",
+                        "address": "192.168.1.50",
+                        "metadata": {
+                            "network_presence_enabled": False,
+                        },
+                    },
+                    {
                         "id": "sw-01",
                         "label": "SW-01",
                         "kind": "switch",
@@ -58,8 +67,12 @@ def test_network_configuration_builder_discovers_addressable_devices() -> None:
     assert [(device.name, device.address) for device in config.devices] == [
         ("freebox", "192.168.1.1"),
         ("infra-01", "192.168.1.10"),
+        ("camera-disabled", "192.168.1.50"),
     ]
+    assert config.devices[0].enabled is True
     assert config.devices[1].node_id == "infra-01"
+    assert config.devices[1].enabled is True
+    assert config.devices[2].enabled is False
     assert config.timeout == 1.5
     assert config.retries == 1
     assert config.failure_threshold == 4

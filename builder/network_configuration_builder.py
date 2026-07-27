@@ -36,12 +36,22 @@ class NetworkConfigurationBuilder:
             if address is None or not address.strip():
                 continue
 
+            network_presence_enabled = device.metadata.get(
+                "network_presence_enabled",
+                True,
+            )
+
             devices.append(
                 NetworkDeviceConfig(
                     name=device.id,
                     label=device.label,
                     address=address.strip(),
                     node_id=device.node,
+                    enabled=(
+                        network_presence_enabled
+                        if isinstance(network_presence_enabled, bool)
+                        else True
+                    ),
                 )
             )
 

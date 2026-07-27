@@ -25,6 +25,9 @@ Le projet suit les principes de **Semantic Versioning**.
 - Nouvel argument `--dhcp-config`, fichier de configuration et intégration au
   service systemd.
 - Déclaration du service `dhcp-primary` dans l’infrastructure de production.
+- La surveillance de présence réseau peut être activée ou désactivée pour
+  chaque équipement depuis
+  `topology.devices[].metadata.network_presence_enabled`.
 
 ## Sécurité
 

@@ -13,7 +13,7 @@ class WireGuardPluginConfig(Config):
     retries: int = Field(default=1, ge=0)
     interval_seconds: PositiveInt = 60
     app_id: str = "fr.ohana.agent"
-    app_version: str = "1.7.2"
+    app_version: str = "1.7.3"
     app_token: str | None = None
     verify_tls: bool = False
 

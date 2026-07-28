@@ -6,6 +6,32 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.7.3] — Shelly Telemetry par service — 2026-07-28
+
+## Ajouté
+
+- Publication MQTT du résumé de santé global sur `ohana/health/summary`.
+- MQTT Discovery Home Assistant pour le score, l'état global, les incidents
+  critiques, les alertes, les services dégradés ou indisponibles, les capacités
+  sans observation récente et la date de dernière évaluation.
+- Topic de disponibilité `ohana/status` avec Last Will MQTT.
+- Paramètres Home Assistant intégrés au plugin MQTT : activation, Discovery,
+  préfixes et battement périodique.
+
+## Corrigé
+
+- Shelly Telemetry est désormais déclaré comme un service rattaché au nœud de
+  l’équipement, au lieu d’utiliser des métadonnées particulières sur la carte.
+- Les observations ciblent le service déclaré, ce qui permet à la criticité du
+  service d’alimenter naturellement la santé, les alertes et les incidents.
+- L’entité de puissance, l’entité d’énergie facultative et l’âge maximal sont
+  configurés dans les métadonnées de chaque service `shelly_telemetry`.
+
+## Qualité
+
+- Version du paquet alignée sur `1.7.3`.
+- 1157 tests réussis.
+
 # [1.7.2] — Z-Wave JS Server WebSocket — 2026-07-28
 
 ## Corrigé
@@ -16,6 +42,10 @@ Le projet suit les principes de **Semantic Versioning**.
   produire une observation saine.
 - Les installations autonomes exposant encore `/health/zwave` en HTTP ou HTTPS
   restent prises en charge explicitement par les métadonnées du service.
+- La sélection Shelly Telemetry et les identifiants d’entités Home Assistant
+  sont désormais définis sur chaque équipement de la topologie, et non dans la
+  configuration globale du plugin.
+- Les observations Shelly ciblent maintenant directement l’équipement concerné.
 
 ## Ajouté
 
@@ -30,7 +60,7 @@ Le projet suit les principes de **Semantic Versioning**.
 - Version du paquet alignée sur `1.7.2`.
 - Tests dédiés au protocole WebSocket, au port `3000` par défaut et au contrat
   de version d’administration.
-- 1148 tests réussis.
+- 1150 tests réussis.
 
 ---
 

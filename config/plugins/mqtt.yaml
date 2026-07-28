@@ -16,3 +16,10 @@ tls:
   enabled: false
   ca_file: null
   insecure: false
+
+home_assistant:
+  enabled: true
+  discovery_enabled: true
+  discovery_prefix: homeassistant
+  topic_prefix: ohana
+  heartbeat_seconds: 60

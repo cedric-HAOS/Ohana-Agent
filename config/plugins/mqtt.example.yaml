@@ -40,3 +40,11 @@ tls:
 
   # Keep false in production. True disables certificate hostname validation.
   insecure: false
+
+# Publish the global Ohana health summary as one Home Assistant device.
+home_assistant:
+  enabled: true
+  discovery_enabled: true
+  discovery_prefix: homeassistant
+  topic_prefix: ohana
+  heartbeat_seconds: 60

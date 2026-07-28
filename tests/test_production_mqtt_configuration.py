@@ -17,3 +17,8 @@ def test_production_mqtt_configuration_uses_expected_settings() -> None:
     assert config.qos == 1
     assert config.authentication.username is None
     assert config.tls.enabled is False
+    assert config.home_assistant.enabled is True
+    assert config.home_assistant.discovery_enabled is True
+    assert config.home_assistant.discovery_prefix == "homeassistant"
+    assert config.home_assistant.topic_prefix == "ohana"
+    assert config.home_assistant.heartbeat_seconds == 60

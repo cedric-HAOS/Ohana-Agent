@@ -72,6 +72,9 @@ def test_mqtt_configuration_builder_discovers_mqtt_services() -> None:
     assert config.qos == 2
     assert config.authentication.username == "observer"
     assert config.authentication.password == "secret"
+    assert config.home_assistant.enabled is True
+    assert config.home_assistant.discovery_prefix == "homeassistant"
+    assert config.home_assistant.topic_prefix == "ohana"
 
 
 def test_mqtt_configuration_builder_uses_tls_default_port() -> None:
@@ -89,3 +92,17 @@ def test_mqtt_configuration_builder_rejects_invalid_port() -> None:
             make_infrastructure(port=70_000),
             MQTTPluginConfig(),
         )
+
+
+def test_mqtt_configuration_builder_disables_home_assistant_with_plugin() -> None:
+    config = MQTTConfigurationBuilder().build(
+        make_infrastructure(),
+        MQTTPluginConfig.model_validate(
+            {
+                "enabled": False,
+                "home_assistant": {"enabled": True},
+            }
+        ),
+    )
+
+    assert config.home_assistant.enabled is False

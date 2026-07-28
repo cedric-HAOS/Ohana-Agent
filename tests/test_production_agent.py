@@ -344,3 +344,38 @@ def test_production_agent_requires_client_and_payload_together(
             vision_client=vision_client,
             infrastructure_payload=infrastructure_payload,
         )
+
+
+@dataclass
+class FakeHomeAssistantPublisher:
+    """Capture MQTT Home Assistant publisher lifecycle operations."""
+
+    start_calls: int = 0
+    tick_calls: int = 0
+    stop_calls: int = 0
+
+    def start(self) -> None:
+        self.start_calls += 1
+
+    def tick(self) -> None:
+        self.tick_calls += 1
+
+    def stop(self) -> None:
+        self.stop_calls += 1
+
+
+def test_production_agent_manages_home_assistant_publisher() -> None:
+    scheduler = FakeScheduler()
+    publisher = FakeHomeAssistantPublisher()
+    agent = ProductionAgent(
+        scheduler=scheduler,  # type: ignore[arg-type]
+        home_assistant_publisher=publisher,
+    )
+
+    agent.start()
+    agent.tick()
+    agent.stop()
+
+    assert publisher.start_calls == 1
+    assert publisher.tick_calls == 1
+    assert publisher.stop_calls == 1

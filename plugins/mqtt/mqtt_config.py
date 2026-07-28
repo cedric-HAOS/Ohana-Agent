@@ -31,6 +31,17 @@ class MQTTTLSConfig:
 
 
 @dataclass(frozen=True)
+class MQTTHomeAssistantConfig:
+    """Home Assistant MQTT Discovery export settings."""
+
+    enabled: bool = True
+    discovery_enabled: bool = True
+    discovery_prefix: str = "homeassistant"
+    topic_prefix: str = "ohana"
+    heartbeat_seconds: int = 60
+
+
+@dataclass(frozen=True)
 class MQTTConfig:
     """Configuration for the MQTT plugin."""
 
@@ -45,3 +56,6 @@ class MQTTConfig:
         default_factory=MQTTAuthenticationConfig
     )
     tls: MQTTTLSConfig = field(default_factory=MQTTTLSConfig)
+    home_assistant: MQTTHomeAssistantConfig = field(
+        default_factory=MQTTHomeAssistantConfig
+    )

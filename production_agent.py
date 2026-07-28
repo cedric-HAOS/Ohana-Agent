@@ -29,6 +29,19 @@ class AdministrationRuntime(Protocol):
         """Stop accepting administration requests."""
 
 
+class HomeAssistantPublisherRuntime(Protocol):
+    """Lifecycle exposed by the MQTT Home Assistant publisher."""
+
+    def start(self) -> None:
+        """Connect and publish MQTT Discovery."""
+
+    def tick(self) -> None:
+        """Publish a heartbeat when it becomes due."""
+
+    def stop(self) -> None:
+        """Publish the offline state and disconnect."""
+
+
 @dataclass(slots=True)
 class ProductionAgent:
     """Run the configured Ohana-Agent scheduler continuously."""
@@ -40,6 +53,7 @@ class ProductionAgent:
     infrastructure_retry_seconds: float = 10.0
     infrastructure_refresh_seconds: float = 300.0
     administration_runtime: AdministrationRuntime | None = None
+    home_assistant_publisher: HomeAssistantPublisherRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     monotonic_clock: Callable[[], float] = field(
         default=monotonic,
@@ -108,6 +122,7 @@ class ProductionAgent:
 
         self._stop_event.clear()
         self._start_administration()
+        self._start_home_assistant_publisher()
 
         if not self._synchronize_infrastructure():
             return
@@ -132,15 +147,20 @@ class ProductionAgent:
                         result.error or "unknown error",
                     )
 
+            self._tick_home_assistant_publisher()
+
     def run(self) -> None:
         """Run until a stop request is received."""
         self._stop_event.clear()
         self._start_administration()
+        self._start_home_assistant_publisher()
 
         try:
             while not self._stop_event.is_set():
                 if not self._infrastructure_synchronized:
                     if not self._synchronize_infrastructure():
+                        self._tick_home_assistant_publisher()
+
                         if self._stop_event.wait(self.infrastructure_retry_seconds):
                             break
 
@@ -175,6 +195,9 @@ class ProductionAgent:
 
         if self.administration_runtime is not None:
             self.administration_runtime.stop()
+
+        if self.home_assistant_publisher is not None:
+            self.home_assistant_publisher.stop()
 
         self._infrastructure_synchronized = False
         self._next_infrastructure_refresh_at = None
@@ -224,6 +247,14 @@ class ProductionAgent:
     def _start_administration(self) -> None:
         if self.administration_runtime is not None:
             self.administration_runtime.start()
+
+    def _start_home_assistant_publisher(self) -> None:
+        if self.home_assistant_publisher is not None:
+            self.home_assistant_publisher.start()
+
+    def _tick_home_assistant_publisher(self) -> None:
+        if self.home_assistant_publisher is not None:
+            self.home_assistant_publisher.tick()
 
     def _start_scheduler(self) -> None:
         """Start observations after infrastructure synchronization."""

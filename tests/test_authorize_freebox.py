@@ -54,7 +54,7 @@ def write_config(path: Path) -> None:
             (
                 "enabled: true",
                 "app_id: fr.ohana.agent",
-                "app_version: 1.7.2",
+                "app_version: 1.7.3",
                 "app_token: null",
                 "verify_tls: false",
                 "",
@@ -93,7 +93,7 @@ def test_authorize_freebox_stores_granted_token(
     assert payload["app_token"] == "secret-token"
     assert client.request is not None
     assert client.request["base_url"] == "http://192.168.1.1"
-    assert client.request["app_version"] == "1.7.2"
+    assert client.request["app_version"] == "1.7.3"
 
 
 def test_authorize_freebox_does_not_store_denied_token(

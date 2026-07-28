@@ -92,8 +92,15 @@ ohana/commands/<target>
 ## Santé
 
 ```text
-ohana/health
+ohana/status
+ohana/health/summary
 ```
+
+`ohana/status` publie la disponibilité d'Ohana-Agent avec un Last Will MQTT.
+
+`ohana/health/summary` publie une synthèse JSON contenant le score global,
+l'état, les alertes, les incidents critiques, la répartition des services et la
+fraîcheur des capacités.
 
 ---
 

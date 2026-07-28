@@ -45,6 +45,29 @@ class MQTTPluginTLSConfig(Config):
         return self
 
 
+class MQTTHomeAssistantConfig(Config):
+    """Home Assistant MQTT Discovery export settings."""
+
+    enabled: bool = True
+    discovery_enabled: bool = True
+    discovery_prefix: str = "homeassistant"
+    topic_prefix: str = "ohana"
+    heartbeat_seconds: PositiveInt = 60
+
+    @field_validator("discovery_prefix", "topic_prefix")
+    @classmethod
+    def validate_mqtt_prefix(cls, value: str) -> str:
+        normalized = value.strip().strip("/")
+
+        if not normalized:
+            raise ValueError("MQTT prefix must not be empty.")
+
+        if any(character in normalized for character in {"+", "#"}):
+            raise ValueError("MQTT prefix must not contain wildcards.")
+
+        return normalized
+
+
 class MQTTPluginConfig(Config):
     """Declarative configuration for the MQTT observation plugin."""
 
@@ -61,6 +84,9 @@ class MQTTPluginConfig(Config):
         default_factory=MQTTPluginAuthenticationConfig
     )
     tls: MQTTPluginTLSConfig = Field(default_factory=MQTTPluginTLSConfig)
+    home_assistant: MQTTHomeAssistantConfig = Field(
+        default_factory=MQTTHomeAssistantConfig
+    )
 
     @field_validator("client_id_prefix")
     @classmethod

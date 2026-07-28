@@ -80,6 +80,7 @@ from plugins.dhcp.dhcp_plugin import DHCPPlugin
 from plugins.dns.dns_check import DNSCheck
 from plugins.dns.dns_config import DNSConfig
 from plugins.dns.dns_plugin import DNSPlugin
+from plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
 from plugins.mqtt.mqtt_check import MQTTCheck
 from plugins.mqtt.mqtt_config import MQTTConfig
 from plugins.mqtt.mqtt_plugin import MQTTPlugin
@@ -355,30 +356,36 @@ def _build_shelly_telemetry_tasks(
     interval_seconds: int,
     start_at: datetime,
 ) -> list[Task]:
-    """Build one telemetry freshness observation per Shelly device."""
+    """Build one telemetry freshness observation per declared service."""
     return [
         Task(
-            id=f"shelly.telemetry.freshness:{device.name}",
-            name=f"Check Shelly telemetry for {device.name}",
+            id=f"shelly.telemetry.freshness:{service.name}",
+            name=f"Check Shelly telemetry service {service.name}",
             command="shelly.telemetry.freshness",
             trigger=IntervalTrigger(
                 interval=timedelta(seconds=interval_seconds),
                 start_at=start_at,
             ),
             arguments={
-                "device_name": device.name,
-                "power_entity_id": device.power_entity_id,
-                "energy_entity_id": device.energy_entity_id,
+                "service_id": service.name,
+                "service_name": service.label,
+                "node_id": service.node_id,
+                "power_entity_id": service.power_entity_id,
+                "energy_entity_id": service.energy_entity_id,
+                "maximum_age_seconds": service.maximum_age_seconds,
             },
             metadata={
                 "managed_by": "shelly_telemetry",
-                "device_name": device.name,
-                "power_entity_id": device.power_entity_id,
-                "energy_entity_id": device.energy_entity_id,
+                "service_id": service.name,
+                "service_name": service.label,
+                "node_id": service.node_id,
+                "power_entity_id": service.power_entity_id,
+                "energy_entity_id": service.energy_entity_id,
+                "maximum_age_seconds": service.maximum_age_seconds,
             },
         )
-        for device in shelly_telemetry_config.devices
-        if device.enabled
+        for service in shelly_telemetry_config.services
+        if service.enabled
     ]
 
 
@@ -485,7 +492,8 @@ def build_production_agent(
         shelly_telemetry_config_path
     )
     shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
-        shelly_telemetry_plugin_config
+        infrastructure,
+        shelly_telemetry_plugin_config,
     )
 
     event_bus = EventBus()
@@ -504,13 +512,19 @@ def build_production_agent(
             timeout_seconds=(configuration.vision.timeout_seconds),
         )
 
+    mqtt_home_assistant_publisher = MQTTHomeAssistantPublisher(
+        config=mqtt_config,
+        infrastructure=infrastructure_config,
+    )
+
     export_handler = ObservationExportHandler(
         pipeline=ObservationExportPipeline(
             exporters=[
                 VisionObservationExporter(
                     client=resolved_vision_client,
                     mapper=VisionObservationMapper(),
-                )
+                ),
+                mqtt_home_assistant_publisher,
             ]
         )
     )
@@ -566,6 +580,7 @@ def build_production_agent(
     mqtt_plugin = MQTTPlugin(
         check=MQTTCheck(),
         config=mqtt_config,
+        home_assistant_publisher=mqtt_home_assistant_publisher,
     )
     plugin_manager.register(mqtt_plugin)
 
@@ -756,6 +771,10 @@ def build_production_agent(
             updated_infrastructure,
             wireguard_plugin_config,
         )
+        updated_shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
+            updated_infrastructure,
+            shelly_telemetry_plugin_config,
+        )
         updated_dhcp_tasks = (
             _build_dhcp_tasks(
                 dhcp_config=updated_dhcp_config,
@@ -819,15 +838,28 @@ def build_production_agent(
             if wireguard_plugin_config.enabled
             else []
         )
+        updated_shelly_telemetry_tasks = (
+            _build_shelly_telemetry_tasks(
+                shelly_telemetry_config=updated_shelly_telemetry_config,
+                interval_seconds=shelly_telemetry_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if shelly_telemetry_plugin_config.enabled
+            else []
+        )
 
         observation_engine.health_manager.runtime = updated_runtime
         dhcp_plugin.reconfigure(updated_dhcp_config)
         dns_plugin.reconfigure(updated_dns_config)
         ntp_plugin.reconfigure(updated_ntp_config)
-        mqtt_plugin.reconfigure(updated_mqtt_config)
+        mqtt_plugin.reconfigure(
+            updated_mqtt_config,
+            infrastructure=changed_configuration,
+        )
         network_plugin.reconfigure(updated_network_config)
         zwave_plugin.reconfigure(updated_zwave_config)
         wireguard_plugin.reconfigure(updated_wireguard_config)
+        shelly_telemetry_plugin.reconfigure(updated_shelly_telemetry_config)
         _replace_plugin_tasks(
             scheduler,
             updated_dhcp_tasks,
@@ -862,6 +894,11 @@ def build_production_agent(
             scheduler,
             updated_wireguard_tasks,
             plugin_name="wireguard",
+        )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_shelly_telemetry_tasks,
+            plugin_name="shelly_telemetry",
         )
         current_infrastructure = updated_infrastructure
         current_infrastructure_config = changed_configuration
@@ -1037,7 +1074,10 @@ def build_production_agent(
     ) -> None:
         nonlocal shelly_telemetry_plugin_config
 
-        updated_config = ShellyTelemetryConfigurationBuilder().build(configuration)
+        updated_config = ShellyTelemetryConfigurationBuilder().build(
+            current_infrastructure_config,
+            configuration,
+        )
         shelly_telemetry_plugin.reconfigure(updated_config)
         _replace_plugin_tasks(
             scheduler,
@@ -1143,20 +1183,25 @@ def build_production_agent(
         )
 
     def test_shelly_telemetry_plugin() -> ObserverResult:
-        devices = [
-            device
-            for device in shelly_telemetry_plugin.config.devices
-            if device.enabled
+        services = [
+            service
+            for service in shelly_telemetry_plugin.config.services
+            if service.enabled
         ]
 
-        if not devices:
-            raise ValueError("The Shelly telemetry plugin has no enabled device.")
+        if not services:
+            raise ValueError(
+                "The Shelly telemetry plugin has no enabled Shelly telemetry service."
+            )
 
-        device = devices[0]
+        service = services[0]
         return shelly_telemetry_plugin.execute(
-            device_name=device.name,
-            power_entity_id=device.power_entity_id,
-            energy_entity_id=device.energy_entity_id,
+            service_id=service.name,
+            service_name=service.label,
+            node_id=service.node_id,
+            power_entity_id=service.power_entity_id,
+            energy_entity_id=service.energy_entity_id,
+            maximum_age_seconds=service.maximum_age_seconds,
         )
 
     agent = ProductionAgent(
@@ -1172,6 +1217,7 @@ def build_production_agent(
             configuration.vision.infrastructure_refresh_seconds
         ),
         infrastructure_reconfigure=reconfigure_infrastructure,
+        home_assistant_publisher=mqtt_home_assistant_publisher,
     )
 
     if configuration.administration.enabled:

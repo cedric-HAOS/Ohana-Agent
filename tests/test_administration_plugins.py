@@ -302,6 +302,8 @@ tls:
 
     assert authentication["password"] is None
     assert authentication["password_configured"] is True
+    assert current.configuration["home_assistant"]["enabled"] is True
+    assert current.configuration["home_assistant"]["topic_prefix"] == "ohana"
 
     repository.write(
         "mqtt",

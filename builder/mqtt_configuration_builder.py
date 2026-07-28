@@ -6,6 +6,7 @@ from plugins.mqtt.mqtt_config import (
     MQTTAuthenticationConfig,
     MQTTBrokerConfig,
     MQTTConfig,
+    MQTTHomeAssistantConfig,
     MQTTTLSConfig,
 )
 
@@ -35,6 +36,13 @@ class MQTTConfigurationBuilder:
             authentication=MQTTAuthenticationConfig(
                 username=config.authentication.username,
                 password=config.authentication.password,
+            ),
+            home_assistant=MQTTHomeAssistantConfig(
+                enabled=(config.enabled and config.home_assistant.enabled),
+                discovery_enabled=config.home_assistant.discovery_enabled,
+                discovery_prefix=config.home_assistant.discovery_prefix,
+                topic_prefix=config.home_assistant.topic_prefix,
+                heartbeat_seconds=config.home_assistant.heartbeat_seconds,
             ),
             tls=MQTTTLSConfig(
                 enabled=config.tls.enabled,

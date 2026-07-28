@@ -43,7 +43,7 @@ class ShellyTelemetryPlugin(Plugin):
         """Return the Shelly telemetry plugin manifest."""
         return PluginManifest(
             name="shelly_telemetry",
-            version="0.1.0",
+            version="0.2.0",
             description=(
                 "Shelly power telemetry freshness plugin through Home Assistant."
             ),
@@ -55,17 +55,32 @@ class ShellyTelemetryPlugin(Plugin):
         self._state = PluginState.REGISTERED
 
     def execute(self, **kwargs: Any) -> ObserverResult:
-        """Check one configured Shelly device through the common plugin API."""
+        """Check one configured Shelly telemetry service."""
         from observer.observer_result import ObserverResult
 
-        device_name = kwargs.get("device_name")
+        service_id = kwargs.get("service_id")
+        service_name = kwargs.get("service_name")
+        node_id = kwargs.get("node_id")
         power_entity_id = kwargs.get("power_entity_id")
         energy_entity_id = kwargs.get("energy_entity_id")
+        maximum_age_seconds = kwargs.get(
+            "maximum_age_seconds",
+            self.config.maximum_age_seconds,
+        )
 
-        if not isinstance(device_name, str) or not device_name.strip():
+        if not isinstance(service_id, str) or not service_id.strip():
             raise ValueError(
                 "ShellyTelemetryPlugin.execute() requires a non-empty "
-                "'device_name' argument."
+                "'service_id' argument."
+            )
+
+        if not isinstance(service_name, str) or not service_name.strip():
+            service_name = service_id
+
+        if not isinstance(node_id, str) or not node_id.strip():
+            raise ValueError(
+                "ShellyTelemetryPlugin.execute() requires a non-empty "
+                "'node_id' argument."
             )
 
         if not isinstance(power_entity_id, str) or not power_entity_id.strip():
@@ -82,9 +97,19 @@ class ShellyTelemetryPlugin(Plugin):
                 "to be null or non-empty."
             )
 
+        if (
+            isinstance(maximum_age_seconds, bool)
+            or not isinstance(maximum_age_seconds, int)
+            or maximum_age_seconds <= 0
+        ):
+            raise ValueError(
+                "ShellyTelemetryPlugin.execute() requires a positive "
+                "'maximum_age_seconds' argument."
+            )
+
         started_at = perf_counter()
         result = self._check.check(
-            device_name.strip(),
+            service_name.strip(),
             power_entity_id.strip(),
             energy_entity_id=(
                 energy_entity_id.strip() if isinstance(energy_entity_id, str) else None
@@ -94,7 +119,7 @@ class ShellyTelemetryPlugin(Plugin):
             access_token_environment_variable=(
                 self.config.access_token_environment_variable
             ),
-            maximum_age_seconds=self.config.maximum_age_seconds,
+            maximum_age_seconds=maximum_age_seconds,
             timeout=self.config.timeout,
             retries=self.config.retries,
             verify_tls=self.config.verify_tls,
@@ -117,14 +142,17 @@ class ShellyTelemetryPlugin(Plugin):
                 "Check that Home Assistant still receives Shelly power telemetry."
             ),
             metadata={
-                "device_name": result.device_name,
+                "target_type": "service",
+                "service_id": service_id.strip(),
+                "service_name": service_name.strip(),
+                "node_id": node_id.strip(),
                 "power": self._value_metadata(result.power),
                 "energy": (
                     self._value_metadata(result.energy)
                     if result.energy is not None
                     else None
                 ),
-                "maximum_age_seconds": self.config.maximum_age_seconds,
+                "maximum_age_seconds": maximum_age_seconds,
                 "attempts": result.attempts,
                 "home_assistant_url": self.config.home_assistant_url,
                 "verify_tls": self.config.verify_tls,
@@ -133,7 +161,7 @@ class ShellyTelemetryPlugin(Plugin):
         )
 
     def reconfigure(self, config: ShellyTelemetryConfig) -> None:
-        """Replace Shelly devices and policy without recreating the plugin."""
+        """Replace Shelly services and policy without recreating the plugin."""
         self.config = config
 
     @staticmethod

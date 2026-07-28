@@ -24,6 +24,7 @@ class ServiceType(StrEnum):
     HOME_ASSISTANT = "home_assistant"
     ZWAVE = "zwave"
     WIREGUARD = "wireguard"
+    SHELLY_TELEMETRY = "shelly_telemetry"
     TELEINFORMATION = "teleinformation"
 
 

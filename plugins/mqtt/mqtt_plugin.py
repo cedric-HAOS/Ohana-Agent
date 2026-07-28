@@ -9,11 +9,13 @@ from plugin.plugin import Plugin
 from plugin.plugin_context import PluginContext
 from plugin.plugin_manifest import PluginManifest
 from plugin.plugin_runtime import PluginState
+from plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
 from plugins.mqtt.mqtt_check import MQTTCheck
 from plugins.mqtt.mqtt_check_result import MQTTCheckResult
 from plugins.mqtt.mqtt_config import MQTTConfig
 
 if TYPE_CHECKING:
+    from configuration.infrastructure import InfrastructureConfig
     from observer.observer_result import ObserverResult
 
 
@@ -25,10 +27,12 @@ class MQTTPlugin(Plugin):
         *,
         check: MQTTCheck | None = None,
         config: MQTTConfig | None = None,
+        home_assistant_publisher: MQTTHomeAssistantPublisher | None = None,
     ) -> None:
         self._state = PluginState.LOADED
         self._check = check or MQTTCheck()
         self.config = config or MQTTConfig()
+        self.home_assistant_publisher = home_assistant_publisher
 
     @property
     def name(self) -> str:
@@ -141,9 +145,20 @@ class MQTTPlugin(Plugin):
             tls_insecure=self.config.tls.insecure,
         )
 
-    def reconfigure(self, config: MQTTConfig) -> None:
+    def reconfigure(
+        self,
+        config: MQTTConfig,
+        *,
+        infrastructure: InfrastructureConfig | None = None,
+    ) -> None:
         """Replace MQTT brokers and settings without recreating the plugin."""
         self.config = config
+
+        if self.home_assistant_publisher is not None:
+            self.home_assistant_publisher.reconfigure(
+                config,
+                infrastructure=infrastructure,
+            )
 
     @staticmethod
     def _message(result: MQTTCheckResult) -> str:

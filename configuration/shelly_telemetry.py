@@ -6,7 +6,7 @@ from configuration.base import Config
 
 
 class ShellyTelemetryDevicePluginConfig(Config):
-    """One Shelly device represented by Home Assistant sensor entities."""
+    """Legacy global Shelly mapping accepted during configuration migration."""
 
     name: str
     power_entity_id: str
@@ -42,7 +42,7 @@ class ShellyTelemetryDevicePluginConfig(Config):
 
 
 class ShellyTelemetryPluginConfig(Config):
-    """Declarative configuration for Shelly telemetry freshness checks."""
+    """Global Home Assistant connection and freshness policy."""
 
     enabled: bool = True
     timeout: PositiveFloat = 5.0
@@ -53,7 +53,13 @@ class ShellyTelemetryPluginConfig(Config):
     access_token: str | None = None
     access_token_environment_variable: str | None = "OHANA_HOME_ASSISTANT_TOKEN"
     verify_tls: bool = True
-    devices: list[ShellyTelemetryDevicePluginConfig] = Field(default_factory=list)
+    # Accepted only so an existing 1.7.0/1.7.1 configuration still starts.
+    # Device mappings now live in topology device metadata and are omitted on save.
+    devices: list[ShellyTelemetryDevicePluginConfig] = Field(
+        default_factory=list,
+        exclude=True,
+        repr=False,
+    )
 
     @field_validator("home_assistant_url")
     @classmethod
@@ -80,10 +86,5 @@ class ShellyTelemetryPluginConfig(Config):
             raise ValueError(
                 "Shelly telemetry requires an access token or environment variable."
             )
-
-        names = [device.name.casefold() for device in self.devices]
-
-        if len(names) != len(set(names)):
-            raise ValueError("Shelly telemetry device names must be unique.")
 
         return self

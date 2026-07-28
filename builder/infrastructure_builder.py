@@ -77,6 +77,8 @@ class InfrastructureBuilder:
                     **service_config.metadata,
                     "implementation": service_config.implementation,
                     "critical": service_config.critical,
+                    "node_id": service_config.node,
+                    "label": service_config.name,
                 },
             )
 

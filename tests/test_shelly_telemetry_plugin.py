@@ -20,10 +20,10 @@ class FakeShellyTelemetryCheck:
         return self.result
 
 
-def test_shelly_telemetry_plugin_returns_freshness_observation() -> None:
+def test_shelly_telemetry_plugin_returns_service_observation() -> None:
     check = FakeShellyTelemetryCheck(
         ShellyTelemetryCheckResult(
-            device_name="Cuisine",
+            device_name="Télémétrie cuisine",
             healthy=True,
             power=ShellyTelemetryValue(
                 entity_id="sensor.shelly_power",
@@ -38,18 +38,28 @@ def test_shelly_telemetry_plugin_returns_freshness_observation() -> None:
     )
 
     result = plugin.execute(
-        device_name="Cuisine",
+        service_id="shelly-telemetry-cuisine",
+        service_name="Télémétrie cuisine",
+        node_id="shelly-cuisine",
         power_entity_id="sensor.shelly_power",
+        maximum_age_seconds=600,
     )
 
     assert result.success is True
     assert result.check == "shelly.telemetry.freshness"
+    assert result.metadata["target_type"] == "service"
+    assert result.metadata["service_id"] == "shelly-telemetry-cuisine"
+    assert result.metadata["node_id"] == "shelly-cuisine"
+    assert result.metadata["maximum_age_seconds"] == 600
     assert result.metadata["power"]["value"] == 0.0
+    assert check.calls[0][2]["maximum_age_seconds"] == 600
 
 
 def test_shelly_telemetry_plugin_requires_power_entity() -> None:
     with pytest.raises(ValueError, match="power_entity_id"):
         ShellyTelemetryPlugin().execute(
-            device_name="Cuisine",
+            service_id="shelly-telemetry-cuisine",
+            service_name="Télémétrie cuisine",
+            node_id="shelly-cuisine",
             power_entity_id="",
         )

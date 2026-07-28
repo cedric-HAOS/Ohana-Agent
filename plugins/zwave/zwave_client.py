@@ -21,7 +21,7 @@ def _agent_version() -> str:
     try:
         return package_version("ohana-agent")
     except PackageNotFoundError:
-        return "1.7.2"
+        return "1.7.3"
 
 
 class ZWaveHealthClient:

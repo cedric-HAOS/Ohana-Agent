@@ -7,10 +7,5 @@ home_assistant_url: http://ha-green.ohana.lan:8123
 access_token: null
 access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
 verify_tls: true
-devices: []
-# Example:
-# devices:
-#   - name: Shelly Pro EM garage
-#     power_entity_id: sensor.shelly_pro_em_garage_total_active_power
-#     energy_entity_id: sensor.shelly_pro_em_garage_total_active_energy
-#     enabled: true
+# Shelly targets, Home Assistant entity IDs and freshness limits are declared
+# as services of type shelly_telemetry in infrastructure.yaml.

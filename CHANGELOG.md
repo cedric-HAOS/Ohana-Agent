@@ -6,6 +6,57 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.7.0] — Freebox WireGuard et Shelly Telemetry — 2026-07-27
+
+## Corrigé
+
+- Le plugin `wireguard` n’inspecte plus une interface locale sur INFRA-01.
+- L’état du serveur WireGuard est désormais lu directement dans Freebox OS à partir du service WireGuard déclaré sur le nœud Freebox.
+
+## Ajouté
+
+- Authentification à l’API Freebox OS avec `app_id`, `app_token` et session temporaire.
+- Contrôle de l’état `started` du serveur VPN `wireguard` et remontée du nombre de connexions lorsqu’il est disponible.
+- Script `scripts/authorize_freebox.py` pour demander l’autorisation sur l’écran de la Freebox et enregistrer le jeton.
+- Plugin `shelly_telemetry` et capacité `shelly.telemetry.freshness`.
+- Vérification de la fraîcheur des capteurs de puissance et d’énergie Shelly via l’API REST de Home Assistant.
+- Distinction entre une puissance valide de `0 W` et une télémétrie qui n’est plus remontée.
+- Masquage et conservation des jetons Freebox et Home Assistant dans l’administration des plugins.
+- Nouvel argument `--shelly-telemetry-config` et intégration au service systemd.
+
+## Qualité
+
+- 1140 tests unitaires, d’intégration, HTTP et de packaging réussis.
+- Wheel et archive source 1.7.0 construites et vérifiées.
+
+---
+
+# [1.6.0] — Z-Wave et WireGuard — 2026-07-27
+
+## Ajouté
+
+- Plugin intégré `zwave` et capacité `zwave.status`.
+- Interrogation de l’état de connexion de Z-Wave JS UI via son point de santé.
+- Découverte des services Z-Wave depuis `infrastructure.yaml`, avec port 8091 par défaut.
+- Plugin intégré `wireguard` et capacité `wireguard.status`.
+- Inspection locale des interfaces WireGuard avec `wg show` et contrôle optionnel de l’âge du dernier échange d’un pair.
+- Reconfiguration à chaud, planification et test immédiat des deux plugins depuis Vision.
+- Nouveaux arguments `--zwave-config` et `--wireguard-config`.
+
+## Sécurité
+
+- Le plugin WireGuard exécute uniquement la commande fixe `wg show <interface> latest-handshakes`.
+- Aucune clé privée WireGuard n’est lue ni exposée dans les observations.
+- La vérification TLS du plugin Z-Wave reste activée par défaut.
+
+## Qualité
+
+- 1131 tests unitaires, d’intégration, HTTP et de packaging réussis.
+- Tests dédiés aux chargeurs, constructeurs, politiques, reprises et contrats d’observation.
+- Service systemd, scripts de déploiement et artefacts de distribution mis à jour.
+
+---
+
 # [1.5.0] — Observation DHCP — 2026-07-27
 
 ## Ajouté

@@ -27,6 +27,11 @@ def test_systemd_service_uses_reference_executable_and_configuration() -> None:
     assert "--ntp-config /etc/ohana-agent/plugins/ntp.yaml" in service
     assert "--mqtt-config /etc/ohana-agent/plugins/mqtt.yaml" in service
     assert "--network-config /etc/ohana-agent/plugins/network.yaml" in service
+    assert "--zwave-config /etc/ohana-agent/plugins/zwave.yaml" in service
+    assert "--wireguard-config /etc/ohana-agent/plugins/wireguard.yaml" in service
+    assert (
+        "--shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml"
+    ) in service
 
 
 def test_systemd_service_runs_as_dedicated_user() -> None:

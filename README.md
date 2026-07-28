@@ -12,7 +12,10 @@ services ajoutés, modifiés ou supprimés depuis cette administration. La versi
 1.3.0 ajoute les capacités NTP et MQTT ainsi que l’administration graphique des
 plugins. La version 1.4.0 ajoute une présence réseau légère des équipements
 déclarés dans la topologie. La version 1.5.0 ajoute l’observation DHCP locale,
-en complément de l’administration dnsmasq existante.
+en complément de l’administration dnsmasq existante. La version 1.6.0 ajoute
+la santé du contrôleur Z-Wave JS UI. La version 1.7.0 contrôle le serveur
+WireGuard fourni par la Freebox et ajoute la vérification de fraîcheur des
+télémétries Shelly reçues par Home Assistant.
 
 ---
 
@@ -22,9 +25,9 @@ Ohana-Agent expose une API locale permettant à Ohana-Vision de modifier
 l’infrastructure, le DHCP et la configuration des plugins intégrés.
 
 L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DHCP,
-DNS, NTP, MQTT et Présence réseau peuvent être activés, reconfigurés et testés
-sans redémarrer l’Agent.
-Les secrets MQTT restent masqués.
+DNS, NTP, MQTT, Présence réseau, Z-Wave, WireGuard et Shelly Telemetry peuvent
+être activés, reconfigurés et testés sans redémarrer l’Agent.
+Les secrets MQTT, Freebox et Home Assistant restent masqués.
 
 - l'API écoute par défaut sur `127.0.0.1:8765` ;
 - chaque requête exige le jeton partagé installé dans
@@ -355,6 +358,69 @@ publie un message unique et attend de recevoir ce même message. L'observation
 `mqtt.roundtrip` valide ainsi la connexion, l'abonnement, la publication et la
 distribution du message.
 
+## Plugin WireGuard Freebox
+
+```text
+config/plugins/wireguard.yaml
+```
+
+Le service de type `wireguard` doit être déclaré sur le nœud Freebox avec son
+adresse locale. L’Agent ouvre une session Freebox OS et contrôle que le serveur
+VPN nommé `wireguard` est démarré. Il n’exécute aucune commande `wg` locale.
+
+Exemple minimal dans `infrastructure.yaml` :
+
+```yaml
+nodes:
+  - id: freebox
+    name: Freebox Pop
+    endpoint:
+      type: ip
+      address: 192.168.1.1
+
+services:
+  - id: wireguard-freebox
+    name: WireGuard Freebox
+    type: wireguard
+    node: freebox
+    enabled: true
+```
+
+L’autorisation initiale peut être demandée depuis le dépôt :
+
+```bash
+python scripts/authorize_freebox.py \
+    --url http://192.168.1.1 \
+    --config config/plugins/wireguard.yaml
+```
+
+La demande doit ensuite être validée sur l’écran de la Freebox.
+
+## Plugin Shelly Telemetry
+
+```text
+config/plugins/shelly-telemetry.yaml
+```
+
+```yaml
+enabled: true
+interval_seconds: 300
+maximum_age_seconds: 900
+home_assistant_url: http://ha-green.ohana.lan:8123
+access_token: null
+access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
+
+devices:
+  - name: Cuisine
+    power_entity_id: sensor.shelly_cuisine_power
+    energy_entity_id: sensor.shelly_cuisine_energy
+```
+
+Pour chaque équipement, le plugin lit les entités Home Assistant et vérifie la
+date de leur dernier rapport. Une valeur de puissance égale à zéro reste valide
+si le rapport est récent ; l’observation échoue uniquement lorsque l’entité est
+indisponible, invalide ou trop ancienne.
+
 ---
 
 # Installation de développement
@@ -391,7 +457,10 @@ ohana-agent \
   --dns-config config/plugins/dns.yaml \
   --ntp-config config/plugins/ntp.yaml \
   --mqtt-config config/plugins/mqtt.yaml \
-  --network-config config/plugins/network.yaml
+  --network-config config/plugins/network.yaml \
+  --zwave-config config/plugins/zwave.yaml \
+  --wireguard-config config/plugins/wireguard.yaml \
+  --shelly-telemetry-config config/plugins/shelly-telemetry.yaml
 ```
 
 Version :
@@ -430,7 +499,7 @@ Le code courant comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugins DHCP, DNS, NTP, MQTT et présence réseau ;
+- plugins DHCP, DNS, NTP, MQTT, présence réseau, Z-Wave, WireGuard et Shelly Telemetry ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

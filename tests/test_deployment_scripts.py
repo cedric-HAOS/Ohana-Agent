@@ -59,6 +59,9 @@ def test_install_script_does_not_manage_configuration() -> None:
     assert '"${CONFIG_ROOT}/plugins/ntp.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/mqtt.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/network.yaml"' in script
+    assert '"${CONFIG_ROOT}/plugins/zwave.yaml"' in script
+    assert '"${CONFIG_ROOT}/plugins/wireguard.yaml"' in script
+    assert '"${CONFIG_ROOT}/plugins/shelly-telemetry.yaml"' in script
 
     assert "shikamaru.example.yaml" not in script
     assert "infrastructure.example.yaml" not in script
@@ -67,6 +70,9 @@ def test_install_script_does_not_manage_configuration() -> None:
     assert "ntp.example.yaml" not in script
     assert "mqtt.example.yaml" not in script
     assert "network.example.yaml" not in script
+    assert "zwave.example.yaml" not in script
+    assert "wireguard.example.yaml" not in script
+    assert "shelly-telemetry.example.yaml" not in script
 
 
 def test_install_script_enables_without_starting_service() -> None:
@@ -100,6 +106,9 @@ def test_update_script_preserves_configuration_and_service_state() -> None:
     assert "ntp.yaml" not in script
     assert "mqtt.yaml" not in script
     assert "network.yaml" not in script
+    assert "zwave.yaml" not in script
+    assert "wireguard.yaml" not in script
+    assert "shelly-telemetry.yaml" not in script
 
     assert "systemctl is-active --quiet" in script
     assert "SERVICE_WAS_ACTIVE=false" in script

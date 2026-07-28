@@ -1,0 +1,5 @@
+enabled: true
+timeout: 3.0
+retries: 1
+interval_seconds: 60
+verify_tls: true

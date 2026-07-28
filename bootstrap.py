@@ -20,6 +20,9 @@ from builder import (
     MQTTConfigurationBuilder,
     NetworkConfigurationBuilder,
     NTPConfigurationBuilder,
+    ShellyTelemetryConfigurationBuilder,
+    WireGuardConfigurationBuilder,
+    ZWaveConfigurationBuilder,
 )
 from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
@@ -31,6 +34,9 @@ from configuration.loader import ConfigurationLoader
 from configuration.mqtt_plugin import MQTTPluginConfig
 from configuration.network import NetworkPluginConfig
 from configuration.ntp import NTPPluginConfig
+from configuration.shelly_telemetry import ShellyTelemetryPluginConfig
+from configuration.wireguard import WireGuardPluginConfig
+from configuration.zwave import ZWavePluginConfig
 from core.events import EventBus
 from infrastructure import InfrastructureRuntime
 from infrastructure.infrastructure_health_manager import (
@@ -43,6 +49,9 @@ from loader import (
     MQTTConfigLoader,
     NetworkConfigLoader,
     NTPConfigLoader,
+    ShellyTelemetryConfigLoader,
+    WireGuardConfigLoader,
+    ZWaveConfigLoader,
 )
 from observer import (
     InfrastructureObservationMapper,
@@ -80,6 +89,15 @@ from plugins.network.network_plugin import NetworkPlugin
 from plugins.ntp.ntp_check import NTPCheck
 from plugins.ntp.ntp_config import NTPConfig
 from plugins.ntp.ntp_plugin import NTPPlugin
+from plugins.shelly_telemetry.shelly_telemetry_check import ShellyTelemetryCheck
+from plugins.shelly_telemetry.shelly_telemetry_config import ShellyTelemetryConfig
+from plugins.shelly_telemetry.shelly_telemetry_plugin import ShellyTelemetryPlugin
+from plugins.wireguard.wireguard_check import WireGuardCheck
+from plugins.wireguard.wireguard_config import WireGuardConfig
+from plugins.wireguard.wireguard_plugin import WireGuardPlugin
+from plugins.zwave.zwave_check import ZWaveCheck
+from plugins.zwave.zwave_config import ZWaveConfig
+from plugins.zwave.zwave_plugin import ZWavePlugin
 from production_agent import ProductionAgent
 from scheduler import (
     DispatcherTaskExecutor,
@@ -267,6 +285,103 @@ def _build_network_tasks(
     ]
 
 
+def _build_zwave_tasks(
+    *,
+    zwave_config: ZWaveConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one scheduled health observation per Z-Wave service."""
+    return [
+        Task(
+            id=f"zwave.status:{service.name}",
+            name=f"Check Z-Wave controller {service.name}",
+            command="zwave.status",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "url": service.url,
+                "service_id": service.name,
+            },
+            metadata={
+                "managed_by": "zwave",
+                "service_id": service.name,
+                "url": service.url,
+            },
+        )
+        for service in zwave_config.services
+        if service.enabled
+    ]
+
+
+def _build_wireguard_tasks(
+    *,
+    wireguard_config: WireGuardConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one scheduled inspection per Freebox WireGuard service."""
+    return [
+        Task(
+            id=f"wireguard.status:{service.name}",
+            name=f"Inspect Freebox WireGuard service {service.name}",
+            command="wireguard.status",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "base_url": service.base_url,
+                "server_name": service.server_name,
+                "service_id": service.name,
+            },
+            metadata={
+                "managed_by": "wireguard",
+                "service_id": service.name,
+                "base_url": service.base_url,
+                "server_name": service.server_name,
+            },
+        )
+        for service in wireguard_config.services
+        if service.enabled
+    ]
+
+
+def _build_shelly_telemetry_tasks(
+    *,
+    shelly_telemetry_config: ShellyTelemetryConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one telemetry freshness observation per Shelly device."""
+    return [
+        Task(
+            id=f"shelly.telemetry.freshness:{device.name}",
+            name=f"Check Shelly telemetry for {device.name}",
+            command="shelly.telemetry.freshness",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "device_name": device.name,
+                "power_entity_id": device.power_entity_id,
+                "energy_entity_id": device.energy_entity_id,
+            },
+            metadata={
+                "managed_by": "shelly_telemetry",
+                "device_name": device.name,
+                "power_entity_id": device.power_entity_id,
+                "energy_entity_id": device.energy_entity_id,
+            },
+        )
+        for device in shelly_telemetry_config.devices
+        if device.enabled
+    ]
+
+
 def _replace_plugin_tasks(
     scheduler: Scheduler,
     tasks: list[Task],
@@ -294,10 +409,16 @@ def build_production_agent(
     ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
     mqtt_config_path: Path = Path("config/plugins/mqtt.yaml"),
     network_config_path: Path = Path("config/plugins/network.yaml"),
+    zwave_config_path: Path = Path("config/plugins/zwave.yaml"),
+    wireguard_config_path: Path = Path("config/plugins/wireguard.yaml"),
+    shelly_telemetry_config_path: Path = Path("config/plugins/shelly-telemetry.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
     network_check: NetworkCheck | None = None,
     dhcp_check: DHCPCheck | None = None,
+    zwave_check: ZWaveCheck | None = None,
+    wireguard_check: WireGuardCheck | None = None,
+    shelly_telemetry_check: ShellyTelemetryCheck | None = None,
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
     configuration = ConfigurationLoader.load(application_config_path)
@@ -346,6 +467,25 @@ def build_production_agent(
     network_config = NetworkConfigurationBuilder().build(
         infrastructure_config,
         network_plugin_config,
+    )
+
+    zwave_plugin_config = ZWaveConfigLoader().load(zwave_config_path)
+    zwave_config = ZWaveConfigurationBuilder().build(
+        infrastructure,
+        zwave_plugin_config,
+    )
+
+    wireguard_plugin_config = WireGuardConfigLoader().load(wireguard_config_path)
+    wireguard_config = WireGuardConfigurationBuilder().build(
+        infrastructure,
+        wireguard_plugin_config,
+    )
+
+    shelly_telemetry_plugin_config = ShellyTelemetryConfigLoader().load(
+        shelly_telemetry_config_path
+    )
+    shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
+        shelly_telemetry_plugin_config
     )
 
     event_bus = EventBus()
@@ -435,6 +575,24 @@ def build_production_agent(
     )
     plugin_manager.register(network_plugin)
 
+    zwave_plugin = ZWavePlugin(
+        check=zwave_check or ZWaveCheck(),
+        config=zwave_config,
+    )
+    plugin_manager.register(zwave_plugin)
+
+    wireguard_plugin = WireGuardPlugin(
+        check=wireguard_check or WireGuardCheck(),
+        config=wireguard_config,
+    )
+    plugin_manager.register(wireguard_plugin)
+
+    shelly_telemetry_plugin = ShellyTelemetryPlugin(
+        check=shelly_telemetry_check or ShellyTelemetryCheck(),
+        config=shelly_telemetry_config,
+    )
+    plugin_manager.register(shelly_telemetry_plugin)
+
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
         observation_engine=observation_engine,
@@ -518,6 +676,45 @@ def build_production_agent(
         ),
         plugin_name="network",
     )
+    _replace_plugin_tasks(
+        scheduler,
+        (
+            _build_zwave_tasks(
+                zwave_config=zwave_config,
+                interval_seconds=zwave_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if zwave_plugin_config.enabled
+            else []
+        ),
+        plugin_name="zwave",
+    )
+    _replace_plugin_tasks(
+        scheduler,
+        (
+            _build_wireguard_tasks(
+                wireguard_config=wireguard_config,
+                interval_seconds=wireguard_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if wireguard_plugin_config.enabled
+            else []
+        ),
+        plugin_name="wireguard",
+    )
+    _replace_plugin_tasks(
+        scheduler,
+        (
+            _build_shelly_telemetry_tasks(
+                shelly_telemetry_config=shelly_telemetry_config,
+                interval_seconds=(shelly_telemetry_plugin_config.interval_seconds),
+                start_at=resolved_clock.now(),
+            )
+            if shelly_telemetry_plugin_config.enabled
+            else []
+        ),
+        plugin_name="shelly_telemetry",
+    )
 
     def reconfigure_infrastructure(
         changed_configuration: InfrastructureConfig,
@@ -550,6 +747,14 @@ def build_production_agent(
         updated_network_config = NetworkConfigurationBuilder().build(
             changed_configuration,
             network_plugin_config,
+        )
+        updated_zwave_config = ZWaveConfigurationBuilder().build(
+            updated_infrastructure,
+            zwave_plugin_config,
+        )
+        updated_wireguard_config = WireGuardConfigurationBuilder().build(
+            updated_infrastructure,
+            wireguard_plugin_config,
         )
         updated_dhcp_tasks = (
             _build_dhcp_tasks(
@@ -596,6 +801,24 @@ def build_production_agent(
             if network_plugin_config.enabled
             else []
         )
+        updated_zwave_tasks = (
+            _build_zwave_tasks(
+                zwave_config=updated_zwave_config,
+                interval_seconds=zwave_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if zwave_plugin_config.enabled
+            else []
+        )
+        updated_wireguard_tasks = (
+            _build_wireguard_tasks(
+                wireguard_config=updated_wireguard_config,
+                interval_seconds=wireguard_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if wireguard_plugin_config.enabled
+            else []
+        )
 
         observation_engine.health_manager.runtime = updated_runtime
         dhcp_plugin.reconfigure(updated_dhcp_config)
@@ -603,6 +826,8 @@ def build_production_agent(
         ntp_plugin.reconfigure(updated_ntp_config)
         mqtt_plugin.reconfigure(updated_mqtt_config)
         network_plugin.reconfigure(updated_network_config)
+        zwave_plugin.reconfigure(updated_zwave_config)
+        wireguard_plugin.reconfigure(updated_wireguard_config)
         _replace_plugin_tasks(
             scheduler,
             updated_dhcp_tasks,
@@ -627,6 +852,16 @@ def build_production_agent(
             scheduler,
             updated_network_tasks,
             plugin_name="network",
+        )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_zwave_tasks,
+            plugin_name="zwave",
+        )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_wireguard_tasks,
+            plugin_name="wireguard",
         )
         current_infrastructure = updated_infrastructure
         current_infrastructure_config = changed_configuration
@@ -749,6 +984,76 @@ def build_production_agent(
         )
         network_plugin_config = configuration
 
+    def apply_zwave_configuration(configuration: ZWavePluginConfig) -> None:
+        nonlocal zwave_plugin_config
+
+        updated_config = ZWaveConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+        )
+        zwave_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_zwave_tasks(
+                    zwave_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="zwave",
+        )
+        zwave_plugin_config = configuration
+
+    def apply_wireguard_configuration(
+        configuration: WireGuardPluginConfig,
+    ) -> None:
+        nonlocal wireguard_plugin_config
+
+        updated_config = WireGuardConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+        )
+        wireguard_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_wireguard_tasks(
+                    wireguard_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="wireguard",
+        )
+        wireguard_plugin_config = configuration
+
+    def apply_shelly_telemetry_configuration(
+        configuration: ShellyTelemetryPluginConfig,
+    ) -> None:
+        nonlocal shelly_telemetry_plugin_config
+
+        updated_config = ShellyTelemetryConfigurationBuilder().build(configuration)
+        shelly_telemetry_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_shelly_telemetry_tasks(
+                    shelly_telemetry_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="shelly_telemetry",
+        )
+        shelly_telemetry_plugin_config = configuration
+
     def test_dhcp_plugin() -> ObserverResult:
         servers = [server for server in dhcp_plugin.config.servers if server.enabled]
 
@@ -810,6 +1115,48 @@ def build_production_agent(
             broker=brokers[0].address,
             port=brokers[0].port,
             service_id=brokers[0].name,
+        )
+
+    def test_zwave_plugin() -> ObserverResult:
+        services = [
+            service for service in zwave_plugin.config.services if service.enabled
+        ]
+
+        if not services:
+            raise ValueError("The Z-Wave plugin has no enabled Z-Wave service.")
+
+        return zwave_plugin.execute(url=services[0].url)
+
+    def test_wireguard_plugin() -> ObserverResult:
+        services = [
+            service for service in wireguard_plugin.config.services if service.enabled
+        ]
+
+        if not services:
+            raise ValueError("The WireGuard plugin has no enabled WireGuard service.")
+
+        service = services[0]
+        return wireguard_plugin.execute(
+            service_id=service.name,
+            base_url=service.base_url,
+            server_name=service.server_name,
+        )
+
+    def test_shelly_telemetry_plugin() -> ObserverResult:
+        devices = [
+            device
+            for device in shelly_telemetry_plugin.config.devices
+            if device.enabled
+        ]
+
+        if not devices:
+            raise ValueError("The Shelly telemetry plugin has no enabled device.")
+
+        device = devices[0]
+        return shelly_telemetry_plugin.execute(
+            device_name=device.name,
+            power_entity_id=device.power_entity_id,
+            energy_entity_id=device.energy_entity_id,
         )
 
     agent = ProductionAgent(
@@ -910,6 +1257,39 @@ def build_production_agent(
                         lambda: apply_mqtt_configuration(config)
                     ),
                     test_plugin=test_mqtt_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="zwave",
+                    display_name="Z-Wave",
+                    capabilities=("zwave.status",),
+                    configuration_path=zwave_config_path,
+                    configuration_model=ZWavePluginConfig,
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_zwave_configuration(config)
+                    ),
+                    test_plugin=test_zwave_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="wireguard",
+                    display_name="WireGuard",
+                    capabilities=("wireguard.status",),
+                    configuration_path=wireguard_config_path,
+                    configuration_model=WireGuardPluginConfig,
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_wireguard_configuration(config)
+                    ),
+                    test_plugin=test_wireguard_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="shelly_telemetry",
+                    display_name="Shelly Telemetry",
+                    capabilities=("shelly.telemetry.freshness",),
+                    configuration_path=shelly_telemetry_config_path,
+                    configuration_model=ShellyTelemetryPluginConfig,
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_shelly_telemetry_configuration(config)
+                    ),
+                    test_plugin=test_shelly_telemetry_plugin,
                 ),
                 PluginAdministrationBinding(
                     identifier="network",

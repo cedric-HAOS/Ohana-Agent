@@ -118,6 +118,18 @@ class PluginAdministrationRepository:
                 configuration_payload,
                 current_configuration,
             )
+        elif identifier == "wireguard":
+            self._preserve_secret(
+                configuration_payload,
+                current_configuration,
+                field_name="app_token",
+            )
+        elif identifier == "shelly_telemetry":
+            self._preserve_secret(
+                configuration_payload,
+                current_configuration,
+                field_name="access_token",
+            )
 
         configuration = binding.configuration_model.model_validate(
             configuration_payload
@@ -327,8 +339,48 @@ class PluginAdministrationRepository:
                 password = authentication.get("password")
                 authentication["password_configured"] = bool(password)
                 authentication["password"] = None
+        elif identifier == "wireguard":
+            PluginAdministrationRepository._mask_secret(
+                payload,
+                field_name="app_token",
+            )
+        elif identifier == "shelly_telemetry":
+            PluginAdministrationRepository._mask_secret(
+                payload,
+                field_name="access_token",
+            )
 
         return payload
+
+    @staticmethod
+    def _mask_secret(
+        payload: dict[str, Any],
+        *,
+        field_name: str,
+    ) -> None:
+        secret = payload.get(field_name)
+        payload[f"{field_name}_configured"] = bool(secret)
+        payload[field_name] = None
+
+    @staticmethod
+    def _preserve_secret(
+        payload: dict[str, Any],
+        current_configuration: BaseModel,
+        *,
+        field_name: str,
+    ) -> None:
+        secret = payload.get(field_name)
+
+        if secret not in (None, ""):
+            payload.pop(f"{field_name}_configured", None)
+            return
+
+        payload[field_name] = getattr(
+            current_configuration,
+            field_name,
+            None,
+        )
+        payload.pop(f"{field_name}_configured", None)
 
     @staticmethod
     def _preserve_mqtt_password(

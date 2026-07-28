@@ -25,6 +25,8 @@ Ohana-Agent :8765
     +-- plugins/ntp.yaml
     +-- plugins/mqtt.yaml
     +-- plugins/network.yaml
+    +-- plugins/zwave.yaml
+    +-- plugins/wireguard.yaml
 ```
 
 Le jeton n'est jamais envoyé au navigateur. Vision le lit dans

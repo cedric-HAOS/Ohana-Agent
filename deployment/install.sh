@@ -80,6 +80,21 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/plugins/network.yaml"
 
+    [[ -f "${CONFIG_ROOT}/plugins/zwave.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/zwave.yaml"
+
+    [[ -f "${CONFIG_ROOT}/plugins/wireguard.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/wireguard.yaml"
+
+    [[ -f "${CONFIG_ROOT}/plugins/shelly-telemetry.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/shelly-telemetry.yaml"
+
     [[ -e "${PACKAGE_SOURCE}" ]] \
         || fail "Package source not found: ${PACKAGE_SOURCE}"
 

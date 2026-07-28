@@ -1,0 +1,49 @@
+"""Z-Wave JS UI health check with retry support."""
+
+from plugins.zwave.zwave_client import ZWaveHealthClient
+from plugins.zwave.zwave_result import ZWaveHealthResult
+
+
+class ZWaveCheck:
+    """Check whether one Z-Wave JS UI controller is connected."""
+
+    def __init__(self, client: ZWaveHealthClient | None = None) -> None:
+        self._client = client or ZWaveHealthClient()
+
+    def check(
+        self,
+        url: str,
+        *,
+        timeout: float = 3.0,
+        retries: int = 1,
+        verify_tls: bool = True,
+    ) -> ZWaveHealthResult:
+        """Query the health endpoint until it succeeds or retries are exhausted."""
+        if retries < 0:
+            raise ValueError("retries must be greater than or equal to zero.")
+
+        last_result: ZWaveHealthResult | None = None
+        attempts = 0
+
+        for _attempt in range(retries + 1):
+            attempts += 1
+            last_result = self._client.query(
+                url,
+                timeout=timeout,
+                verify_tls=verify_tls,
+            )
+
+            if last_result.healthy:
+                break
+
+        if last_result is None:
+            raise RuntimeError("Z-Wave check did not execute any request.")
+
+        return ZWaveHealthResult(
+            url=last_result.url,
+            healthy=last_result.healthy,
+            status_code=last_result.status_code,
+            response=last_result.response,
+            attempts=attempts,
+            error=last_result.error,
+        )

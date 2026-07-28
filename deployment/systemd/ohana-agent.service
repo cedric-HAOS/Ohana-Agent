@@ -18,6 +18,9 @@ ExecStart=/opt/ohana-agent/venv/bin/ohana-agent \
     --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
     --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \
     --network-config /etc/ohana-agent/plugins/network.yaml \
+    --zwave-config /etc/ohana-agent/plugins/zwave.yaml \
+    --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
+    --shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml \
     --log-level INFO
 
 Restart=on-failure

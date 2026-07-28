@@ -43,7 +43,9 @@ L’installation Linux respecte les principes suivants :
 │   │       ├── dns.yaml
 │   │       ├── ntp.yaml
 │   │       ├── mqtt.yaml
-│   │       └── network.yaml
+│   │       ├── network.yaml
+│   │       ├── zwave.yaml
+│   │       └── wireguard.yaml
 │   │
 │   └── systemd/
 │       └── system/
@@ -112,7 +114,9 @@ La structure retenue est :
     ├── dns.yaml
     ├── ntp.yaml
     ├── mqtt.yaml
-    └── network.yaml
+    ├── network.yaml
+    ├── zwave.yaml
+    └── wireguard.yaml
 ```
 
 ### Configuration principale
@@ -323,6 +327,8 @@ avec les chemins de configuration explicites :
 --ntp-config /etc/ohana-agent/plugins/ntp.yaml
 --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml
 --network-config /etc/ohana-agent/plugins/network.yaml
+--zwave-config /etc/ohana-agent/plugins/zwave.yaml
+--wireguard-config /etc/ohana-agent/plugins/wireguard.yaml
 ```
 
 Le service ne doit pas dépendre du répertoire courant pour retrouver ses fichiers.
@@ -439,6 +445,8 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--ntp-config`     | `/etc/ohana-agent/plugins/ntp.yaml`    |
 | `--mqtt-config`    | `/etc/ohana-agent/plugins/mqtt.yaml`   |
 | `--network-config` | `/etc/ohana-agent/plugins/network.yaml` |
+| `--zwave-config` | `/etc/ohana-agent/plugins/zwave.yaml` |
+| `--wireguard-config` | `/etc/ohana-agent/plugins/wireguard.yaml` |
 | `--log-level`      | niveau choisi par le service            |
 
 Commande de référence :
@@ -452,6 +460,8 @@ Commande de référence :
   --ntp-config /etc/ohana-agent/plugins/ntp.yaml \
   --mqtt-config /etc/ohana-agent/plugins/mqtt.yaml \
   --network-config /etc/ohana-agent/plugins/network.yaml \
+  --zwave-config /etc/ohana-agent/plugins/zwave.yaml \
+  --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
   --log-level INFO
 ```
 

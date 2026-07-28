@@ -95,6 +95,9 @@ def test_wheel_contains_runtime_modules(
         "loader/dhcp_config_loader.py",
         "observer/observation.py",
         "plugins/dhcp/dhcp_plugin.py",
+        "plugins/zwave/zwave_plugin.py",
+        "plugins/wireguard/wireguard_plugin.py",
+        "plugins/shelly_telemetry/shelly_telemetry_plugin.py",
     }
 
     assert required_modules <= wheel_members
@@ -206,6 +209,9 @@ def test_sdist_contains_configuration_examples_only(
         "config/plugins/ntp.example.yaml",
         "config/plugins/mqtt.example.yaml",
         "config/plugins/network.example.yaml",
+        "config/plugins/zwave.example.yaml",
+        "config/plugins/wireguard.example.yaml",
+        "config/plugins/shelly-telemetry.example.yaml",
     }
 
     forbidden_active_configuration = {
@@ -216,6 +222,9 @@ def test_sdist_contains_configuration_examples_only(
         "config/plugins/ntp.yaml",
         "config/plugins/mqtt.yaml",
         "config/plugins/network.yaml",
+        "config/plugins/zwave.yaml",
+        "config/plugins/wireguard.yaml",
+        "config/plugins/shelly-telemetry.yaml",
     }
 
     assert required_examples <= sdist_members

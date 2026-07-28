@@ -73,6 +73,11 @@ class InfrastructureBuilder:
                     enabled=service_config.enabled,
                 ),
                 enabled=service_config.enabled,
+                metadata={
+                    **service_config.metadata,
+                    "implementation": service_config.implementation,
+                    "critical": service_config.critical,
+                },
             )
 
             node.add_service(service)

@@ -7,6 +7,9 @@ from loader.infrastructure_loader import InfrastructureLoader
 from loader.mqtt_config_loader import MQTTConfigLoader
 from loader.network_config_loader import NetworkConfigLoader
 from loader.ntp_config_loader import NTPConfigLoader
+from loader.shelly_telemetry_config_loader import ShellyTelemetryConfigLoader
+from loader.wireguard_config_loader import WireGuardConfigLoader
+from loader.zwave_config_loader import ZWaveConfigLoader
 
 
 def test_shikamaru_example_configuration_is_valid() -> None:
@@ -102,3 +105,35 @@ def test_network_example_configuration_is_valid() -> None:
     assert configuration.retries == 0
     assert configuration.interval_seconds == 60
     assert configuration.failure_threshold == 3
+
+
+def test_zwave_example_configuration_is_valid() -> None:
+    configuration = ZWaveConfigLoader().load(
+        "config/plugins/zwave.example.yaml",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.timeout == 3.0
+    assert configuration.verify_tls is True
+
+
+def test_wireguard_example_configuration_is_valid() -> None:
+    configuration = WireGuardConfigLoader().load(
+        "config/plugins/wireguard.example.yaml",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.timeout == 3.0
+    assert configuration.app_id == "fr.ohana.agent"
+    assert configuration.app_token is None
+
+
+def test_shelly_telemetry_example_configuration_is_valid() -> None:
+    configuration = ShellyTelemetryConfigLoader().load(
+        "config/plugins/shelly-telemetry.example.yaml",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.maximum_age_seconds == 900
+    assert configuration.home_assistant_url == ("http://ha-green.ohana.lan:8123")
+    assert configuration.devices == []

@@ -76,6 +76,24 @@ def parse_arguments() -> argparse.Namespace:
         help="Network presence plugin configuration file.",
     )
     parser.add_argument(
+        "--zwave-config",
+        type=Path,
+        default=Path("config/plugins/zwave.yaml"),
+        help="Z-Wave observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--wireguard-config",
+        type=Path,
+        default=Path("config/plugins/wireguard.yaml"),
+        help="WireGuard observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--shelly-telemetry-config",
+        type=Path,
+        default=Path("config/plugins/shelly-telemetry.yaml"),
+        help="Shelly telemetry observation plugin configuration file.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=[
@@ -150,6 +168,9 @@ def main() -> int:
         ntp_config_path=arguments.ntp_config,
         mqtt_config_path=arguments.mqtt_config,
         network_config_path=arguments.network_config,
+        zwave_config_path=arguments.zwave_config,
+        wireguard_config_path=arguments.wireguard_config,
+        shelly_telemetry_config_path=arguments.shelly_telemetry_config,
     )
 
     install_signal_handlers(agent)

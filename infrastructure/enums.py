@@ -23,6 +23,7 @@ class ServiceType(StrEnum):
     NTP = "ntp"
     HOME_ASSISTANT = "home_assistant"
     ZWAVE = "zwave"
+    WIREGUARD = "wireguard"
     TELEINFORMATION = "teleinformation"
 
 

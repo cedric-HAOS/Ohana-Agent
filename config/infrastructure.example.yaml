@@ -67,12 +67,13 @@ services:
     critical: true
 
   - id: zwave-primary
-    name: Z-Wave JS UI
+    name: Z-Wave JS
     type: zwave
     node: zwave-01
-    implementation: Z-Wave JS UI
+    port: 3000
+    implementation: Z-Wave JS Server
     enabled: true
-    critical: false
+    critical: true
 
   - id: dns-secondary
     name: DNS secondaire

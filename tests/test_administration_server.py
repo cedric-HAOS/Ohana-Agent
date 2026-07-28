@@ -55,6 +55,7 @@ def administration_server(
             infrastructure_repository=(
                 InfrastructureConfigurationRepository(infrastructure_path)
             ),
+            agent_version="1.7.2",
         ),
         token="test-secret",
         port=0,
@@ -117,6 +118,7 @@ def test_administration_server_declares_available_operations(
     )
 
     assert result["schema_version"] == 1
+    assert result["agent_version"] == "1.7.2"
     assert result["operations"] == [
         "infrastructure.read",
         "infrastructure.write",

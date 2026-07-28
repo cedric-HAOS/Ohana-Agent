@@ -8,6 +8,8 @@ import logging
 from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from threading import Thread
 from typing import Any
 
@@ -43,11 +45,13 @@ class AdministrationService:
         on_infrastructure_changed: (
             Callable[[InfrastructureConfig], None] | None
         ) = None,
+        agent_version: str | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
         self.plugin_repository = plugin_repository
         self.on_infrastructure_changed = on_infrastructure_changed
+        self.agent_version = agent_version or self._installed_agent_version()
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -75,8 +79,17 @@ class AdministrationService:
             )
 
         return AdministrationCapabilities(
+            agent_version=self.agent_version,
             operations=operations,
         )
+
+    @staticmethod
+    def _installed_agent_version() -> str:
+        """Return the installed Ohana-Agent package version."""
+        try:
+            return package_version("ohana-agent")
+        except PackageNotFoundError:
+            return "unknown"
 
     def read_infrastructure(self) -> InfrastructureConfig:
         """Read the Agent-owned infrastructure definition."""

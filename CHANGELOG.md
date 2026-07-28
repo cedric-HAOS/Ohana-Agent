@@ -6,6 +6,34 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.7.2] — Z-Wave JS Server WebSocket — 2026-07-28
+
+## Corrigé
+
+- Le plugin `zwave` utilise désormais le protocole WebSocket de Z-Wave JS
+  Server exposé par Home Assistant sur le port `3000`.
+- Le contrôle attend l’initialisation complète du pilote Z-Wave avant de
+  produire une observation saine.
+- Les installations autonomes exposant encore `/health/zwave` en HTTP ou HTTPS
+  restent prises en charge explicitement par les métadonnées du service.
+
+## Ajouté
+
+- Versions du serveur et du pilote, identifiant Home ID et nombre de nœuds dans
+  les métadonnées de l’observation `zwave.status`.
+- Version d’Ohana-Agent dans la réponse `/v1/capabilities` de l’API
+  d’administration, pour affichage dans Vision.
+- Dépendance d’exécution `zwave-js-server-python`.
+
+## Qualité
+
+- Version du paquet alignée sur `1.7.2`.
+- Tests dédiés au protocole WebSocket, au port `3000` par défaut et au contrat
+  de version d’administration.
+- 1148 tests réussis.
+
+---
+
 # [1.7.1] — Commande d’autorisation Freebox — 2026-07-28
 
 ## Corrigé

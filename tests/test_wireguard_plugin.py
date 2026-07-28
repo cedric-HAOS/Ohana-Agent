@@ -77,7 +77,7 @@ def test_wireguard_plugin_returns_observer_result() -> None:
             "http://192.168.1.1",
             "wireguard",
             "fr.ohana.agent",
-            "1.7.1",
+            "1.7.2",
             "secret",
             2.0,
             1,

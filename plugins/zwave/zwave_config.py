@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True, slots=True)
 class ZWaveServiceConfig:
-    """Configuration for one Z-Wave JS UI service."""
+    """Configuration for one Z-Wave JS Server service."""
 
     name: str
     url: str

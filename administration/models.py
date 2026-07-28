@@ -153,6 +153,7 @@ class AdministrationCapabilities(AdministrationModel):
     """Administration functions explicitly exposed by Ohana-Agent."""
 
     schema_version: Literal[1] = 1
+    agent_version: str = Field(min_length=1)
     operations: list[str] = Field(default_factory=list)
 
 

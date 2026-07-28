@@ -12,18 +12,18 @@ from infrastructure import (
 )
 
 
-def test_zwave_builder_discovers_services_and_builds_health_url() -> None:
+def test_zwave_builder_discovers_websocket_service() -> None:
     service = Service(
         name="zwave-main",
         type=ServiceType.ZWAVE,
         endpoint=Endpoint(
             type=EndpointType.IP,
-            address="192.168.1.54",
-            port=8091,
+            address="192.168.1.11",
+            port=3000,
         ),
         metadata={
-            "scheme": "https",
-            "health_path": "/health/zwave",
+            "scheme": "wss",
+            "websocket_path": "/zjs",
         },
     )
     infrastructure = Infrastructure(
@@ -37,19 +37,19 @@ def test_zwave_builder_discovers_services_and_builds_health_url() -> None:
     )
 
     assert len(config.services) == 1
-    assert config.services[0].url == ("https://192.168.1.54:8091/health/zwave")
+    assert config.services[0].url == "wss://192.168.1.11:3000/zjs"
     assert config.timeout == 2.5
     assert config.retries == 0
     assert config.verify_tls is False
 
 
-def test_zwave_builder_uses_default_port_and_path() -> None:
+def test_zwave_builder_uses_home_assistant_defaults() -> None:
     service = Service(
         name="zwave-main",
         type=ServiceType.ZWAVE,
         endpoint=Endpoint(
             type=EndpointType.IP,
-            address="192.168.1.54",
+            address="192.168.1.11",
         ),
     )
     infrastructure = Infrastructure(
@@ -62,4 +62,31 @@ def test_zwave_builder_uses_default_port_and_path() -> None:
         ZWavePluginConfig(),
     )
 
-    assert config.services[0].url == ("http://192.168.1.54:8091/health/zwave")
+    assert config.services[0].url == "ws://192.168.1.11:3000"
+
+
+def test_zwave_builder_keeps_legacy_http_health_endpoint() -> None:
+    service = Service(
+        name="zwave-main",
+        type=ServiceType.ZWAVE,
+        endpoint=Endpoint(
+            type=EndpointType.IP,
+            address="192.168.1.11",
+            port=8091,
+        ),
+        metadata={
+            "scheme": "http",
+            "health_path": "/health/zwave",
+        },
+    )
+    infrastructure = Infrastructure(
+        name="Ohana",
+        nodes=[Node(name="rpi-zwave", services=[service])],
+    )
+
+    config = ZWaveConfigurationBuilder().build(
+        infrastructure,
+        ZWavePluginConfig(),
+    )
+
+    assert config.services[0].url == "http://192.168.1.11:8091/health/zwave"

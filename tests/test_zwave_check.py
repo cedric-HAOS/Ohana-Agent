@@ -20,26 +20,28 @@ class FakeZWaveClient:
         return self.results[len(self.calls) - 1]
 
 
-def test_zwave_check_retries_until_controller_is_connected() -> None:
+def test_zwave_check_retries_until_driver_is_ready() -> None:
     client = FakeZWaveClient(
         [
             ZWaveHealthResult(
-                url="http://zwave/health/zwave",
+                url="ws://192.168.1.11:3000",
                 healthy=False,
-                status_code=500,
-                error="not connected",
+                error="not ready",
             ),
             ZWaveHealthResult(
-                url="http://zwave/health/zwave",
+                url="ws://192.168.1.11:3000",
                 healthy=True,
-                status_code=200,
-                response="OK",
+                response="Z-Wave JS driver ready",
+                server_version="3.2.0",
+                driver_version="15.0.0",
+                home_id="0x12345678",
+                node_count=12,
             ),
         ]
     )
 
     result = ZWaveCheck(client=client).check(
-        "http://zwave/health/zwave",
+        "ws://192.168.1.11:3000",
         timeout=1.5,
         retries=1,
         verify_tls=False,
@@ -47,8 +49,9 @@ def test_zwave_check_retries_until_controller_is_connected() -> None:
 
     assert result.healthy is True
     assert result.attempts == 2
-    assert result.status_code == 200
+    assert result.node_count == 12
+    assert result.server_version == "3.2.0"
     assert client.calls == [
-        ("http://zwave/health/zwave", 1.5, False),
-        ("http://zwave/health/zwave", 1.5, False),
+        ("ws://192.168.1.11:3000", 1.5, False),
+        ("ws://192.168.1.11:3000", 1.5, False),
     ]

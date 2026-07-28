@@ -27,10 +27,13 @@ class FakeZWaveCheck:
 def test_zwave_plugin_returns_observer_result() -> None:
     check = FakeZWaveCheck(
         ZWaveHealthResult(
-            url="http://192.168.1.54:8091/health/zwave",
+            url="ws://192.168.1.11:3000",
             healthy=True,
-            status_code=200,
-            response="OK",
+            response="Z-Wave JS driver ready",
+            server_version="3.2.0",
+            driver_version="15.0.0",
+            home_id="0x12345678",
+            node_count=12,
         )
     )
     plugin = ZWavePlugin(
@@ -39,15 +42,16 @@ def test_zwave_plugin_returns_observer_result() -> None:
     )
 
     result = plugin.execute(
-        url="http://192.168.1.54:8091/health/zwave",
+        url="ws://192.168.1.11:3000",
     )
 
     assert result.success is True
     assert result.check == "zwave.status"
-    assert result.metadata["status_code"] == 200
-    assert check.calls == [("http://192.168.1.54:8091/health/zwave", 2.0, 2, False)]
+    assert result.metadata["node_count"] == 12
+    assert result.metadata["driver_version"] == "15.0.0"
+    assert check.calls == [("ws://192.168.1.11:3000", 2.0, 2, False)]
 
 
-def test_zwave_plugin_requires_health_url() -> None:
+def test_zwave_plugin_requires_endpoint_url() -> None:
     with pytest.raises(ValueError, match="url"):
         ZWavePlugin().execute(url="")

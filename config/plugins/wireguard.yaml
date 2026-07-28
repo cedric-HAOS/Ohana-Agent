@@ -3,6 +3,6 @@ timeout: 3.0
 retries: 1
 interval_seconds: 60
 app_id: fr.ohana.agent
-app_version: 1.7.1
+app_version: 1.7.2
 app_token: null
 verify_tls: false

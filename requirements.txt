@@ -4,3 +4,5 @@ pytest
 ruff
 dnspython>=2.7.0
 paho-mqtt>=2,<3
+aiohttp>=3.11,<4
+zwave-js-server-python>=0.72,<1

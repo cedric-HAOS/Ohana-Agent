@@ -13,10 +13,12 @@ services ajoutés, modifiés ou supprimés depuis cette administration. La versi
 plugins. La version 1.4.0 ajoute une présence réseau légère des équipements
 déclarés dans la topologie. La version 1.5.0 ajoute l’observation DHCP locale,
 en complément de l’administration dnsmasq existante. La version 1.6.0 ajoute
-la santé du contrôleur Z-Wave JS UI. La version 1.7.0 contrôle le serveur
-WireGuard fourni par la Freebox et ajoute la vérification de fraîcheur des
-télémétries Shelly reçues par Home Assistant. La version 1.7.1 installe la
-commande d’autorisation Freebox nécessaire sur INFRA-01.
+la santé du contrôleur Z-Wave. La version 1.7.0 contrôle le serveur WireGuard
+fourni par la Freebox et ajoute la vérification de fraîcheur des télémétries
+Shelly reçues par Home Assistant. La version 1.7.1 installe la commande
+d’autorisation Freebox nécessaire sur INFRA-01. La version 1.7.2 adapte le
+plugin Z-Wave au serveur WebSocket exposé par Home Assistant sur le port 3000
+et publie la version de l’Agent dans son API d’administration.
 
 ---
 
@@ -107,6 +109,28 @@ failure_threshold: 3
 
 Un équipement joignable n'est pas nécessairement fonctionnel : les plugins DNS,
 NTP ou MQTT continuent de vérifier les capacités réelles.
+
+## Contrôle Z-Wave
+
+Le plugin `zwave` découvre les services de type `zwave` déclarés dans
+`infrastructure.yaml`. Pour le module complémentaire Home Assistant, il se
+connecte au serveur Z-Wave JS par WebSocket :
+
+```yaml
+- id: zwave-primary
+  name: Z-Wave JS
+  type: zwave
+  node: zwave-01
+  port: 3000
+  implementation: Z-Wave JS Server
+  enabled: true
+  critical: true
+```
+
+Le schéma par défaut est `ws`. `wss`, `http` et `https` restent acceptés pour
+les installations qui exposent un autre point d’accès. Une observation
+`zwave.status` n’est saine que lorsque la connexion est ouverte et que le
+pilote Z-Wave est initialisé.
 
 ## Observations standardisées
 

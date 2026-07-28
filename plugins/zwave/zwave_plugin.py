@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class ZWavePlugin(Plugin):
-    """Plugin responsible for Z-Wave JS UI controller health checks."""
+    """Plugin responsible for Z-Wave JS Server driver health checks."""
 
     def __init__(
         self,
@@ -42,8 +42,8 @@ class ZWavePlugin(Plugin):
         """Return the Z-Wave plugin manifest."""
         return PluginManifest(
             name="zwave",
-            version="0.1.0",
-            description="Z-Wave JS UI controller health plugin for Ohana-Agent.",
+            version="0.2.0",
+            description="Z-Wave JS Server controller health plugin for Ohana-Agent.",
         )
 
     def register(self, context: PluginContext) -> None:
@@ -52,7 +52,7 @@ class ZWavePlugin(Plugin):
         self._state = PluginState.REGISTERED
 
     def execute(self, **kwargs: Any) -> ObserverResult:
-        """Query one Z-Wave health endpoint through the common plugin API."""
+        """Query one Z-Wave JS endpoint through the common plugin API."""
         from observer.observer_result import ObserverResult
 
         url = kwargs.get("url")
@@ -71,7 +71,7 @@ class ZWavePlugin(Plugin):
         )
         elapsed_ms = (perf_counter() - started_at) * 1000
         message = (
-            f"Z-Wave controller is connected through {result.url}."
+            f"Z-Wave JS driver is ready through {result.url}."
             if result.healthy
             else result.error or f"Z-Wave controller is unavailable at {result.url}."
         )
@@ -81,11 +81,15 @@ class ZWavePlugin(Plugin):
             latency=elapsed_ms,
             message=message,
             check="zwave.status",
-            description="Check the Z-Wave JS UI controller health endpoint.",
+            description="Check the Z-Wave JS Server driver through WebSocket.",
             metadata={
                 "url": result.url,
                 "status_code": result.status_code,
                 "response": result.response,
+                "server_version": result.server_version,
+                "driver_version": result.driver_version,
+                "home_id": result.home_id,
+                "node_count": result.node_count,
                 "attempts": result.attempts,
                 "verify_tls": self.config.verify_tls,
                 "error": result.error,

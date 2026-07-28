@@ -1,11 +1,11 @@
-"""Z-Wave JS UI health check with retry support."""
+"""Z-Wave JS endpoint check with retry support."""
 
 from plugins.zwave.zwave_client import ZWaveHealthClient
 from plugins.zwave.zwave_result import ZWaveHealthResult
 
 
 class ZWaveCheck:
-    """Check whether one Z-Wave JS UI controller is connected."""
+    """Check whether one Z-Wave JS Server driver is connected."""
 
     def __init__(self, client: ZWaveHealthClient | None = None) -> None:
         self._client = client or ZWaveHealthClient()
@@ -18,7 +18,7 @@ class ZWaveCheck:
         retries: int = 1,
         verify_tls: bool = True,
     ) -> ZWaveHealthResult:
-        """Query the health endpoint until it succeeds or retries are exhausted."""
+        """Query the configured endpoint until it succeeds or retries are exhausted."""
         if retries < 0:
             raise ValueError("retries must be greater than or equal to zero.")
 
@@ -44,6 +44,10 @@ class ZWaveCheck:
             healthy=last_result.healthy,
             status_code=last_result.status_code,
             response=last_result.response,
+            server_version=last_result.server_version,
+            driver_version=last_result.driver_version,
+            home_id=last_result.home_id,
+            node_count=last_result.node_count,
             attempts=attempts,
             error=last_result.error,
         )

@@ -32,26 +32,34 @@ class ZWaveConfigurationBuilder:
         if service.endpoint is None:
             raise LookupError(f"Z-Wave service {service.name!r} has no endpoint.")
 
-        port = 8091 if service.endpoint.port is None else service.endpoint.port
+        scheme = service.metadata.get("scheme", "ws")
+
+        if not isinstance(scheme, str) or scheme not in {
+            "ws",
+            "wss",
+            "http",
+            "https",
+        }:
+            raise ValueError(f"Z-Wave service {service.name!r} has an invalid scheme.")
+
+        default_port = 3000 if scheme in {"ws", "wss"} else 8091
+        port = default_port if service.endpoint.port is None else service.endpoint.port
 
         if not 1 <= port <= 65_535:
             raise ValueError(
                 f"Z-Wave service {service.name!r} has an invalid port: {port}."
             )
 
-        scheme = service.metadata.get("scheme", "http")
-        health_path = service.metadata.get("health_path", "/health/zwave")
+        if scheme in {"http", "https"}:
+            path = service.metadata.get("health_path", "/health/zwave")
+        else:
+            path = service.metadata.get("websocket_path", "")
 
-        if not isinstance(scheme, str) or scheme not in {"http", "https"}:
-            raise ValueError(f"Z-Wave service {service.name!r} has an invalid scheme.")
-
-        if not isinstance(health_path, str) or not health_path.startswith("/"):
-            raise ValueError(
-                f"Z-Wave service {service.name!r} has an invalid health path."
-            )
+        if not isinstance(path, str) or (path and not path.startswith("/")):
+            raise ValueError(f"Z-Wave service {service.name!r} has an invalid path.")
 
         return ZWaveServiceConfig(
             name=service.name,
-            url=(f"{scheme}://{service.endpoint.address}:{port}{health_path}"),
+            url=f"{scheme}://{service.endpoint.address}:{port}{path}",
             enabled=(service.enabled and service.endpoint.enabled),
         )

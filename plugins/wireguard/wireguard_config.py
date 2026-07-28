@@ -21,6 +21,6 @@ class WireGuardConfig:
     timeout: float = 3.0
     retries: int = 1
     app_id: str = "fr.ohana.agent"
-    app_version: str = "1.7.0"
+    app_version: str = "1.7.1"
     app_token: str | None = None
     verify_tls: bool = False

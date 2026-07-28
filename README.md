@@ -15,7 +15,8 @@ déclarés dans la topologie. La version 1.5.0 ajoute l’observation DHCP local
 en complément de l’administration dnsmasq existante. La version 1.6.0 ajoute
 la santé du contrôleur Z-Wave JS UI. La version 1.7.0 contrôle le serveur
 WireGuard fourni par la Freebox et ajoute la vérification de fraîcheur des
-télémétries Shelly reçues par Home Assistant.
+télémétries Shelly reçues par Home Assistant. La version 1.7.1 installe la
+commande d’autorisation Freebox nécessaire sur INFRA-01.
 
 ---
 
@@ -386,15 +387,18 @@ services:
     enabled: true
 ```
 
-L’autorisation initiale peut être demandée depuis le dépôt :
+L’autorisation initiale est demandée une seule fois depuis INFRA-01, après
+installation du wheel :
 
 ```bash
-python scripts/authorize_freebox.py \
-    --url http://192.168.1.1 \
-    --config config/plugins/wireguard.yaml
+sudo /opt/ohana-agent/venv/bin/ohana-agent-authorize-freebox \
+    --url http://192.168.1.1
 ```
 
-La demande doit ensuite être validée sur l’écran de la Freebox.
+La commande utilise par défaut
+`/etc/ohana-agent/plugins/wireguard.yaml`. La demande doit ensuite être
+validée sur l’écran de la Freebox. Aucun dépôt source n’est nécessaire sur
+INFRA-01.
 
 ## Plugin Shelly Telemetry
 

@@ -6,6 +6,30 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.7.1] — Commande d’autorisation Freebox — 2026-07-28
+
+## Corrigé
+
+- Le script d’autorisation Freebox n’est plus dépendant du dépôt source sur INFRA-01.
+- La configuration WireGuard de production est utilisée par défaut depuis
+  `/etc/ohana-agent/plugins/wireguard.yaml`.
+
+## Ajouté
+
+- Commande installée `ohana-agent-authorize-freebox`.
+- Module d’exécution inclus dans le wheel sous
+  `plugins.wireguard.authorize_freebox`.
+- Tests du stockage du jeton après validation et du refus d’autorisation.
+- Vérification de la présence du nouvel exécutable dans les métadonnées du wheel.
+
+## Qualité
+
+- Version du paquet et version applicative Freebox alignées sur 1.7.1.
+- 1144 tests réussis.
+- Wheel et archive source Ohana-Agent 1.7.1 construites et vérifiées.
+
+---
+
 # [1.7.0] — Freebox WireGuard et Shelly Telemetry — 2026-07-27
 
 ## Corrigé

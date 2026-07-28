@@ -97,6 +97,7 @@ def test_wheel_contains_runtime_modules(
         "plugins/dhcp/dhcp_plugin.py",
         "plugins/zwave/zwave_plugin.py",
         "plugins/wireguard/wireguard_plugin.py",
+        "plugins/wireguard/authorize_freebox.py",
         "plugins/shelly_telemetry/shelly_telemetry_plugin.py",
     }
 

@@ -10,6 +10,8 @@ import pytest
 DIST_DIRECTORY = Path("dist")
 EXPECTED_CONSOLE_SCRIPT = "ohana-agent"
 EXPECTED_ENTRY_POINT = "main:main"
+EXPECTED_FREEBOX_CONSOLE_SCRIPT = "ohana-agent-authorize-freebox"
+EXPECTED_FREEBOX_ENTRY_POINT = "plugins.wireguard.authorize_freebox:main"
 
 
 @pytest.fixture(scope="session")
@@ -104,3 +106,15 @@ def test_ohana_agent_console_script_targets_main(
     console_scripts = entry_points_parser["console_scripts"]
 
     assert console_scripts[EXPECTED_CONSOLE_SCRIPT] == EXPECTED_ENTRY_POINT
+
+
+def test_freebox_authorization_console_script_is_declared(
+    entry_points_parser: ConfigParser,
+) -> None:
+    """Expose the installed Freebox authorization executable."""
+    console_scripts = entry_points_parser["console_scripts"]
+
+    assert EXPECTED_FREEBOX_CONSOLE_SCRIPT in console_scripts
+    assert (
+        console_scripts[EXPECTED_FREEBOX_CONSOLE_SCRIPT] == EXPECTED_FREEBOX_ENTRY_POINT
+    )

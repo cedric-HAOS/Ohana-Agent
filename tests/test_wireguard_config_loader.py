@@ -14,7 +14,7 @@ timeout: 4.0
 retries: 1
 interval_seconds: 90
 app_id: fr.ohana.agent
-app_version: 1.8.0
+app_version: 1.8.1
 app_token: secret
 verify_tls: false
 """.strip(),

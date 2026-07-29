@@ -15,6 +15,8 @@ from plugins.teleinformation.teleinformation_result import (
     TeleinformationValue,
 )
 
+_TARIFF_TRANSITION_GRACE_SECONDS = 30
+
 _TARIFFS = {
     1: TeleinformationTariff(1, "Bleue", "HC", "HC Bleue", "blue_off_peak"),
     2: TeleinformationTariff(2, "Bleue", "HP", "HP Bleue", "blue_peak"),
@@ -105,15 +107,18 @@ class TeleinformationCheck:
                 timeout=timeout,
                 verify_tls=verify_tls,
             )
+            # NTARF is a mode indicator. Its value normally changes only at the
+            # fixed Tempo period boundaries, so its Home Assistant timestamp is
+            # not a telemetry freshness signal.
             tariff_value, tariff_error = self._validate_numeric_state(
                 tariff_state,
                 current_time=current_time,
                 maximum_age_seconds=maximum_age_seconds,
-                require_freshness=True,
+                require_freshness=False,
             )
             tariff, tariff_mapping_error = self._resolve_tariff(tariff_value)
             indexes: dict[str, TeleinformationValue] = {}
-            index_error = None
+            active_index_error = None
 
             for index_key, entity_id in configured_indexes.items():
                 state = self._query(
@@ -123,19 +128,37 @@ class TeleinformationCheck:
                     timeout=timeout,
                     verify_tls=verify_tls,
                 )
+                is_active_index = tariff is not None and index_key == tariff.index_key
                 value, error = self._validate_numeric_state(
                     state,
                     current_time=current_time,
                     maximum_age_seconds=maximum_age_seconds,
-                    require_freshness=False,
+                    require_freshness=is_active_index,
                 )
                 indexes[index_key] = value
 
-                if index_error is None and error is not None:
-                    index_error = error
+                # Only the index selected by NTARF is expected to advance. The
+                # other Tempo indexes legitimately keep an old timestamp while
+                # their period is inactive.
+                if (
+                    is_active_index
+                    and active_index_error is None
+                    and error is not None
+                    and not self._is_expected_tariff_transition(
+                        tariff_value,
+                        value,
+                        maximum_age_seconds=maximum_age_seconds,
+                    )
+                ):
+                    active_index_error = error
 
             active_index = indexes.get(tariff.index_key) if tariff is not None else None
-            error = power_error or tariff_error or tariff_mapping_error or index_error
+            error = (
+                power_error
+                or tariff_error
+                or tariff_mapping_error
+                or active_index_error
+            )
             last_result = TeleinformationCheckResult(
                 meter_name=meter_name,
                 healthy=error is None,
@@ -171,6 +194,22 @@ class TeleinformationCheck:
             access_token=token,
             timeout=timeout,
             verify_tls=verify_tls,
+        )
+
+    @staticmethod
+    def _is_expected_tariff_transition(
+        tariff_value: TeleinformationValue,
+        active_index: TeleinformationValue,
+        *,
+        maximum_age_seconds: int,
+    ) -> bool:
+        """Allow the active index a few seconds to follow an NTARF switch."""
+        return (
+            tariff_value.age_seconds is not None
+            and tariff_value.age_seconds <= _TARIFF_TRANSITION_GRACE_SECONDS
+            and active_index.value is not None
+            and active_index.age_seconds is not None
+            and active_index.age_seconds > maximum_age_seconds
         )
 
     @staticmethod

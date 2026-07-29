@@ -12,7 +12,7 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.8.0.
+Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.8.1.
 
 ---
 
@@ -555,7 +555,7 @@ Ils ne devront être ajoutés que lorsqu’un composant de production les utilis
 
 ---
 
-## Contrat pour la version 1.8.0
+## Contrat pour la version 1.8.1
 
 L’arborescence Linux de référence d’Ohana-Agent 1.5.0 est :
 

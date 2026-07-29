@@ -163,7 +163,7 @@ def test_health_summary_matches_vision_device_health_rules() -> None:
         config=config,
         infrastructure=make_infrastructure(),
         utc_now=lambda: datetime(2026, 7, 28, 14, 1, tzinfo=UTC),
-        agent_version="1.8.0",
+        agent_version="1.8.1",
     )
 
     publisher.export(
@@ -231,7 +231,7 @@ def test_health_summary_counts_stale_capabilities() -> None:
         ),
         infrastructure=make_infrastructure(),
         utc_now=lambda: now,
-        agent_version="1.8.0",
+        agent_version="1.8.1",
     )
     publisher.export(
         observation(
@@ -268,7 +268,7 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
         client_factory=lambda client_id: fake_client,
         utc_now=lambda: datetime(2026, 7, 28, 14, 0, tzinfo=UTC),
         monotonic_clock=lambda: 10.0,
-        agent_version="1.8.0",
+        agent_version="1.8.1",
     )
 
     publisher.start()
@@ -289,7 +289,7 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
         if topic == "homeassistant/sensor/ohana_health_score/config"
     )
     assert discovery_payload["device"]["name"] == "Ohana Platform"
-    assert discovery_payload["device"]["sw_version"] == "1.8.0"
+    assert discovery_payload["device"]["sw_version"] == "1.8.1"
     assert discovery_payload["state_topic"] == "ohana/health/summary"
 
     publisher.stop()

@@ -62,7 +62,7 @@ def test_freebox_wireguard_client_opens_session_and_reads_vpn_server(
     result = FreeboxWireGuardClient().query(
         "http://192.168.1.1",
         app_id="fr.ohana.agent",
-        app_version="1.8.0",
+        app_version="1.8.1",
         app_token="secret",
     )
 
@@ -82,7 +82,7 @@ def test_freebox_wireguard_client_requires_app_token() -> None:
     result = FreeboxWireGuardClient().query(
         "http://192.168.1.1",
         app_id="fr.ohana.agent",
-        app_version="1.8.0",
+        app_version="1.8.1",
         app_token=None,
     )
 

@@ -171,3 +171,16 @@ Principaux acquis :
 - service rattaché au nœud RPI-Linky ;
 - administration, reconfiguration et test immédiat ;
 - planification et publication des observations vers Ohana-Vision.
+
+# v1.8.1 — Fraîcheur Tempo contextuelle
+
+**Statut : terminé.**
+
+Principaux acquis :
+
+- fraîcheur permanente de `SINSTS` ;
+- validation de `NTARF` sans exiger une modification continue ;
+- fraîcheur exigée uniquement pour l’index Tempo actif ;
+- index inactifs conservés comme données informatives ;
+- grâce de 30 secondes lors des bascules tarifaires.
+

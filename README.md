@@ -24,7 +24,10 @@ version 1.7.4 replanifie ces services après une modification de l’architectur
 ou du plugin. La version 1.7.5 corrige leur exécution périodique à travers le
 dispatcher et restaure la publication automatique vers Vision. La version
 1.8.0 ajoute le contrôle de la chaîne Téléinformation Linky transmise par
-`teleinfo2mqtt`, MQTT et Home Assistant, avec interprétation du tarif Tempo.
+`teleinfo2mqtt`, MQTT et Home Assistant, avec interprétation du tarif Tempo. La
+version 1.8.1 adapte la fraîcheur au fonctionnement réel de Tempo : `NTARF` et
+les index inactifs peuvent rester inchangés, tandis que `SINSTS` et l’index actif
+restent surveillés.
 
 ---
 
@@ -495,9 +498,11 @@ config/plugins/teleinformation.yaml
 ```
 
 Le plugin vérifie que Home Assistant reçoit toujours les trames Linky publiées
-par `teleinfo2mqtt` sur RPI-Linky. Il contrôle la fraîcheur de `SINSTS` et
-`NTARF`, interprète automatiquement les six périodes Tempo et expose les index
-`EASF01` à `EASF06`.
+par `teleinfo2mqtt` sur RPI-Linky. `SINSTS` doit rester récent en permanence.
+`NTARF` est validé pour déterminer la période Tempo, mais son ancienneté est
+normale puisqu’il ne change qu’aux bascules tarifaires. Parmi les index
+`EASF01` à `EASF06`, seul celui désigné par `NTARF` doit rester récent ; les cinq
+autres sont purement informatifs pendant leur période inactive.
 
 ```yaml
 services:
@@ -521,8 +526,9 @@ services:
 
 La valeur `NTARF` est traduite ainsi : `1/2` Bleu, `3/4` Blanc et `5/6`
 Rouge ; les valeurs impaires correspondent aux heures creuses et les valeurs
-paires aux heures pleines. La capacité publiée est
-`teleinformation.freshness`.
+paires aux heures pleines. Une grâce de 30 secondes est appliquée lors d’une
+bascule afin de laisser au nouvel index actif le temps de recevoir sa première
+mesure. La capacité publiée est `teleinformation.freshness`.
 
 ---
 

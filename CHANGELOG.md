@@ -6,6 +6,27 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.8.1] — Fraîcheur Tempo contextuelle — 2026-07-29
+
+## Corrigé
+
+- `NTARF` n’est plus considéré comme une télémétrie devant être actualisée en
+  continu : sa valeur reste validée, mais son ancienneté est normale entre les
+  bascules de 6 h et 22 h.
+- Seuls `SINSTS` et l’index Tempo désigné par la valeur courante de `NTARF`
+  doivent présenter une mesure récente.
+- Les cinq index Tempo inactifs restent disponibles dans les métadonnées sans
+  dégrader le service lorsque leur horodatage est ancien.
+- Une grâce de 30 secondes évite une fausse alerte lorsque `NTARF` bascule juste
+  avant la première mise à jour du nouvel index actif.
+- Version interne du plugin Téléinformation portée à `0.1.1`.
+
+## Qualité
+
+- Tests de non-régression ajoutés pour un `NTARF` ancien, des index inactifs
+  anciens, un index actif ancien et la courte transition de période Tempo.
+- Version du paquet alignée sur `1.8.1`.
+
 # [1.8.0] — Téléinformation Linky — 2026-07-29
 
 ## Ajouté

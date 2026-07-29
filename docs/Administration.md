@@ -61,7 +61,7 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
 L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
 dans l'API s'il n'est pas réellement enregistré dans l'Agent.
 
-La version 1.8.0 expose :
+La version 1.8.1 expose :
 
 - **DHCP** — capacité `dhcp.status` ;
 - **DNS** — capacité `dns.resolve` ;

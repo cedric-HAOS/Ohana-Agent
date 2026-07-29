@@ -52,7 +52,7 @@ class TeleinformationPlugin(Plugin):
         """Return the Téléinformation plugin manifest."""
         return PluginManifest(
             name="teleinformation",
-            version="0.1.0",
+            version="0.1.1",
             description=(
                 "Linky teleinformation freshness and Tempo tariff plugin "
                 "through Home Assistant."

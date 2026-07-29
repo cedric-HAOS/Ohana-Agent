@@ -21,6 +21,7 @@ ExecStart=/opt/ohana-agent/venv/bin/ohana-agent \
     --zwave-config /etc/ohana-agent/plugins/zwave.yaml \
     --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
     --shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml \
+    --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml \
     --log-level INFO
 
 Restart=on-failure

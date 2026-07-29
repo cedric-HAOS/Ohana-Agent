@@ -43,7 +43,7 @@ class ShellyTelemetryPlugin(Plugin):
         """Return the Shelly telemetry plugin manifest."""
         return PluginManifest(
             name="shelly_telemetry",
-            version="0.2.0",
+            version="0.2.1",
             description=(
                 "Shelly power telemetry freshness plugin through Home Assistant."
             ),

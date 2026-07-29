@@ -125,10 +125,15 @@ Jamais sur le nom du plugin.
 
 Ohana-Agent fournit actuellement :
 
+- `dhcp` pour `dhcp.status` ;
 - `dns` pour `dns.resolve` ;
 - `ntp` pour `ntp.query` ;
 - `mqtt` pour `mqtt.roundtrip` ;
-- `network` pour `network.reachable`.
+- `network` pour `network.reachable` ;
+- `zwave` pour `zwave.status` ;
+- `wireguard` pour `wireguard.status` ;
+- `shelly_telemetry` pour `shelly.telemetry.freshness` ;
+- `teleinformation` pour `teleinformation.freshness`.
 
 Le plugin réseau constitue une exception volontairement limitée : il observe la
 présence d'un équipement, mais cette présence ne remplace jamais l'observation

@@ -156,3 +156,18 @@ Les évolutions futures doivent préserver les règles suivantes :
 5. des plugins indépendants du cœur ;
 6. des contrats publics versionnés ;
 7. un comportement testable et reproductible.
+
+
+# v1.8.0 — Téléinformation Linky
+
+**Statut : terminé.**
+
+Principaux acquis :
+
+- plugin `teleinformation` intégré au PluginManager ;
+- contrôle de fraîcheur des entités Home Assistant SINSTS et NTARF ;
+- interprétation des six périodes Tempo ;
+- lecture des index EASF01 à EASF06 ;
+- service rattaché au nœud RPI-Linky ;
+- administration, reconfiguration et test immédiat ;
+- planification et publication des observations vers Ohana-Vision.

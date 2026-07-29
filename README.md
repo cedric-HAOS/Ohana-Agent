@@ -18,8 +18,13 @@ fourni par la Freebox et ajoute la vérification de fraîcheur des télémétrie
 Shelly reçues par Home Assistant. La version 1.7.1 installe la commande
 d’autorisation Freebox nécessaire sur INFRA-01. La version 1.7.2 adapte le
 plugin Z-Wave au serveur WebSocket exposé par Home Assistant sur le port 3000
-et publie la version de l’Agent dans son API d’administration. La version 1.7.4
-modélise chaque contrôle Shelly Telemetry comme un service de l’équipement.
+et publie la version de l’Agent dans son API d’administration. La version 1.7.3
+modélise chaque contrôle Shelly Telemetry comme un service de l’équipement. La
+version 1.7.4 replanifie ces services après une modification de l’architecture
+ou du plugin. La version 1.7.5 corrige leur exécution périodique à travers le
+dispatcher et restaure la publication automatique vers Vision. La version
+1.8.0 ajoute le contrôle de la chaîne Téléinformation Linky transmise par
+`teleinfo2mqtt`, MQTT et Home Assistant, avec interprétation du tarif Tempo.
 
 ---
 
@@ -29,8 +34,9 @@ Ohana-Agent expose une API locale permettant à Ohana-Vision de modifier
 l’infrastructure, le DHCP et la configuration des plugins intégrés.
 
 L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DHCP,
-DNS, NTP, MQTT, Présence réseau, Z-Wave, WireGuard et Shelly Telemetry peuvent
-être activés, reconfigurés et testés sans redémarrer l’Agent.
+DNS, NTP, MQTT, Présence réseau, Z-Wave, WireGuard, Shelly Telemetry et
+Téléinformation peuvent être activés, reconfigurés et testés sans redémarrer
+l’Agent.
 Les secrets MQTT, Freebox et Home Assistant restent masqués.
 
 - l'API écoute par défaut sur `127.0.0.1:8765` ;
@@ -83,7 +89,11 @@ plugins/
 ├── dns/
 ├── mqtt/
 ├── network/
-└── ntp/
+├── ntp/
+├── shelly_telemetry/
+├── teleinformation/
+├── wireguard/
+└── zwave/
 ```
 
 Chaque plugin possède sa configuration et produit des observations standardisées.
@@ -478,6 +488,42 @@ date de leur dernier rapport. Une valeur de puissance égale à zéro
 reste valide si le rapport est récent ; l’observation échoue uniquement lorsque
 l’entité est indisponible, invalide ou trop ancienne.
 
+## Plugin Téléinformation
+
+```text
+config/plugins/teleinformation.yaml
+```
+
+Le plugin vérifie que Home Assistant reçoit toujours les trames Linky publiées
+par `teleinfo2mqtt` sur RPI-Linky. Il contrôle la fraîcheur de `SINSTS` et
+`NTARF`, interprète automatiquement les six périodes Tempo et expose les index
+`EASF01` à `EASF06`.
+
+```yaml
+services:
+  - id: teleinformation
+    name: Téléinformation Linky
+    type: teleinformation
+    node: linky-01
+    implementation: teleinfo2mqtt via MQTT et Home Assistant
+    enabled: true
+    metadata:
+      apparent_power_entity_id: sensor.teleinfo_041964385922_sinsts
+      tariff_entity_id: sensor.teleinfo_041964385922_ntarf
+      blue_off_peak_entity_id: sensor.teleinfo_041964385922_easf01
+      blue_peak_entity_id: sensor.teleinfo_041964385922_easf02
+      white_off_peak_entity_id: sensor.teleinfo_041964385922_easf03
+      white_peak_entity_id: sensor.teleinfo_041964385922_easf04
+      red_off_peak_entity_id: sensor.teleinfo_041964385922_easf05
+      red_peak_entity_id: sensor.teleinfo_041964385922_easf06
+      maximum_age_seconds: 180
+```
+
+La valeur `NTARF` est traduite ainsi : `1/2` Bleu, `3/4` Blanc et `5/6`
+Rouge ; les valeurs impaires correspondent aux heures creuses et les valeurs
+paires aux heures pleines. La capacité publiée est
+`teleinformation.freshness`.
+
 ---
 
 # Installation de développement
@@ -526,7 +572,8 @@ ohana-agent \
   --network-config config/plugins/network.yaml \
   --zwave-config config/plugins/zwave.yaml \
   --wireguard-config config/plugins/wireguard.yaml \
-  --shelly-telemetry-config config/plugins/shelly-telemetry.yaml
+  --shelly-telemetry-config config/plugins/shelly-telemetry.yaml \
+  --teleinformation-config config/plugins/teleinformation.yaml
 ```
 
 Version :
@@ -565,7 +612,7 @@ Le code courant comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugins DHCP, DNS, NTP, MQTT, présence réseau, Z-Wave, WireGuard et Shelly Telemetry ;
+- plugins DHCP, DNS, NTP, MQTT, présence réseau, Z-Wave, WireGuard, Shelly Telemetry et Téléinformation ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

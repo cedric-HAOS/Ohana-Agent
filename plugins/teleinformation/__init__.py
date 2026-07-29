@@ -1,0 +1,1 @@
+"""Téléinformation observation plugin."""

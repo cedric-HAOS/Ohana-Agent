@@ -32,6 +32,9 @@ def test_systemd_service_uses_reference_executable_and_configuration() -> None:
     assert (
         "--shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml"
     ) in service
+    assert (
+        "--teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml"
+    ) in service
 
 
 def test_systemd_service_runs_as_dedicated_user() -> None:

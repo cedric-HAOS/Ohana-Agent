@@ -124,7 +124,7 @@ class PluginAdministrationRepository:
                 current_configuration,
                 field_name="app_token",
             )
-        elif identifier == "shelly_telemetry":
+        elif identifier in {"shelly_telemetry", "teleinformation"}:
             self._preserve_secret(
                 configuration_payload,
                 current_configuration,
@@ -344,7 +344,7 @@ class PluginAdministrationRepository:
                 payload,
                 field_name="app_token",
             )
-        elif identifier == "shelly_telemetry":
+        elif identifier in {"shelly_telemetry", "teleinformation"}:
             PluginAdministrationRepository._mask_secret(
                 payload,
                 field_name="access_token",

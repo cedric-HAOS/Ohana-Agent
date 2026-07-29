@@ -7,6 +7,9 @@ from builder.ntp_configuration_builder import NTPConfigurationBuilder
 from builder.shelly_telemetry_configuration_builder import (
     ShellyTelemetryConfigurationBuilder,
 )
+from builder.teleinformation_configuration_builder import (
+    TeleinformationConfigurationBuilder,
+)
 from builder.wireguard_configuration_builder import WireGuardConfigurationBuilder
 from builder.zwave_configuration_builder import ZWaveConfigurationBuilder
 
@@ -18,6 +21,7 @@ __all__ = [
     "NetworkConfigurationBuilder",
     "NTPConfigurationBuilder",
     "ShellyTelemetryConfigurationBuilder",
+    "TeleinformationConfigurationBuilder",
     "WireGuardConfigurationBuilder",
     "ZWaveConfigurationBuilder",
 ]

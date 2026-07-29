@@ -61,6 +61,21 @@ def test_infrastructure_example_yaml_declares_services() -> None:
     assert services_by_id["wireguard-freebox"]["type"] == "wireguard"
     assert services_by_id["wireguard-freebox"]["node"] == "box-01"
     assert services_by_id["shelly-telemetry-cuisine"]["type"] == "shelly_telemetry"
+    teleinformation = services_by_id["teleinformation"]
+    assert teleinformation["type"] == "teleinformation"
+    assert teleinformation["node"] == "linky-01"
+    assert teleinformation["implementation"] == (
+        "teleinfo2mqtt via MQTT et Home Assistant"
+    )
+    assert teleinformation["metadata"]["apparent_power_entity_id"] == (
+        "sensor.teleinfo_041964385922_sinsts"
+    )
+    assert teleinformation["metadata"]["tariff_entity_id"] == (
+        "sensor.teleinfo_041964385922_ntarf"
+    )
+    assert teleinformation["metadata"]["red_peak_entity_id"] == (
+        "sensor.teleinfo_041964385922_easf06"
+    )
 
 
 def test_infrastructure_example_yaml_declares_service_endpoints() -> None:

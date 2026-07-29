@@ -94,6 +94,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Shelly telemetry observation plugin configuration file.",
     )
     parser.add_argument(
+        "--teleinformation-config",
+        type=Path,
+        default=Path("config/plugins/teleinformation.yaml"),
+        help="Linky teleinformation observation plugin configuration file.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=[
@@ -171,6 +177,7 @@ def main() -> int:
         zwave_config_path=arguments.zwave_config,
         wireguard_config_path=arguments.wireguard_config,
         shelly_telemetry_config_path=arguments.shelly_telemetry_config,
+        teleinformation_config_path=arguments.teleinformation_config,
     )
 
     install_signal_handlers(agent)

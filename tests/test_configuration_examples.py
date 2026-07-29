@@ -8,6 +8,7 @@ from loader.mqtt_config_loader import MQTTConfigLoader
 from loader.network_config_loader import NetworkConfigLoader
 from loader.ntp_config_loader import NTPConfigLoader
 from loader.shelly_telemetry_config_loader import ShellyTelemetryConfigLoader
+from loader.teleinformation_config_loader import TeleinformationConfigLoader
 from loader.wireguard_config_loader import WireGuardConfigLoader
 from loader.zwave_config_loader import ZWaveConfigLoader
 
@@ -137,3 +138,17 @@ def test_shelly_telemetry_example_configuration_is_valid() -> None:
     assert configuration.maximum_age_seconds == 900
     assert configuration.home_assistant_url == ("http://ha-green.ohana.lan:8123")
     assert configuration.devices == []
+
+
+def test_teleinformation_example_configuration_is_valid() -> None:
+    configuration = TeleinformationConfigLoader().load(
+        "config/plugins/teleinformation.example.yaml",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.interval_seconds == 60
+    assert configuration.maximum_age_seconds == 180
+    assert configuration.home_assistant_url == ("http://ha-green.ohana.lan:8123")
+    assert configuration.access_token_environment_variable == (
+        "OHANA_HOME_ASSISTANT_TOKEN"
+    )

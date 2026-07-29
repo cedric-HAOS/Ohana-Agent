@@ -57,7 +57,7 @@ def authorize_freebox(
     """Request Freebox approval and persist the resulting application token."""
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     app_id = str(payload.get("app_id", "fr.ohana.agent"))
-    app_version = str(payload.get("app_version", "1.7.4"))
+    app_version = str(payload.get("app_version", "1.8.0"))
     verify_tls = bool(payload.get("verify_tls", False))
     freebox_client = client or FreeboxWireGuardClient()
     app_token, track_id, api_root = freebox_client.request_authorization(

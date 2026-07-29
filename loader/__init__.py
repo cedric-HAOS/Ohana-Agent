@@ -5,6 +5,7 @@ from loader.mqtt_config_loader import MQTTConfigLoader
 from loader.network_config_loader import NetworkConfigLoader
 from loader.ntp_config_loader import NTPConfigLoader
 from loader.shelly_telemetry_config_loader import ShellyTelemetryConfigLoader
+from loader.teleinformation_config_loader import TeleinformationConfigLoader
 from loader.wireguard_config_loader import WireGuardConfigLoader
 from loader.zwave_config_loader import ZWaveConfigLoader
 
@@ -16,6 +17,7 @@ __all__ = [
     "NetworkConfigLoader",
     "NTPConfigLoader",
     "ShellyTelemetryConfigLoader",
+    "TeleinformationConfigLoader",
     "WireGuardConfigLoader",
     "ZWaveConfigLoader",
 ]

@@ -95,6 +95,11 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/plugins/shelly-telemetry.yaml"
 
+    [[ -f "${CONFIG_ROOT}/plugins/teleinformation.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/teleinformation.yaml"
+
     [[ -e "${PACKAGE_SOURCE}" ]] \
         || fail "Package source not found: ${PACKAGE_SOURCE}"
 

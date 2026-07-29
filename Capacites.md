@@ -199,3 +199,10 @@ Elle est indépendante :
 - des implémentations.
 
 Les capacités constituent le contrat fonctionnel d'Ohana-Agent.
+
+# Téléinformation Linky
+
+La capacité `teleinformation.freshness` garantit que la chaîne compteur Linky,
+liaison série, `teleinfo2mqtt`, MQTT et Home Assistant continue à produire des
+données récentes. L’observation contient la puissance apparente, la valeur
+`NTARF`, la couleur Tempo, la période HC/HP et les index configurés.

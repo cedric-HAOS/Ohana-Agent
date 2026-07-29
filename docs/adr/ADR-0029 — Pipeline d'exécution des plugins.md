@@ -146,7 +146,11 @@ Le PluginObservationExecutor :
 - exécute le plugin ;
 - transmet le résultat à ObservationEngine.
 
-Il ne réalise aucune transformation métier.
+Il ne réalise aucune transformation métier. L’identifiant de commande sert au
+routage technique vers le plugin, tandis que la capacité publiée provient du
+champ `check` de l’`ObserverResult`. Cette séparation permet notamment au plugin
+`shelly_telemetry` de publier la capacité métier
+`shelly.telemetry.freshness`.
 
 ---
 

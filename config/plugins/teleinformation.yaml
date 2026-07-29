@@ -1,0 +1,11 @@
+enabled: true
+timeout: 5.0
+retries: 1
+interval_seconds: 60
+maximum_age_seconds: 180
+home_assistant_url: http://ha-green.ohana.lan:8123
+access_token: null
+access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
+verify_tls: true
+# Les entités Linky sont déclarées dans les services de type teleinformation
+# du fichier infrastructure.yaml.

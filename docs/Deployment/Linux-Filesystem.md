@@ -12,7 +12,7 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.5.0.
+Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.8.0.
 
 ---
 
@@ -45,7 +45,9 @@ L’installation Linux respecte les principes suivants :
 │   │       ├── mqtt.yaml
 │   │       ├── network.yaml
 │   │       ├── zwave.yaml
-│   │       └── wireguard.yaml
+│   │       ├── wireguard.yaml
+│   │       ├── shelly-telemetry.yaml
+│   │       └── teleinformation.yaml
 │   │
 │   └── systemd/
 │       └── system/
@@ -116,7 +118,9 @@ La structure retenue est :
     ├── mqtt.yaml
     ├── network.yaml
     ├── zwave.yaml
-    └── wireguard.yaml
+    ├── wireguard.yaml
+    ├── shelly-telemetry.yaml
+    └── teleinformation.yaml
 ```
 
 ### Configuration principale
@@ -231,6 +235,26 @@ Ce fichier règle la vérification générique des équipements adressables :
 Les adresses des équipements restent déclarées dans `infrastructure.yaml`,
 directement sur l’équipement ou par l’intermédiaire de son nœud.
 
+### Plugin Shelly Telemetry
+
+```text
+/etc/ohana-agent/plugins/shelly-telemetry.yaml
+```
+
+Ce fichier configure la connexion Home Assistant et la fréquence globale des
+contrôles Shelly. Les entités restent déclarées dans les services
+`shelly_telemetry` de `infrastructure.yaml`.
+
+### Plugin Téléinformation
+
+```text
+/etc/ohana-agent/plugins/teleinformation.yaml
+```
+
+Ce fichier configure la connexion Home Assistant et la fréquence du contrôle
+Linky. Les entités SINSTS, NTARF et EASF01 à EASF06 restent déclarées dans le
+service `teleinformation` de `infrastructure.yaml`.
+
 ### Fichiers d’exemple
 
 Les fichiers `.example.yaml` appartiennent au dépôt et à la documentation du projet.
@@ -329,6 +353,8 @@ avec les chemins de configuration explicites :
 --network-config /etc/ohana-agent/plugins/network.yaml
 --zwave-config /etc/ohana-agent/plugins/zwave.yaml
 --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml
+--shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml
+--teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml
 ```
 
 Le service ne doit pas dépendre du répertoire courant pour retrouver ses fichiers.
@@ -447,6 +473,8 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--network-config` | `/etc/ohana-agent/plugins/network.yaml` |
 | `--zwave-config` | `/etc/ohana-agent/plugins/zwave.yaml` |
 | `--wireguard-config` | `/etc/ohana-agent/plugins/wireguard.yaml` |
+| `--shelly-telemetry-config` | `/etc/ohana-agent/plugins/shelly-telemetry.yaml` |
+| `--teleinformation-config` | `/etc/ohana-agent/plugins/teleinformation.yaml` |
 | `--log-level`      | niveau choisi par le service            |
 
 Commande de référence :
@@ -462,6 +490,8 @@ Commande de référence :
   --network-config /etc/ohana-agent/plugins/network.yaml \
   --zwave-config /etc/ohana-agent/plugins/zwave.yaml \
   --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
+  --shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml \
+  --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml \
   --log-level INFO
 ```
 
@@ -481,6 +511,10 @@ config/plugins/dns.yaml
 config/plugins/ntp.yaml
 config/plugins/mqtt.yaml
 config/plugins/network.yaml
+config/plugins/zwave.yaml
+config/plugins/wireguard.yaml
+config/plugins/shelly-telemetry.yaml
+config/plugins/teleinformation.yaml
 ```
 
 Ils permettent de lancer localement :
@@ -521,7 +555,7 @@ Ils ne devront être ajoutés que lorsqu’un composant de production les utilis
 
 ---
 
-## Contrat pour la version 1.5.0
+## Contrat pour la version 1.8.0
 
 L’arborescence Linux de référence d’Ohana-Agent 1.5.0 est :
 

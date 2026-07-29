@@ -48,6 +48,9 @@ def test_parse_arguments_uses_default_configuration_paths(
     assert arguments.shelly_telemetry_config == Path(
         "config/plugins/shelly-telemetry.yaml"
     )
+    assert arguments.teleinformation_config == Path(
+        "config/plugins/teleinformation.yaml"
+    )
     assert arguments.log_level == "INFO"
 
 
@@ -79,6 +82,8 @@ def test_parse_arguments_accepts_custom_paths(
             "custom/wireguard.yaml",
             "--shelly-telemetry-config",
             "custom/shelly-telemetry.yaml",
+            "--teleinformation-config",
+            "custom/teleinformation.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -96,6 +101,7 @@ def test_parse_arguments_accepts_custom_paths(
     assert arguments.zwave_config == Path("custom/zwave.yaml")
     assert arguments.wireguard_config == Path("custom/wireguard.yaml")
     assert arguments.shelly_telemetry_config == Path("custom/shelly-telemetry.yaml")
+    assert arguments.teleinformation_config == Path("custom/teleinformation.yaml")
     assert arguments.log_level == "DEBUG"
 
 
@@ -254,6 +260,8 @@ def test_main_builds_and_runs_production_agent(
             "custom/wireguard.yaml",
             "--shelly-telemetry-config",
             "custom/shelly-telemetry.yaml",
+            "--teleinformation-config",
+            "custom/teleinformation.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -279,6 +287,7 @@ def test_main_builds_and_runs_production_agent(
         zwave_config_path: Path,
         wireguard_config_path: Path,
         shelly_telemetry_config_path: Path,
+        teleinformation_config_path: Path,
     ) -> FakeAgent:
         calls.append(
             (
@@ -293,6 +302,7 @@ def test_main_builds_and_runs_production_agent(
                 zwave_config_path,
                 wireguard_config_path,
                 shelly_telemetry_config_path,
+                teleinformation_config_path,
             )
         )
         return fake_agent
@@ -342,6 +352,7 @@ def test_main_builds_and_runs_production_agent(
             Path("custom/zwave.yaml"),
             Path("custom/wireguard.yaml"),
             Path("custom/shelly-telemetry.yaml"),
+            Path("custom/teleinformation.yaml"),
         ),
         (
             "install_signal_handlers",
@@ -431,6 +442,8 @@ def test_parse_arguments_accepts_linux_configuration_paths(
             "/etc/ohana-agent/plugins/wireguard.yaml",
             "--shelly-telemetry-config",
             "/etc/ohana-agent/plugins/shelly-telemetry.yaml",
+            "--teleinformation-config",
+            "/etc/ohana-agent/plugins/teleinformation.yaml",
         ],
     )
 
@@ -465,4 +478,7 @@ def test_parse_arguments_accepts_linux_configuration_paths(
     )
     assert arguments.shelly_telemetry_config == Path(
         "/etc/ohana-agent/plugins/shelly-telemetry.yaml",
+    )
+    assert arguments.teleinformation_config == Path(
+        "/etc/ohana-agent/plugins/teleinformation.yaml",
     )

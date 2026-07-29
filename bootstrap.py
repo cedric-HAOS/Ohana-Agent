@@ -21,6 +21,7 @@ from builder import (
     NetworkConfigurationBuilder,
     NTPConfigurationBuilder,
     ShellyTelemetryConfigurationBuilder,
+    TeleinformationConfigurationBuilder,
     WireGuardConfigurationBuilder,
     ZWaveConfigurationBuilder,
 )
@@ -35,6 +36,7 @@ from configuration.mqtt_plugin import MQTTPluginConfig
 from configuration.network import NetworkPluginConfig
 from configuration.ntp import NTPPluginConfig
 from configuration.shelly_telemetry import ShellyTelemetryPluginConfig
+from configuration.teleinformation import TeleinformationPluginConfig
 from configuration.wireguard import WireGuardPluginConfig
 from configuration.zwave import ZWavePluginConfig
 from core.events import EventBus
@@ -50,6 +52,7 @@ from loader import (
     NetworkConfigLoader,
     NTPConfigLoader,
     ShellyTelemetryConfigLoader,
+    TeleinformationConfigLoader,
     WireGuardConfigLoader,
     ZWaveConfigLoader,
 )
@@ -93,6 +96,9 @@ from plugins.ntp.ntp_plugin import NTPPlugin
 from plugins.shelly_telemetry.shelly_telemetry_check import ShellyTelemetryCheck
 from plugins.shelly_telemetry.shelly_telemetry_config import ShellyTelemetryConfig
 from plugins.shelly_telemetry.shelly_telemetry_plugin import ShellyTelemetryPlugin
+from plugins.teleinformation.teleinformation_check import TeleinformationCheck
+from plugins.teleinformation.teleinformation_config import TeleinformationConfig
+from plugins.teleinformation.teleinformation_plugin import TeleinformationPlugin
 from plugins.wireguard.wireguard_check import WireGuardCheck
 from plugins.wireguard.wireguard_config import WireGuardConfig
 from plugins.wireguard.wireguard_plugin import WireGuardPlugin
@@ -361,7 +367,7 @@ def _build_shelly_telemetry_tasks(
         Task(
             id=f"shelly.telemetry.freshness:{service.name}",
             name=f"Check Shelly telemetry service {service.name}",
-            command="shelly.telemetry.freshness",
+            command="shelly_telemetry.freshness",
             trigger=IntervalTrigger(
                 interval=timedelta(seconds=interval_seconds),
                 start_at=start_at,
@@ -385,6 +391,51 @@ def _build_shelly_telemetry_tasks(
             },
         )
         for service in shelly_telemetry_config.services
+        if service.enabled
+    ]
+
+
+def _build_teleinformation_tasks(
+    *,
+    teleinformation_config: TeleinformationConfig,
+    interval_seconds: int,
+    start_at: datetime,
+) -> list[Task]:
+    """Build one Linky Téléinformation observation per declared service."""
+    return [
+        Task(
+            id=f"teleinformation.freshness:{service.name}",
+            name=f"Check Linky teleinformation service {service.name}",
+            command="teleinformation.freshness",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "service_id": service.name,
+                "service_name": service.label,
+                "node_id": service.node_id,
+                "apparent_power_entity_id": service.apparent_power_entity_id,
+                "tariff_entity_id": service.tariff_entity_id,
+                "blue_off_peak_entity_id": service.blue_off_peak_entity_id,
+                "blue_peak_entity_id": service.blue_peak_entity_id,
+                "white_off_peak_entity_id": service.white_off_peak_entity_id,
+                "white_peak_entity_id": service.white_peak_entity_id,
+                "red_off_peak_entity_id": service.red_off_peak_entity_id,
+                "red_peak_entity_id": service.red_peak_entity_id,
+                "maximum_age_seconds": service.maximum_age_seconds,
+            },
+            metadata={
+                "managed_by": "teleinformation",
+                "service_id": service.name,
+                "service_name": service.label,
+                "node_id": service.node_id,
+                "apparent_power_entity_id": service.apparent_power_entity_id,
+                "tariff_entity_id": service.tariff_entity_id,
+                "maximum_age_seconds": service.maximum_age_seconds,
+            },
+        )
+        for service in teleinformation_config.services
         if service.enabled
     ]
 
@@ -419,6 +470,7 @@ def build_production_agent(
     zwave_config_path: Path = Path("config/plugins/zwave.yaml"),
     wireguard_config_path: Path = Path("config/plugins/wireguard.yaml"),
     shelly_telemetry_config_path: Path = Path("config/plugins/shelly-telemetry.yaml"),
+    teleinformation_config_path: Path = Path("config/plugins/teleinformation.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
     network_check: NetworkCheck | None = None,
@@ -426,6 +478,7 @@ def build_production_agent(
     zwave_check: ZWaveCheck | None = None,
     wireguard_check: WireGuardCheck | None = None,
     shelly_telemetry_check: ShellyTelemetryCheck | None = None,
+    teleinformation_check: TeleinformationCheck | None = None,
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
     configuration = ConfigurationLoader.load(application_config_path)
@@ -494,6 +547,14 @@ def build_production_agent(
     shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
         infrastructure,
         shelly_telemetry_plugin_config,
+    )
+
+    teleinformation_plugin_config = TeleinformationConfigLoader().load(
+        teleinformation_config_path
+    )
+    teleinformation_config = TeleinformationConfigurationBuilder().build(
+        infrastructure,
+        teleinformation_plugin_config,
     )
 
     event_bus = EventBus()
@@ -607,6 +668,12 @@ def build_production_agent(
         config=shelly_telemetry_config,
     )
     plugin_manager.register(shelly_telemetry_plugin)
+
+    teleinformation_plugin = TeleinformationPlugin(
+        check=teleinformation_check or TeleinformationCheck(),
+        config=teleinformation_config,
+    )
+    plugin_manager.register(teleinformation_plugin)
 
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
@@ -730,6 +797,19 @@ def build_production_agent(
         ),
         plugin_name="shelly_telemetry",
     )
+    _replace_plugin_tasks(
+        scheduler,
+        (
+            _build_teleinformation_tasks(
+                teleinformation_config=teleinformation_config,
+                interval_seconds=teleinformation_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if teleinformation_plugin_config.enabled
+            else []
+        ),
+        plugin_name="teleinformation",
+    )
 
     def reconfigure_infrastructure(
         changed_configuration: InfrastructureConfig,
@@ -774,6 +854,10 @@ def build_production_agent(
         updated_shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
             updated_infrastructure,
             shelly_telemetry_plugin_config,
+        )
+        updated_teleinformation_config = TeleinformationConfigurationBuilder().build(
+            updated_infrastructure,
+            teleinformation_plugin_config,
         )
         updated_dhcp_tasks = (
             _build_dhcp_tasks(
@@ -847,6 +931,15 @@ def build_production_agent(
             if shelly_telemetry_plugin_config.enabled
             else []
         )
+        updated_teleinformation_tasks = (
+            _build_teleinformation_tasks(
+                teleinformation_config=updated_teleinformation_config,
+                interval_seconds=teleinformation_plugin_config.interval_seconds,
+                start_at=resolved_clock.now(),
+            )
+            if teleinformation_plugin_config.enabled
+            else []
+        )
 
         observation_engine.health_manager.runtime = updated_runtime
         dhcp_plugin.reconfigure(updated_dhcp_config)
@@ -860,6 +953,7 @@ def build_production_agent(
         zwave_plugin.reconfigure(updated_zwave_config)
         wireguard_plugin.reconfigure(updated_wireguard_config)
         shelly_telemetry_plugin.reconfigure(updated_shelly_telemetry_config)
+        teleinformation_plugin.reconfigure(updated_teleinformation_config)
         _replace_plugin_tasks(
             scheduler,
             updated_dhcp_tasks,
@@ -899,6 +993,11 @@ def build_production_agent(
             scheduler,
             updated_shelly_telemetry_tasks,
             plugin_name="shelly_telemetry",
+        )
+        _replace_plugin_tasks(
+            scheduler,
+            updated_teleinformation_tasks,
+            plugin_name="teleinformation",
         )
         current_infrastructure = updated_infrastructure
         current_infrastructure_config = changed_configuration
@@ -1094,6 +1193,31 @@ def build_production_agent(
         )
         shelly_telemetry_plugin_config = configuration
 
+    def apply_teleinformation_configuration(
+        configuration: TeleinformationPluginConfig,
+    ) -> None:
+        nonlocal teleinformation_plugin_config
+
+        updated_config = TeleinformationConfigurationBuilder().build(
+            current_infrastructure,
+            configuration,
+        )
+        teleinformation_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_teleinformation_tasks(
+                    teleinformation_config=updated_config,
+                    interval_seconds=configuration.interval_seconds,
+                    start_at=resolved_clock.now(),
+                )
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="teleinformation",
+        )
+        teleinformation_plugin_config = configuration
+
     def test_dhcp_plugin() -> ObserverResult:
         servers = [server for server in dhcp_plugin.config.servers if server.enabled]
 
@@ -1201,6 +1325,34 @@ def build_production_agent(
             node_id=service.node_id,
             power_entity_id=service.power_entity_id,
             energy_entity_id=service.energy_entity_id,
+            maximum_age_seconds=service.maximum_age_seconds,
+        )
+
+    def test_teleinformation_plugin() -> ObserverResult:
+        services = [
+            service
+            for service in teleinformation_plugin.config.services
+            if service.enabled
+        ]
+
+        if not services:
+            raise ValueError(
+                "The Téléinformation plugin has no enabled Téléinformation service."
+            )
+
+        service = services[0]
+        return teleinformation_plugin.execute(
+            service_id=service.name,
+            service_name=service.label,
+            node_id=service.node_id,
+            apparent_power_entity_id=service.apparent_power_entity_id,
+            tariff_entity_id=service.tariff_entity_id,
+            blue_off_peak_entity_id=service.blue_off_peak_entity_id,
+            blue_peak_entity_id=service.blue_peak_entity_id,
+            white_off_peak_entity_id=service.white_off_peak_entity_id,
+            white_peak_entity_id=service.white_peak_entity_id,
+            red_off_peak_entity_id=service.red_off_peak_entity_id,
+            red_peak_entity_id=service.red_peak_entity_id,
             maximum_age_seconds=service.maximum_age_seconds,
         )
 
@@ -1336,6 +1488,17 @@ def build_production_agent(
                         lambda: apply_shelly_telemetry_configuration(config)
                     ),
                     test_plugin=test_shelly_telemetry_plugin,
+                ),
+                PluginAdministrationBinding(
+                    identifier="teleinformation",
+                    display_name="Téléinformation",
+                    capabilities=("teleinformation.freshness",),
+                    configuration_path=teleinformation_config_path,
+                    configuration_model=TeleinformationPluginConfig,
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_teleinformation_configuration(config)
+                    ),
+                    test_plugin=test_teleinformation_plugin,
                 ),
                 PluginAdministrationBinding(
                     identifier="network",

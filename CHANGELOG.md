@@ -6,6 +6,46 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.8.0] — Téléinformation Linky — 2026-07-29
+
+## Ajouté
+
+- Nouveau plugin `teleinformation` et capacité
+  `teleinformation.freshness`.
+- Contrôle de la chaîne Linky → série → `teleinfo2mqtt` → MQTT → Home
+  Assistant à partir des entités `SINSTS` et `NTARF`.
+- Lecture facultative des six index Tempo `EASF01` à `EASF06`.
+- Interprétation automatique de la couleur Bleue, Blanc ou Rouge et de la
+  période HC ou HP à partir de `NTARF`.
+- Configuration et test immédiat depuis l’administration des plugins.
+- Déclaration par service dans `infrastructure.yaml`, avec une tâche périodique
+  par compteur Linky.
+
+## Qualité
+
+- Tests unitaires du client Home Assistant, de la fraîcheur, du mapping Tempo,
+  du builder, du plugin et du parcours scheduler → Vision.
+- Version du paquet alignée sur `1.8.0`.
+
+# [1.7.5] — Exécution planifiée Shelly Telemetry — 2026-07-29
+
+## Corrigé
+
+- Les tâches périodiques Shelly utilisent désormais la commande
+  `shelly_telemetry.freshness`, conforme à l’identifiant enregistré du plugin.
+- Le dispatcher ne cherche plus un plugin inexistant nommé `shelly` lors des
+  exécutions automatiques.
+- Les observations programmées sont de nouveau publiées vers Vision et peuvent
+  alimenter l’état du service et de l’équipement.
+- Version interne du plugin Shelly Telemetry portée à `0.2.1`.
+
+## Qualité
+
+- Test de non-régression complété sur la commande générée et son exécution
+  réelle à travers le dispatcher et le pipeline d’observation.
+- 1 158 tests réussis après construction du wheel et du sdist.
+- Version du paquet alignée sur `1.7.5`.
+
 # [1.7.4] — Replanification Shelly Telemetry — 2026-07-29
 
 ## Corrigé

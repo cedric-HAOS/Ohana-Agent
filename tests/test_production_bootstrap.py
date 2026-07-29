@@ -15,6 +15,15 @@ from loader import InfrastructureLoader
 from observer.exporters import VisionInfrastructureMapper
 from plugins.dhcp.dhcp_check_result import DHCPCheckResult
 from plugins.network.network_probe_result import NetworkProbeResult
+from plugins.shelly_telemetry.shelly_telemetry_result import (
+    ShellyTelemetryCheckResult,
+    ShellyTelemetryValue,
+)
+from plugins.teleinformation.teleinformation_result import (
+    TeleinformationCheckResult,
+    TeleinformationTariff,
+    TeleinformationValue,
+)
 from scheduler.clock import FakeClock
 
 
@@ -84,6 +93,123 @@ class FakeNetworkCheck:
             reachable=True,
             method="icmp",
             latency_ms=1.0,
+        )
+
+
+class FakeShellyTelemetryCheck:
+    """Return fresh Shelly telemetry without contacting Home Assistant."""
+
+    def __init__(self) -> None:
+        self.devices: list[str] = []
+
+    def check(
+        self,
+        device_name: str,
+        power_entity_id: str,
+        *,
+        energy_entity_id: str | None = None,
+        home_assistant_url: str,
+        access_token: str | None,
+        access_token_environment_variable: str | None,
+        maximum_age_seconds: int,
+        timeout: float = 5.0,
+        retries: int = 1,
+        verify_tls: bool = True,
+        now: datetime | None = None,
+    ) -> ShellyTelemetryCheckResult:
+        del (
+            home_assistant_url,
+            access_token,
+            access_token_environment_variable,
+            maximum_age_seconds,
+            timeout,
+            retries,
+            verify_tls,
+            now,
+        )
+        self.devices.append(device_name)
+        return ShellyTelemetryCheckResult(
+            device_name=device_name,
+            healthy=True,
+            power=ShellyTelemetryValue(
+                entity_id=power_entity_id,
+                value=1594.2,
+                unit="W",
+            ),
+            energy=(
+                ShellyTelemetryValue(
+                    entity_id=energy_entity_id,
+                    value=12.5,
+                    unit="kWh",
+                )
+                if energy_entity_id is not None
+                else None
+            ),
+        )
+
+
+class FakeTeleinformationCheck:
+    """Return fresh Linky data without contacting Home Assistant."""
+
+    def __init__(self) -> None:
+        self.meters: list[str] = []
+
+    def check(
+        self,
+        meter_name: str,
+        apparent_power_entity_id: str,
+        tariff_entity_id: str,
+        *,
+        index_entity_ids: dict[str, str] | None = None,
+        home_assistant_url: str,
+        access_token: str | None,
+        access_token_environment_variable: str | None,
+        maximum_age_seconds: int,
+        timeout: float = 5.0,
+        retries: int = 1,
+        verify_tls: bool = True,
+        now: datetime | None = None,
+    ) -> TeleinformationCheckResult:
+        del (
+            home_assistant_url,
+            access_token,
+            access_token_environment_variable,
+            maximum_age_seconds,
+            timeout,
+            retries,
+            verify_tls,
+            now,
+        )
+        self.meters.append(meter_name)
+        indexes = {
+            key: TeleinformationValue(
+                entity_id=entity_id,
+                value=6931422.0 if key == "blue_peak" else 0.0,
+                unit="Wh",
+            )
+            for key, entity_id in (index_entity_ids or {}).items()
+        }
+        return TeleinformationCheckResult(
+            meter_name=meter_name,
+            healthy=True,
+            apparent_power=TeleinformationValue(
+                entity_id=apparent_power_entity_id,
+                value=1392.0,
+                unit="VA",
+            ),
+            tariff_value=TeleinformationValue(
+                entity_id=tariff_entity_id,
+                value=2.0,
+            ),
+            tariff=TeleinformationTariff(
+                number=2,
+                color="Bleue",
+                period="HP",
+                label="HP Bleue",
+                index_key="blue_peak",
+            ),
+            indexes=indexes,
+            active_index=indexes.get("blue_peak"),
         )
 
 
@@ -592,14 +718,18 @@ administration:
         encoding="utf-8",
     )
 
+    vision_client = FakeVisionClient()
+    clock = FakeClock(
+        current_time=datetime(2026, 7, 29, 8, 0, tzinfo=UTC),
+    )
+    shelly_check = FakeShellyTelemetryCheck()
     agent = build_production_agent(
         application_config_path=application_path,
         infrastructure_config_path=infrastructure_path,
         shelly_telemetry_config_path=shelly_path,
-        vision_client=FakeVisionClient(),
-        clock=FakeClock(
-            current_time=datetime(2026, 7, 29, 8, 0, tzinfo=UTC),
-        ),
+        vision_client=vision_client,
+        clock=clock,
+        shelly_telemetry_check=shelly_check,
     )
 
     assert agent.administration_runtime is not None
@@ -641,3 +771,160 @@ administration:
         "shelly-garage",
         "shelly-kitchen",
     ]
+    assert {task.command for task in tasks} == {
+        "shelly_telemetry.freshness",
+    }
+
+    execution = agent.scheduler.executor.execute(tasks[0], clock.now())
+
+    assert execution.success is True
+    assert execution.error is None
+    assert shelly_check.devices == ["Shelly garage"]
+
+    observations = [
+        payload
+        for operation, payload in vision_client.operations
+        if operation == "observation"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["node_id"] == "infra-01"
+    assert observations[0]["service_id"] == "shelly-garage"
+    assert observations[0]["capability_id"] == "shelly.telemetry.freshness"
+    assert observations[0]["status"] == "healthy"
+
+
+def test_teleinformation_plugin_schedules_and_exports_linky_observation(
+    tmp_path: Path,
+) -> None:
+    """A declared Linky service must run and reach Vision."""
+    token_path = tmp_path / "management.token"
+    token_path.write_text("test-token\n", encoding="utf-8")
+
+    application_path = tmp_path / "shikamaru.yaml"
+    application_path.write_text(
+        f"""\
+version: 1
+agent:
+  name: Shikamaru
+  environment: test
+vision:
+  enabled: true
+  observation_url: http://127.0.0.1:8000/api/observations
+  infrastructure_url: http://127.0.0.1:8000/api/infrastructure
+administration:
+  enabled: true
+  token_file: {token_path.as_posix()}
+  dhcp:
+    enabled: false
+""",
+        encoding="utf-8",
+    )
+
+    infrastructure = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
+    with_linky = infrastructure.model_copy(
+        update={
+            "services": [
+                *infrastructure.services,
+                ServiceConfig(
+                    id="teleinformation-linky",
+                    name="Téléinformation Linky",
+                    type="teleinformation",
+                    node="infra-01",
+                    implementation="teleinfo2mqtt",
+                    metadata={
+                        "apparent_power_entity_id": (
+                            "sensor.teleinfo_041964385922_sinsts"
+                        ),
+                        "tariff_entity_id": ("sensor.teleinfo_041964385922_ntarf"),
+                        "blue_off_peak_entity_id": (
+                            "sensor.teleinfo_041964385922_easf01"
+                        ),
+                        "blue_peak_entity_id": ("sensor.teleinfo_041964385922_easf02"),
+                        "white_off_peak_entity_id": (
+                            "sensor.teleinfo_041964385922_easf03"
+                        ),
+                        "white_peak_entity_id": ("sensor.teleinfo_041964385922_easf04"),
+                        "red_off_peak_entity_id": (
+                            "sensor.teleinfo_041964385922_easf05"
+                        ),
+                        "red_peak_entity_id": ("sensor.teleinfo_041964385922_easf06"),
+                        "maximum_age_seconds": 180,
+                    },
+                ),
+            ]
+        }
+    )
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(
+        yaml.safe_dump(
+            with_linky.model_dump(mode="json", exclude_none=True),
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    plugin_path = tmp_path / "teleinformation.yaml"
+    plugin_path.write_text(
+        """\
+enabled: true
+timeout: 5.0
+retries: 1
+interval_seconds: 60
+maximum_age_seconds: 180
+home_assistant_url: http://ha-green.ohana.lan:8123
+access_token: test-home-assistant-token
+access_token_environment_variable: null
+verify_tls: true
+""",
+        encoding="utf-8",
+    )
+
+    vision_client = FakeVisionClient()
+    clock = FakeClock(current_time=datetime(2026, 7, 29, 8, 0, tzinfo=UTC))
+    teleinformation_check = FakeTeleinformationCheck()
+    agent = build_production_agent(
+        application_config_path=application_path,
+        infrastructure_config_path=infrastructure_path,
+        teleinformation_config_path=plugin_path,
+        vision_client=vision_client,
+        clock=clock,
+        teleinformation_check=teleinformation_check,
+    )
+
+    assert agent.administration_runtime is not None
+    repository = agent.administration_runtime.service.plugin_repository
+    assert repository is not None
+    plugin_state = repository.read("teleinformation")
+    assert plugin_state.task_count == 1
+    assert plugin_state.interval_seconds == 60
+
+    tasks = [
+        task
+        for task in agent.scheduler.list_tasks()
+        if task.metadata.get("managed_by") == "teleinformation"
+    ]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task.command == "teleinformation.freshness"
+    assert task.arguments["tariff_entity_id"].endswith("_ntarf")
+    assert task.arguments["red_peak_entity_id"].endswith("_easf06")
+
+    execution = agent.scheduler.executor.execute(task, clock.now())
+
+    assert execution.success is True
+    assert execution.error is None
+    assert teleinformation_check.meters == ["Téléinformation Linky"]
+    observations = [
+        payload
+        for operation, payload in vision_client.operations
+        if operation == "observation"
+    ]
+    assert len(observations) == 1
+    observation = observations[0]
+    assert observation["node_id"] == "infra-01"
+    assert observation["service_id"] == "teleinformation-linky"
+    assert observation["capability_id"] == "teleinformation.freshness"
+    assert observation["status"] == "healthy"
+    assert observation["metadata"]["tariff_color"] == "Bleue"
+    assert observation["metadata"]["tariff_period"] == "HP"
+    assert observation["metadata"]["active_index"]["value"] == 6931422.0

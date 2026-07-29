@@ -99,6 +99,7 @@ def test_wheel_contains_runtime_modules(
         "plugins/wireguard/wireguard_plugin.py",
         "plugins/wireguard/authorize_freebox.py",
         "plugins/shelly_telemetry/shelly_telemetry_plugin.py",
+        "plugins/teleinformation/teleinformation_plugin.py",
     }
 
     assert required_modules <= wheel_members
@@ -213,6 +214,7 @@ def test_sdist_contains_configuration_examples_only(
         "config/plugins/zwave.example.yaml",
         "config/plugins/wireguard.example.yaml",
         "config/plugins/shelly-telemetry.example.yaml",
+        "config/plugins/teleinformation.example.yaml",
     }
 
     forbidden_active_configuration = {
@@ -226,6 +228,7 @@ def test_sdist_contains_configuration_examples_only(
         "config/plugins/zwave.yaml",
         "config/plugins/wireguard.yaml",
         "config/plugins/shelly-telemetry.yaml",
+        "config/plugins/teleinformation.yaml",
     }
 
     assert required_examples <= sdist_members

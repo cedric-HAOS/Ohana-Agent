@@ -44,5 +44,4 @@ class PluginObservationExecutor:
             command.plugin_name,
             target_name=command.target_name,
             arguments=command.arguments,
-            source=command.source,
         )

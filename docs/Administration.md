@@ -27,6 +27,8 @@ Ohana-Agent :8765
     +-- plugins/network.yaml
     +-- plugins/zwave.yaml
     +-- plugins/wireguard.yaml
+    +-- plugins/shelly-telemetry.yaml
+    +-- plugins/teleinformation.yaml
 ```
 
 Le jeton n'est jamais envoyé au navigateur. Vision le lit dans
@@ -59,13 +61,17 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
 L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
 dans l'API s'il n'est pas réellement enregistré dans l'Agent.
 
-La version 1.5.0 expose :
+La version 1.8.0 expose :
 
 - **DHCP** — capacité `dhcp.status` ;
 - **DNS** — capacité `dns.resolve` ;
 - **NTP** — capacité `ntp.query` ;
 - **MQTT** — capacité `mqtt.roundtrip` ;
-- **Présence réseau** — capacité `network.reachable`.
+- **Présence réseau** — capacité `network.reachable` ;
+- **Z-Wave** — capacité `zwave.status` ;
+- **WireGuard** — capacité `wireguard.status` ;
+- **Shelly Telemetry** — capacité `shelly.telemetry.freshness` ;
+- **Téléinformation** — capacité `teleinformation.freshness`.
 
 Pour chaque plugin, l'API fournit notamment :
 

@@ -49,7 +49,7 @@ def test_wireguard_check_accepts_started_freebox_server() -> None:
         "freebox-wireguard",
         "http://192.168.1.1",
         app_id="fr.ohana.agent",
-        app_version="1.7.3",
+        app_version="1.7.4",
         app_token="secret",
     )
 
@@ -71,7 +71,7 @@ def test_wireguard_check_retries_transient_freebox_failure() -> None:
         "freebox-wireguard",
         "http://192.168.1.1",
         app_id="fr.ohana.agent",
-        app_version="1.7.3",
+        app_version="1.7.4",
         app_token="secret",
         retries=1,
     )

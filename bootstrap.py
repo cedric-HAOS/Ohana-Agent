@@ -1075,7 +1075,7 @@ def build_production_agent(
         nonlocal shelly_telemetry_plugin_config
 
         updated_config = ShellyTelemetryConfigurationBuilder().build(
-            current_infrastructure_config,
+            current_infrastructure,
             configuration,
         )
         shelly_telemetry_plugin.reconfigure(updated_config)

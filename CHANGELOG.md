@@ -6,6 +6,24 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.7.4] — Replanification Shelly Telemetry — 2026-07-29
+
+## Corrigé
+
+- La reconfiguration du plugin Shelly Telemetry reconstruit désormais ses
+  services à partir de l’infrastructure d’exécution courante.
+- L’application d’une architecture contenant des services
+  `shelly_telemetry` recrée immédiatement les tâches correspondantes.
+- Les tâches périodiques Shelly restent cohérentes après modification de la
+  connexion Home Assistant ou de l’intervalle du plugin.
+
+## Qualité
+
+- Test de non-régression ajouté pour deux services Shelly ajoutés par
+  l’architecture puis replanifiés par la configuration globale.
+- 1 158 tests réussis après construction du wheel et du sdist.
+- Version du paquet alignée sur `1.7.4`.
+
 # [1.7.3] — Shelly Telemetry par service — 2026-07-28
 
 ## Ajouté

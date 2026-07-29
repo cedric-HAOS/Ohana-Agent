@@ -20,9 +20,15 @@ def test_loader_loads_nodes() -> None:
 
     config = loader.load("config/infrastructure.example.yaml")
 
-    assert len(config.nodes) == 4
-
-    assert config.nodes[0].id == "infra-01"
+    assert len(config.nodes) == 6
+    assert {node.id for node in config.nodes} == {
+        "box-01",
+        "infra-01",
+        "zwave-01",
+        "linky-01",
+        "ha-01",
+        "shelly-cuisine",
+    }
 
 
 def test_loader_loads_services() -> None:
@@ -30,7 +36,7 @@ def test_loader_loads_services() -> None:
 
     config = loader.load("config/infrastructure.example.yaml")
 
-    assert len(config.services) == 8
+    assert len(config.services) == 10
 
     assert config.services[0].id == "dhcp-primary"
     assert config.services[0].implementation == "dnsmasq"
@@ -109,7 +115,7 @@ def test_loader_loads_complete_topology() -> None:
     config = InfrastructureLoader().load("config/infrastructure.example.yaml")
 
     assert config.topology is not None
-    assert len(config.topology.devices) == 10
-    assert len(config.topology.links) == 9
+    assert len(config.topology.devices) == 11
+    assert len(config.topology.links) == 10
     assert len(config.topology.layouts) == 1
     assert config.topology.layouts[0].positions["sw-01"].column == 2

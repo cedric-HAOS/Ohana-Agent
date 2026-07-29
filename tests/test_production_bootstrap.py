@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from bootstrap import build_production_agent
 from configuration.infrastructure import (
     NodeConfig,
@@ -513,3 +515,129 @@ def test_production_bootstrap_removes_dhcp_task_with_service() -> None:
     assert agent.scheduler.running is True
 
     agent.stop()
+
+
+def test_shelly_plugin_reconfiguration_keeps_two_scheduled_services(
+    tmp_path: Path,
+) -> None:
+    """Architecture and plugin updates must keep two Shelly tasks."""
+    token_path = tmp_path / "management.token"
+    token_path.write_text("test-token\n", encoding="utf-8")
+
+    application_path = tmp_path / "shikamaru.yaml"
+    application_path.write_text(
+        f"""\
+version: 1
+agent:
+  name: Shikamaru
+  environment: test
+vision:
+  enabled: true
+  observation_url: http://127.0.0.1:8000/api/observations
+  infrastructure_url: http://127.0.0.1:8000/api/infrastructure
+administration:
+  enabled: true
+  token_file: {token_path.as_posix()}
+  dhcp:
+    enabled: false
+""",
+        encoding="utf-8",
+    )
+
+    infrastructure = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
+    infrastructure_with_shelly = infrastructure.model_copy(
+        update={
+            "services": [
+                *infrastructure.services,
+                ServiceConfig(
+                    id="shelly-kitchen",
+                    name="Shelly cuisine",
+                    type="shelly_telemetry",
+                    node="infra-01",
+                    metadata={
+                        "power_entity_id": "sensor.shelly_kitchen_power",
+                        "energy_entity_id": "sensor.shelly_kitchen_energy",
+                        "maximum_age_seconds": 900,
+                    },
+                ),
+                ServiceConfig(
+                    id="shelly-garage",
+                    name="Shelly garage",
+                    type="shelly_telemetry",
+                    node="infra-01",
+                    metadata={
+                        "power_entity_id": "sensor.shelly_garage_power",
+                        "maximum_age_seconds": 900,
+                    },
+                ),
+            ]
+        }
+    )
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(
+        yaml.safe_dump(
+            infrastructure.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    shelly_path = tmp_path / "shelly-telemetry.yaml"
+    shelly_path.write_text(
+        Path("config/plugins/shelly-telemetry.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    agent = build_production_agent(
+        application_config_path=application_path,
+        infrastructure_config_path=infrastructure_path,
+        shelly_telemetry_config_path=shelly_path,
+        vision_client=FakeVisionClient(),
+        clock=FakeClock(
+            current_time=datetime(2026, 7, 29, 8, 0, tzinfo=UTC),
+        ),
+    )
+
+    assert agent.administration_runtime is not None
+    repository = agent.administration_runtime.service.plugin_repository
+    assert repository is not None
+    initial = repository.read("shelly_telemetry")
+    assert initial.task_count == 0
+
+    agent.apply_infrastructure_configuration(
+        infrastructure_with_shelly,
+        VisionInfrastructureMapper().to_payload(
+            infrastructure_with_shelly,
+        ),
+    )
+
+    after_architecture = repository.read("shelly_telemetry")
+    assert after_architecture.task_count == 2
+
+    updated = repository.write(
+        "shelly_telemetry",
+        {
+            "enabled": True,
+            "configuration": {
+                **after_architecture.configuration,
+                "interval_seconds": 120,
+                "access_token": None,
+            },
+        },
+    )
+
+    assert updated.task_count == 2
+    assert updated.interval_seconds == 120
+    tasks = [
+        task
+        for task in agent.scheduler.list_tasks()
+        if task.metadata.get("managed_by") == "shelly_telemetry"
+    ]
+    assert [task.arguments["service_id"] for task in tasks] == [
+        "shelly-garage",
+        "shelly-kitchen",
+    ]

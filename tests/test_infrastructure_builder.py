@@ -21,14 +21,21 @@ def test_builder_builds_infrastructure() -> None:
 def test_builder_builds_nodes() -> None:
     infrastructure = build_infrastructure()
 
-    assert len(infrastructure.nodes) == 4
-    assert infrastructure.nodes[0].name == "infra-01"
+    assert len(infrastructure.nodes) == 6
+    assert {node.name for node in infrastructure.nodes} == {
+        "box-01",
+        "infra-01",
+        "zwave-01",
+        "linky-01",
+        "ha-01",
+        "shelly-cuisine",
+    }
 
 
 def test_builder_builds_node_endpoints() -> None:
     infrastructure = build_infrastructure()
 
-    node = infrastructure.nodes[0]
+    node = next(node for node in infrastructure.nodes if node.name == "infra-01")
 
     assert len(node.endpoints) == 1
     assert node.endpoints[0].type == EndpointType.IP
@@ -38,7 +45,7 @@ def test_builder_builds_node_endpoints() -> None:
 def test_builder_builds_services() -> None:
     infrastructure = build_infrastructure()
 
-    node = infrastructure.nodes[0]
+    node = next(node for node in infrastructure.nodes if node.name == "infra-01")
 
     assert len(node.services) == 2
     assert node.services[0].name == "dhcp-primary"
@@ -48,7 +55,10 @@ def test_builder_builds_services() -> None:
 def test_builder_builds_service_endpoint() -> None:
     infrastructure = build_infrastructure()
 
-    service = infrastructure.nodes[0].services[0]
+    node = next(node for node in infrastructure.nodes if node.name == "infra-01")
+    service = next(
+        service for service in node.services if service.name == "dhcp-primary"
+    )
 
     assert service.endpoint is not None
     assert service.endpoint.type == EndpointType.IP

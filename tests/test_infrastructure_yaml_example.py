@@ -40,9 +40,11 @@ def test_infrastructure_example_yaml_declares_nodes() -> None:
 
     nodes = data["nodes"]
 
-    assert len(nodes) == 4
-    assert nodes[0]["endpoint"]["type"] == "ip"
-    assert nodes[0]["endpoint"]["address"] == "192.168.1.10"
+    assert len(nodes) == 6
+    nodes_by_id = {node["id"]: node for node in nodes}
+    assert nodes_by_id["infra-01"]["endpoint"]["type"] == "ip"
+    assert nodes_by_id["infra-01"]["endpoint"]["address"] == "192.168.1.10"
+    assert nodes_by_id["box-01"]["endpoint"]["address"] == "192.168.1.1"
 
 
 def test_infrastructure_example_yaml_declares_services() -> None:
@@ -52,10 +54,13 @@ def test_infrastructure_example_yaml_declares_services() -> None:
 
     services = data["services"]
 
-    assert len(services) == 8
-    assert services[0]["id"] == "dhcp-primary"
-    assert services[0]["type"] == "dhcp"
-    assert services[0]["node"] == "infra-01"
+    assert len(services) == 10
+    services_by_id = {service["id"]: service for service in services}
+    assert services_by_id["dhcp-primary"]["type"] == "dhcp"
+    assert services_by_id["dhcp-primary"]["node"] == "infra-01"
+    assert services_by_id["wireguard-freebox"]["type"] == "wireguard"
+    assert services_by_id["wireguard-freebox"]["node"] == "box-01"
+    assert services_by_id["shelly-telemetry-cuisine"]["type"] == "shelly_telemetry"
 
 
 def test_infrastructure_example_yaml_declares_service_endpoints() -> None:

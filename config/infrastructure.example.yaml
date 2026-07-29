@@ -10,6 +10,13 @@ metadata:
     - home
 
 nodes:
+  - id: box-01
+    name: BOX-01
+    description: Passerelle Internet et serveur WireGuard Freebox
+    endpoint:
+      type: ip
+      address: 192.168.1.1
+
   - id: infra-01
     name: INFRA-01
     description: Serveur des services d'infrastructure
@@ -37,6 +44,13 @@ nodes:
     endpoint:
       type: ip
       address: 192.168.1.20
+
+  - id: shelly-cuisine
+    name: Shelly cuisine
+    description: Exemple d'équipement Shelly supervisé via Home Assistant
+    endpoint:
+      type: ip
+      address: 192.168.1.40
 
 services:
   - id: dhcp-primary
@@ -110,6 +124,34 @@ services:
     enabled: true
     critical: true
 
+  # Activer après l'autorisation Freebox réalisée avec
+  # ohana-agent-authorize-freebox.
+  - id: wireguard-freebox
+    name: WireGuard Freebox
+    type: wireguard
+    node: box-01
+    port: 80
+    implementation: Freebox OS
+    enabled: false
+    critical: true
+    metadata:
+      scheme: http
+      server_name: wireguard
+
+  # Exemple désactivé : adapter les identifiants d'entités Home Assistant
+  # avant activation.
+  - id: shelly-telemetry-cuisine
+    name: Télémétrie Shelly cuisine
+    type: shelly_telemetry
+    node: shelly-cuisine
+    implementation: Home Assistant
+    enabled: false
+    critical: false
+    metadata:
+      power_entity_id: sensor.shelly_cuisine_power
+      energy_entity_id: sensor.shelly_cuisine_energy
+      maximum_age_seconds: 900
+
 topology:
   metadata:
     description: Architecture physique Ohana-House.
@@ -179,6 +221,13 @@ topology:
       node: ha-01
       metadata:
         role: home_automation_controller
+
+    - id: shelly-cuisine
+      label: Shelly cuisine
+      kind: smart_device
+      node: shelly-cuisine
+      metadata:
+        role: energy_meter
 
   links:
     - id: internet-box-01
@@ -253,6 +302,13 @@ topology:
       direction: bidirectional
       label: Wi-Fi 802.11ac
 
+    - id: ap-01-shelly-cuisine
+      source: ap-01
+      target: shelly-cuisine
+      kind: wifi
+      direction: bidirectional
+      label: Wi-Fi
+
   layouts:
     - id: physical
       label: Topologie physique
@@ -288,3 +344,6 @@ topology:
         ha-01:
           column: 5
           row: 1
+        shelly-cuisine:
+          column: 5
+          row: 0

@@ -18,7 +18,7 @@ fourni par la Freebox et ajoute la vérification de fraîcheur des télémétrie
 Shelly reçues par Home Assistant. La version 1.7.1 installe la commande
 d’autorisation Freebox nécessaire sur INFRA-01. La version 1.7.2 adapte le
 plugin Z-Wave au serveur WebSocket exposé par Home Assistant sur le port 3000
-et publie la version de l’Agent dans son API d’administration. La version 1.7.3
+et publie la version de l’Agent dans son API d’administration. La version 1.7.4
 modélise chaque contrôle Shelly Telemetry comme un service de l’équipement.
 
 ---
@@ -49,13 +49,19 @@ Le contrat et le modèle de sécurité sont détaillés dans
 
 ## Infrastructure déclarative
 
-L'infrastructure est décrite une seule fois dans :
+En exploitation, l'infrastructure est décrite une seule fois dans :
 
 ```text
-config/infrastructure.yaml
+/etc/ohana-agent/infrastructure.yaml
 ```
 
-Ce fichier définit notamment :
+Le profil complet publié par Agent est `config/infrastructure.example.yaml` ;
+Ohana-Installer le copie vers ce chemin de production. Dans le dépôt,
+`config/infrastructure.yaml` est volontairement un profil minimal réservé aux
+tests de démarrage. Les commandes locales complètes utilisent le fichier
+`.example`, sans jamais dupliquer la configuration dans Vision.
+
+Le document d'infrastructure définit notamment :
 
 - l'identité de l'infrastructure ;
 - les nœuds et leurs endpoints ;
@@ -440,23 +446,35 @@ access_token: null
 access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
 ```
 
-La connexion Home Assistant et la politique de fraîcheur restent globales. La
-sélection des équipements est définie dans `infrastructure.yaml`, directement
-sur chaque équipement :
+La connexion Home Assistant et la politique de fraîcheur restent globales. Un
+contrôle est déclaré dans `infrastructure.yaml` sous la forme d'un **service**
+`shelly_telemetry` rattaché au nœud de l'équipement :
 
 ```yaml
-- id: shelly-cuisine
-  label: Shelly cuisine
-  kind: smart_device
-  node: shelly-cuisine
-  metadata:
-    shelly_telemetry_enabled: true
-    shelly_power_entity_id: sensor.shelly_cuisine_power
-    shelly_energy_entity_id: sensor.shelly_cuisine_energy
+nodes:
+  - id: shelly-cuisine
+    name: Shelly cuisine
+    endpoint:
+      type: ip
+      address: 192.168.1.40
+
+services:
+  - id: shelly-telemetry-cuisine
+    name: Télémétrie Shelly cuisine
+    type: shelly_telemetry
+    node: shelly-cuisine
+    implementation: Home Assistant
+    enabled: true
+    critical: false
+    metadata:
+      power_entity_id: sensor.shelly_cuisine_power
+      energy_entity_id: sensor.shelly_cuisine_energy
+      maximum_age_seconds: 900
 ```
 
-Pour chaque équipement activé, le plugin lit les entités Home Assistant et
-vérifie la date de leur dernier rapport. Une valeur de puissance égale à zéro
+Le champ `node` devient automatiquement le `node_id` de l'observation. Pour
+chaque service activé, le plugin lit les entités Home Assistant et vérifie la
+date de leur dernier rapport. Une valeur de puissance égale à zéro
 reste valide si le rapport est récent ; l’observation échoue uniquement lorsque
 l’entité est indisponible, invalide ou trop ancienne.
 
@@ -488,10 +506,19 @@ python -m pip install -e ".[development]"
 
 # Exécution
 
+Pour une exécution depuis les deux dépôts Agent et Vision placés côte à côte,
+créer d'abord le jeton local ignoré par Git :
+
+```bash
+python -c "import secrets; from pathlib import Path; Path('config/management.development.token').write_text(secrets.token_urlsafe(32), encoding='utf-8')"
+```
+
+Utiliser ensuite le profil de développement et l'infrastructure complète :
+
 ```bash
 ohana-agent \
-  --config config/shikamaru.yaml \
-  --infrastructure config/infrastructure.yaml \
+  --config config/shikamaru.development.yaml \
+  --infrastructure config/infrastructure.example.yaml \
   --dhcp-config config/plugins/dhcp.yaml \
   --dns-config config/plugins/dns.yaml \
   --ntp-config config/plugins/ntp.yaml \

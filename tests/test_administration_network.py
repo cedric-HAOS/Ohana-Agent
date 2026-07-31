@@ -139,6 +139,35 @@ def test_network_repository_applies_with_rollback_delay() -> None:
     }
 
 
+def test_network_helper_splits_nmcli_pipe_separated_dns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device_properties = {
+        "GENERAL.CONNECTION": "Wired connection 1",
+        "IP4.ADDRESS": "192.168.1.10/24",
+        "IP4.GATEWAY": "192.168.1.1",
+        "IP4.DNS": "127.0.0.1 | 1.1.1.1",
+        "GENERAL.STATE": "100 (connected)",
+    }
+
+    monkeypatch.setattr(network_helper, "_default_interface", lambda: "eth0")
+    monkeypatch.setattr(
+        network_helper,
+        "_device_property",
+        lambda _interface, property_name: device_properties[property_name],
+    )
+    monkeypatch.setattr(
+        network_helper,
+        "_connection_property",
+        lambda _connection, _property_name: "manual",
+    )
+    monkeypatch.setattr(network_helper, "_pending_change", lambda: None)
+
+    state = network_helper._state()
+
+    assert state["dns_servers"] == ["127.0.0.1", "1.1.1.1"]
+
+
 def test_network_helper_rejects_a_second_pending_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

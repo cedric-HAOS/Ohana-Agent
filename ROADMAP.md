@@ -226,3 +226,10 @@ Principaux acquis :
 - [x] Helper privilégié limité et API versionnée.
 - [x] Application avec sauvegarde, confirmation et rollback automatique.
 - [x] Protection contre les transactions concurrentes.
+
+# v1.11.1 — Application fiable des réservations DHCP
+
+- [x] Détecter les baux incompatibles avec une réservation nouvelle ou modifiée.
+- [x] Purger uniquement les baux concernés avec un helper root restreint.
+- [x] Redémarrer dnsmasq en conservant tous les autres baux.
+- [x] Normaliser les listes DNS retournées par NetworkManager.

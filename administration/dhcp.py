@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -94,6 +95,7 @@ class DnsmasqDHCPRepository:
 
     def write(self, configuration: DHCPConfiguration) -> DHCPAdministrationState:
         """Validate and persist a complete DHCP configuration."""
+        stale_lease_macs = self._stale_lease_macs(configuration)
         rendered_files = {
             self.main_config_path: self._render_main(configuration.settings),
         }
@@ -121,7 +123,7 @@ class DnsmasqDHCPRepository:
                 )
 
             self._validate_dnsmasq()
-            self._request_reload()
+            self._request_reload(stale_lease_macs)
         except (OSError, DHCPConfigurationError):
             self._restore(
                 previous_contents,
@@ -442,13 +444,49 @@ class DnsmasqDHCPRepository:
         )
         raise DHCPConfigurationError(f"dnsmasq rejected the configuration: {detail}")
 
-    def _request_reload(self) -> None:
+    def _stale_lease_macs(
+        self,
+        configuration: DHCPConfiguration,
+    ) -> list[str]:
+        reserved_addresses = {
+            reservation.mac_address: reservation.address
+            for reservation in configuration.reservations
+        }
+        reserved_macs = {
+            reservation.address: reservation.mac_address
+            for reservation in configuration.reservations
+        }
+
+        return sorted(
+            {
+                lease.mac_address
+                for lease in self.read_leases()
+                if (
+                    lease.mac_address in reserved_addresses
+                    and lease.address != reserved_addresses[lease.mac_address]
+                )
+                or (
+                    lease.address in reserved_macs
+                    and lease.mac_address != reserved_macs[lease.address]
+                )
+            }
+        )
+
+    def _request_reload(self, stale_lease_macs: list[str]) -> None:
         if self.reload_request_path is None:
             return
 
         self._atomic_write(
             self.reload_request_path,
-            f"{time.time_ns()}\n",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "requested_at_ns": time.time_ns(),
+                    "stale_lease_macs": stale_lease_macs,
+                },
+                separators=(",", ":"),
+            )
+            + "\n",
         )
 
     def _restore(

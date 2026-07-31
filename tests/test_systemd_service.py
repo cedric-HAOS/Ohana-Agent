@@ -70,7 +70,7 @@ def test_systemd_service_uses_journald_and_basic_hardening() -> None:
 
     assert "StandardOutput=journal" in service
     assert "StandardError=journal" in service
-    assert "NoNewPrivileges=true" in service
+    assert "NoNewPrivileges=false" in service
     assert "PrivateTmp=true" in service
     assert "ProtectHome=true" in service
     assert "ProtectSystem=strict" in service

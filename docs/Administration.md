@@ -86,7 +86,7 @@ Une seule transaction peut être en attente. Les instantanés sont stockés sous
 L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
 dans l'API s'il n'est pas réellement enregistré dans l'Agent.
 
-La version 1.11.0 expose :
+La version 1.11.1 expose :
 
 - **DHCP** — capacité `dhcp.status` ;
 - **DNS** — capacité `dns.resolve` ;
@@ -174,11 +174,15 @@ Lors d'une modification :
 2. les fichiers gérés sont écrits atomiquement ;
 3. `dnsmasq --test` vérifie la configuration installée ;
 4. en cas de rejet, tous les fichiers précédents sont restaurés ;
-5. en cas de succès, l'Agent crée
-   `/run/ohana-agent/dhcp-reload.request` ;
-6. l'unité systemd privilégiée installée par Ohana-Installer recharge dnsmasq.
+5. l'Agent compare les réservations aux baux actifs et place dans
+   `/run/ohana-agent/dhcp-reload.request` uniquement les MAC dont l'adresse
+   louée contredit une réservation par son équipement ou par son adresse ;
+6. le helper privilégié valide cette liste, arrête brièvement dnsmasq, supprime
+   uniquement les baux obsolètes puis redémarre le service pour relire toute la
+   configuration.
 
-L'Agent ne dispose donc pas lui-même du droit de lancer une commande privilégiée.
+Les baux sans conflit sont conservés. L'Agent ne dispose lui-même ni du droit de
+modifier la base de baux ni de lancer une commande privilégiée.
 
 ## Fichiers dnsmasq gérés
 

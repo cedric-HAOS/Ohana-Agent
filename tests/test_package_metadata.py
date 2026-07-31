@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.11.0"
+    assert project["version"] == "1.11.1"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"
@@ -80,6 +80,7 @@ def test_package_declares_console_entry_point() -> None:
     assert project["scripts"] == {
         "ohana-agent": "main:main",
         "ohana-agent-authorize-freebox": ("plugins.wireguard.authorize_freebox:main"),
+        "ohana-agent-dhcp-reload-helper": ("administration.dhcp_reload_helper:main"),
         "ohana-agent-network-helper": "administration.network_helper:main",
     }
 

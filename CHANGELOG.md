@@ -6,6 +6,31 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.1] — Application fiable des réservations DHCP — 2026-07-31
+
+## Ajouté
+
+- Helper privilégié `ohana-agent-dhcp-reload-helper` chargé d’appliquer les
+  changements DHCP sans donner au processus Agent un accès direct à la base des
+  baux dnsmasq.
+
+## Corrigé
+
+- Suppression ciblée des anciens baux qui contredisent une nouvelle réservation
+  par adresse MAC ou par adresse IPv4 avant le redémarrage de dnsmasq.
+- Lecture correcte des serveurs DNS NetworkManager lorsque `nmcli` les sépare
+  avec le caractère `|`.
+- Autorisation du helper NetworkManager restreint par sudo depuis l’unité
+  `ohana-agent.service`.
+
+## Qualité
+
+- Validation du format de la demande privilégiée, des adresses MAC et du
+  redémarrage systématique de dnsmasq même si la purge échoue.
+- Version du paquet alignée sur `1.11.1`.
+
+---
+
 # [1.11.0] — Lot C : administration réseau sécurisée — 2026-07-30
 
 ## Ajouté

@@ -99,6 +99,16 @@ def _first_line(value: str) -> str | None:
     return None
 
 
+def _list_property_values(value: str) -> list[str]:
+    """Split nmcli list properties across lines and its human-readable separator."""
+    return [
+        item
+        for line in value.splitlines()
+        for item in (part.strip() for part in line.split("|"))
+        if item and item != "--"
+    ]
+
+
 def _state(interface: str | None = None) -> dict[str, Any]:
     interface = interface or _default_interface()
 
@@ -109,11 +119,7 @@ def _state(interface: str | None = None) -> dict[str, Any]:
     method = _connection_property(connection, "ipv4.method").strip()
     address = _first_line(_device_property(interface, "IP4.ADDRESS"))
     gateway = _first_line(_device_property(interface, "IP4.GATEWAY"))
-    dns = [
-        line.strip()
-        for line in _device_property(interface, "IP4.DNS").splitlines()
-        if line.strip() and line.strip() != "--"
-    ]
+    dns = _list_property_values(_device_property(interface, "IP4.DNS"))
     raw_state = _device_property(interface, "GENERAL.STATE").strip()
     active = raw_state.startswith("100") or "connected" in raw_state.lower()
 

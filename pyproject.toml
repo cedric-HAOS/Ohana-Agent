@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ohana-agent"
-version = "1.11.0"
+version = "1.11.1"
 description = "Infrastructure observation agent for the Ohana platform."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -55,6 +55,7 @@ Issues = "https://github.com/cedric-HAOS/Ohana-Agent/issues"
 [project.scripts]
 ohana-agent = "main:main"
 ohana-agent-authorize-freebox = "plugins.wireguard.authorize_freebox:main"
+ohana-agent-dhcp-reload-helper = "administration.dhcp_reload_helper:main"
 ohana-agent-network-helper = "administration.network_helper:main"
 
 

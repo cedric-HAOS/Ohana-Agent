@@ -34,7 +34,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ohana-agent
 
-NoNewPrivileges=true
+# The Agent invokes one root-owned helper through a restricted sudoers rule.
+NoNewPrivileges=false
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict

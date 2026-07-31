@@ -12,7 +12,7 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.11.0.
+Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.11.1.
 
 ---
 
@@ -543,7 +543,6 @@ L’arborescence ne prévoit pas actuellement :
 
 ```text
 /var/log/ohana-agent/
-/run/ohana-agent/
 /var/cache/ohana-agent/
 /usr/share/ohana-agent/
 /opt/ohana-agent/config/
@@ -555,9 +554,9 @@ Ils ne devront être ajoutés que lorsqu’un composant de production les utilis
 
 ---
 
-## Contrat pour la version 1.11.0
+## Contrat pour la version 1.11.1
 
-L’arborescence Linux de référence d’Ohana-Agent 1.5.0 est :
+L’arborescence Linux de référence d’Ohana-Agent 1.11.1 est :
 
 ```text
 Logiciel       /opt/ohana-agent/venv
@@ -571,6 +570,11 @@ Groupe         ohana-agent
 ```
 
 Cette structure doit être utilisée par le service `systemd`, les procédures d’installation et le futur Ohana-Installer.
+
+Le répertoire d’exécution `/run/ohana-agent` est créé par systemd avec des
+permissions `0750`. Agent y écrit `dhcp-reload.request`; l’unité privilégiée
+`ohana-dhcp-reload.service` valide cette demande avant de supprimer uniquement
+les baux dnsmasq devenus incompatibles avec une réservation.
 
 
 ## Administration NetworkManager

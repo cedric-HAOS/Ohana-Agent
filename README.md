@@ -29,7 +29,7 @@ version 1.8.1 adapte la fraîcheur au fonctionnement réel de Tempo : `NTARF` et
 les index inactifs peuvent rester inchangés, tandis que `SINSTS` et l’index actif
 restent surveillés. La version 1.9.0 généralise Shelly Telemetry en
 **Télémétrie Home Assistant**, accepte les noms DNS comme cibles réseau et
-conserve les anciens contrats le temps de leur migration. La version 1.10.0 reçoit directement les trames décodées de `teleinfo2mqtt` sur une API dédiée et ajoute des plages horaires de surveillance aux équipements. La version 1.11.0 ajoute la lecture et la modification sécurisée de la configuration NetworkManager de l’hôte Agent, avec sauvegarde et retour automatique.
+conserve les anciens contrats le temps de leur migration. La version 1.10.0 reçoit directement les trames décodées de `teleinfo2mqtt` sur une API dédiée et ajoute des plages horaires de surveillance aux équipements. La version 1.11.0 ajoute la lecture et la modification sécurisée de la configuration NetworkManager de l’hôte Agent, avec sauvegarde et retour automatique. La version 1.11.1 purge uniquement les anciens baux qui contredisent une nouvelle réservation DHCP et corrige la lecture des listes DNS NetworkManager.
 
 ---
 

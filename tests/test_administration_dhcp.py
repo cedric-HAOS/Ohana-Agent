@@ -1,5 +1,6 @@
 """Tests for dnsmasq DHCP administration."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -100,6 +101,56 @@ def test_dhcp_repository_reads_active_leases(
     assert len(state.leases) == 1
     assert state.leases[0].hostname == "infra-01"
     assert state.leases[0].mac_address == "AA:BB:CC:DD:EE:01"
+
+
+def test_dhcp_repository_requests_purge_of_conflicting_reserved_lease(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    repository.reload_request_path = tmp_path / "dhcp-reload.request"
+    (tmp_path / "dnsmasq.leases").write_text(
+        "1784900000 aa:bb:cc:dd:ee:01 192.168.1.14 infra-01 01:aa\n"
+        "1784900000 aa:bb:cc:dd:ee:99 192.168.1.15 other 01:bb\n",
+        encoding="utf-8",
+    )
+
+    repository.write(make_configuration())
+
+    request = json.loads(repository.reload_request_path.read_text(encoding="utf-8"))
+    assert request["schema_version"] == 1
+    assert request["stale_lease_macs"] == ["AA:BB:CC:DD:EE:01"]
+
+
+def test_dhcp_repository_preserves_lease_matching_its_reservation(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    repository.reload_request_path = tmp_path / "dhcp-reload.request"
+    (tmp_path / "dnsmasq.leases").write_text(
+        "1784900000 aa:bb:cc:dd:ee:01 192.168.1.10 infra-01 01:aa\n",
+        encoding="utf-8",
+    )
+
+    repository.write(make_configuration())
+
+    request = json.loads(repository.reload_request_path.read_text(encoding="utf-8"))
+    assert request["stale_lease_macs"] == []
+
+
+def test_dhcp_repository_requests_purge_of_lease_occupying_reserved_address(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    repository.reload_request_path = tmp_path / "dhcp-reload.request"
+    (tmp_path / "dnsmasq.leases").write_text(
+        "1784900000 aa:bb:cc:dd:ee:99 192.168.1.10 other 01:bb\n",
+        encoding="utf-8",
+    )
+
+    repository.write(make_configuration())
+
+    request = json.loads(repository.reload_request_path.read_text(encoding="utf-8"))
+    assert request["stale_lease_macs"] == ["AA:BB:CC:DD:EE:99"]
 
 
 def test_dhcp_configuration_rejects_duplicate_addresses() -> None:

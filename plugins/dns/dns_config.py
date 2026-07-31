@@ -8,6 +8,7 @@ class DNSServerConfig:
     name: str
     address: str
     enabled: bool = True
+    node_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ohana-agent"
-version = "1.8.1"
+version = "1.11.0"
 description = "Infrastructure observation agent for the Ohana platform."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -41,6 +41,7 @@ dependencies = [
     "dnspython>=2.7,<3",
     "paho-mqtt>=2,<3",
     "aiohttp>=3.11,<4",
+    "tzdata>=2025.2",
     "zwave-js-server-python>=0.72,<1",
 ]
 
@@ -54,6 +55,7 @@ Issues = "https://github.com/cedric-HAOS/Ohana-Agent/issues"
 [project.scripts]
 ohana-agent = "main:main"
 ohana-agent-authorize-freebox = "plugins.wireguard.authorize_freebox:main"
+ohana-agent-network-helper = "administration.network_helper:main"
 
 
 [project.optional-dependencies]
@@ -84,6 +86,7 @@ include = [
     "infrastructure*",
     "loader*",
     "memory*",
+    "monitoring*",
     "mqtt*",
     "observer*",
     "plugin*",

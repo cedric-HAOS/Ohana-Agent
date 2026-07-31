@@ -1,8 +1,11 @@
 """Dispatcher bridge for plugin observation execution."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
+from infrastructure.enums import HealthStatus
 from observer.events import ObservationPublished
+from observer.observer_result import ObserverResult
 from observer.plugin_observation_executor import (
     PluginObservationExecutor,
 )
@@ -27,6 +30,36 @@ class PluginObservationDispatcher:
         )
 
         return self.executor.execute_command(plugin_command)
+
+    def publish_suspended(
+        self,
+        command: str,
+        arguments: dict[str, object],
+        *,
+        reason: str,
+        next_activation: datetime | None,
+    ) -> ObservationPublished:
+        """Publish an explicit suspended observation for one scheduled target."""
+        plugin_command = self.parse(command, arguments=arguments)
+        metadata = dict(arguments)
+        metadata["monitoring_suspended"] = True
+        metadata["next_activation"] = (
+            next_activation.isoformat() if next_activation is not None else None
+        )
+        result = ObserverResult(
+            success=True,
+            latency=0.0,
+            message=reason,
+            check=command,
+            description="Surveillance suspendue par la plage horaire de l'équipement.",
+            metadata=metadata,
+            health=HealthStatus.SUSPENDED,
+        )
+        return self.executor.observation_engine.process_result(
+            result,
+            target_name=plugin_command.target_name,
+            source=command,
+        )
 
     @staticmethod
     def parse(

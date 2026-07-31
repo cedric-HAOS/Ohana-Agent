@@ -43,4 +43,9 @@ class DNSConfigurationBuilder:
             name=service.name,
             address=service.endpoint.address,
             enabled=(service.enabled and service.endpoint.enabled),
+            node_id=(
+                service.metadata.get("node_id")
+                if isinstance(service.metadata.get("node_id"), str)
+                else None
+            ),
         )

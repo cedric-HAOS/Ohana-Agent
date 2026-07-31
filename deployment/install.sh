@@ -90,10 +90,10 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/plugins/wireguard.yaml"
 
-    [[ -f "${CONFIG_ROOT}/plugins/shelly-telemetry.yaml" ]] \
+    [[ -f "${CONFIG_ROOT}/plugins/home-assistant-telemetry.yaml" ]] \
         || fail \
             "Configuration file not found: " \
-            "${CONFIG_ROOT}/plugins/shelly-telemetry.yaml"
+            "${CONFIG_ROOT}/plugins/home-assistant-telemetry.yaml"
 
     [[ -f "${CONFIG_ROOT}/plugins/teleinformation.yaml" ]] \
         || fail \

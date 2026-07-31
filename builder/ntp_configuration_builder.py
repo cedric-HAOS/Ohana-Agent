@@ -51,4 +51,9 @@ class NTPConfigurationBuilder:
             address=service.endpoint.address,
             port=port,
             enabled=(service.enabled and service.endpoint.enabled),
+            node_id=(
+                service.metadata.get("node_id")
+                if isinstance(service.metadata.get("node_id"), str)
+                else None
+            ),
         )

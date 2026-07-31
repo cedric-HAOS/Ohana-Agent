@@ -1,8 +1,10 @@
 # configuration/infrastructure_validator.py
 
+import re
 from ipaddress import ip_address
 
 from configuration.infrastructure import InfrastructureConfig
+from monitoring import MonitoringScheduleRegistry
 
 
 class InfrastructureValidationError(ValueError):
@@ -27,6 +29,7 @@ class InfrastructureValidator:
         self._validate_topology_link_devices_exist(config)
         self._validate_topology_layout_ids_are_unique(config)
         self._validate_topology_layout_positions(config)
+        self._validate_monitoring_schedules(config)
 
     def _validate_node_ids_are_unique(
         self,
@@ -51,17 +54,24 @@ class InfrastructureValidator:
         config: InfrastructureConfig,
     ) -> None:
         for node in config.nodes:
-            if node.endpoint.type != "ip":
-                raise InfrastructureValidationError(
-                    f"Unsupported endpoint type: {node.endpoint.type}"
-                )
+            endpoint_type = node.endpoint.type
 
-            try:
-                ip_address(node.endpoint.address)
-            except ValueError as exc:
+            if endpoint_type == "ip":
+                try:
+                    ip_address(node.endpoint.address)
+                except ValueError as exc:
+                    raise InfrastructureValidationError(
+                        f"Invalid IP address: {node.endpoint.address}"
+                    ) from exc
+            elif endpoint_type == "hostname":
+                if not self._is_valid_hostname(node.endpoint.address):
+                    raise InfrastructureValidationError(
+                        f"Invalid DNS hostname: {node.endpoint.address}"
+                    )
+            else:
                 raise InfrastructureValidationError(
-                    f"Invalid IP address: {node.endpoint.address}"
-                ) from exc
+                    f"Unsupported endpoint type: {endpoint_type}"
+                )
 
     def _validate_service_nodes_exist(
         self,
@@ -113,13 +123,30 @@ class InfrastructureValidator:
             if device.address is None:
                 continue
 
-            try:
-                ip_address(device.address)
-            except ValueError as exc:
+            if not self._is_valid_ip_or_hostname(device.address):
                 raise InfrastructureValidationError(
-                    f"Invalid IP address for topology device "
+                    "Invalid host or IP address for topology device "
                     f"'{device.id}': {device.address}"
-                ) from exc
+                )
+
+    @classmethod
+    def _is_valid_ip_or_hostname(cls, value: str) -> bool:
+        try:
+            ip_address(value)
+        except ValueError:
+            return cls._is_valid_hostname(value)
+
+        return True
+
+    @staticmethod
+    def _is_valid_hostname(value: str) -> bool:
+        hostname = value.strip().rstrip(".")
+
+        if not hostname or len(hostname) > 253:
+            return False
+
+        label_pattern = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+        return all(label_pattern.fullmatch(label) for label in hostname.split("."))
 
     def _validate_topology_device_nodes_exist(
         self,
@@ -242,3 +269,21 @@ class InfrastructureValidator:
                 raise InfrastructureValidationError(
                     f"Topology layout '{layout.id}' contains duplicate grid positions."
                 )
+
+    def _validate_monitoring_schedules(
+        self,
+        config: InfrastructureConfig,
+    ) -> None:
+        if config.topology is None:
+            return
+
+        for device in config.topology.devices:
+            try:
+                MonitoringScheduleRegistry.validate_payload(
+                    device.metadata.get("monitoring_schedule")
+                )
+            except ValueError as error:
+                raise InfrastructureValidationError(
+                    f"Invalid monitoring schedule for topology device "
+                    f"'{device.id}': {error}"
+                ) from error

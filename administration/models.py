@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv4Interface
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -147,6 +147,82 @@ class DHCPAdministrationState(DHCPConfiguration):
     """DHCP configuration enriched with currently active leases."""
 
     leases: list[DHCPLease] = Field(default_factory=list)
+
+
+NetworkMethod = Literal["manual", "auto"]
+
+
+class AgentNetworkSettings(AdministrationModel):
+    """Editable IPv4 settings for the Agent host."""
+
+    interface: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_.:-]{1,32}$")
+    method: NetworkMethod = "manual"
+    address: IPv4Interface | None = None
+    gateway: IPv4Address | None = None
+    dns_servers: list[IPv4Address] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_manual_configuration(self) -> Self:
+        """Require a complete and coherent static IPv4 configuration."""
+        if self.method == "auto":
+            return self
+
+        if self.address is None or self.gateway is None or not self.dns_servers:
+            raise ValueError(
+                "manual network configuration requires address, gateway and DNS servers"
+            )
+
+        if self.gateway not in self.address.network:
+            raise ValueError("gateway must belong to the configured IPv4 subnet")
+
+        if self.address.ip in {
+            self.address.network.network_address,
+            self.address.network.broadcast_address,
+        }:
+            raise ValueError("address cannot be the network or broadcast address")
+
+        return self
+
+
+class AgentNetworkPendingChange(AdministrationModel):
+    """Pending network transaction protected by an automatic rollback."""
+
+    transaction_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    expires_at: datetime
+    requested: AgentNetworkSettings
+
+
+class AgentNetworkState(AdministrationModel):
+    """Active NetworkManager state exposed to Vision."""
+
+    schema_version: Literal[1] = 1
+    available: bool = True
+    interface: str = Field(min_length=1)
+    connection_name: str = Field(min_length=1)
+    method: NetworkMethod
+    address: IPv4Interface | None = None
+    gateway: IPv4Address | None = None
+    dns_servers: list[IPv4Address] = Field(default_factory=list)
+    active: bool
+    state: str = Field(min_length=1)
+    pending_change: AgentNetworkPendingChange | None = None
+
+
+class AgentNetworkChangeRequest(AdministrationModel):
+    """Candidate network configuration and rollback delay."""
+
+    schema_version: Literal[1] = 1
+    settings: AgentNetworkSettings
+    rollback_seconds: int | None = Field(default=None, ge=30, le=300)
+
+
+class AgentNetworkChange(AdministrationModel):
+    """Network transaction created after applying a candidate configuration."""
+
+    schema_version: Literal[1] = 1
+    transaction_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    expires_at: datetime
+    state: AgentNetworkState
 
 
 class AdministrationCapabilities(AdministrationModel):

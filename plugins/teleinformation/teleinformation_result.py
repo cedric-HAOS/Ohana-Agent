@@ -6,7 +6,7 @@ from datetime import datetime
 
 @dataclass(frozen=True, slots=True)
 class TeleinformationValue:
-    """One validated Home Assistant sensor value."""
+    """One validated Linky value from Home Assistant or a direct frame."""
 
     entity_id: str
     value: float | None = None
@@ -24,6 +24,7 @@ class TeleinformationTariff:
     period: str
     label: str
     index_key: str
+    index_label: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,3 +40,6 @@ class TeleinformationCheckResult:
     active_index: TeleinformationValue | None = None
     attempts: int = 1
     error: str | None = None
+    mode: str = "home_assistant"
+    source_id: str | None = None
+    meter_id: str | None = None

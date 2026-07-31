@@ -9,6 +9,7 @@ class NetworkProbeResult:
 
     address: str
     reachable: bool | None
+    resolved_address: str | None = None
     method: str | None = None
     latency_ms: float | None = None
     attempts: int = 1

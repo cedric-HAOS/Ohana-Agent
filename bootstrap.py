@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -10,32 +11,33 @@ from administration import (
     AdministrationService,
     DnsmasqDHCPRepository,
     InfrastructureConfigurationRepository,
+    NetworkManagerRepository,
     PluginAdministrationBinding,
     PluginAdministrationRepository,
 )
 from builder import (
     DHCPConfigurationBuilder,
     DNSConfigurationBuilder,
+    HomeAssistantTelemetryConfigurationBuilder,
     InfrastructureBuilder,
     MQTTConfigurationBuilder,
     NetworkConfigurationBuilder,
     NTPConfigurationBuilder,
-    ShellyTelemetryConfigurationBuilder,
     TeleinformationConfigurationBuilder,
     WireGuardConfigurationBuilder,
     ZWaveConfigurationBuilder,
 )
 from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
-from configuration.infrastructure import InfrastructureConfig
-from configuration.infrastructure_validator import (
-    InfrastructureValidator,
+from configuration.home_assistant_telemetry import (
+    HomeAssistantTelemetryPluginConfig,
 )
+from configuration.infrastructure import InfrastructureConfig
+from configuration.infrastructure_validator import InfrastructureValidator
 from configuration.loader import ConfigurationLoader
 from configuration.mqtt_plugin import MQTTPluginConfig
 from configuration.network import NetworkPluginConfig
 from configuration.ntp import NTPPluginConfig
-from configuration.shelly_telemetry import ShellyTelemetryPluginConfig
 from configuration.teleinformation import TeleinformationPluginConfig
 from configuration.wireguard import WireGuardPluginConfig
 from configuration.zwave import ZWavePluginConfig
@@ -47,15 +49,16 @@ from infrastructure.infrastructure_health_manager import (
 from loader import (
     DHCPConfigLoader,
     DNSConfigLoader,
+    HomeAssistantTelemetryConfigLoader,
     InfrastructureLoader,
     MQTTConfigLoader,
     NetworkConfigLoader,
     NTPConfigLoader,
-    ShellyTelemetryConfigLoader,
     TeleinformationConfigLoader,
     WireGuardConfigLoader,
     ZWaveConfigLoader,
 )
+from monitoring import MonitoringScheduleRegistry
 from observer import (
     InfrastructureObservationMapper,
     ObservationEngine,
@@ -83,6 +86,15 @@ from plugins.dhcp.dhcp_plugin import DHCPPlugin
 from plugins.dns.dns_check import DNSCheck
 from plugins.dns.dns_config import DNSConfig
 from plugins.dns.dns_plugin import DNSPlugin
+from plugins.home_assistant_telemetry.home_assistant_telemetry_check import (
+    HomeAssistantTelemetryCheck,
+)
+from plugins.home_assistant_telemetry.home_assistant_telemetry_config import (
+    HomeAssistantTelemetryConfig,
+)
+from plugins.home_assistant_telemetry.home_assistant_telemetry_plugin import (
+    HomeAssistantTelemetryPlugin,
+)
 from plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
 from plugins.mqtt.mqtt_check import MQTTCheck
 from plugins.mqtt.mqtt_config import MQTTConfig
@@ -93,11 +105,14 @@ from plugins.network.network_plugin import NetworkPlugin
 from plugins.ntp.ntp_check import NTPCheck
 from plugins.ntp.ntp_config import NTPConfig
 from plugins.ntp.ntp_plugin import NTPPlugin
-from plugins.shelly_telemetry.shelly_telemetry_check import ShellyTelemetryCheck
-from plugins.shelly_telemetry.shelly_telemetry_config import ShellyTelemetryConfig
-from plugins.shelly_telemetry.shelly_telemetry_plugin import ShellyTelemetryPlugin
 from plugins.teleinformation.teleinformation_check import TeleinformationCheck
 from plugins.teleinformation.teleinformation_config import TeleinformationConfig
+from plugins.teleinformation.teleinformation_frame_store import (
+    TeleinformationFrameStore,
+)
+from plugins.teleinformation.teleinformation_ingestion import (
+    TeleinformationIngestionHTTPServer,
+)
 from plugins.teleinformation.teleinformation_plugin import TeleinformationPlugin
 from plugins.wireguard.wireguard_check import WireGuardCheck
 from plugins.wireguard.wireguard_config import WireGuardConfig
@@ -138,6 +153,7 @@ def _build_dhcp_tasks(
             },
             metadata={
                 "managed_by": "dhcp",
+                "node_id": server.node_id,
                 "service_id": server.name,
                 "server": server.address,
                 "port": server.port,
@@ -178,6 +194,7 @@ def _build_dns_tasks(
                     },
                     metadata={
                         "managed_by": "dns",
+                        "node_id": server.node_id,
                         "service_id": server.name,
                         "server": server.address,
                     },
@@ -210,6 +227,7 @@ def _build_ntp_tasks(
             },
             metadata={
                 "managed_by": "ntp",
+                "node_id": server.node_id,
                 "service_id": server.name,
                 "server": server.address,
                 "port": server.port,
@@ -243,6 +261,7 @@ def _build_mqtt_tasks(
             },
             metadata={
                 "managed_by": "mqtt",
+                "node_id": broker.node_id,
                 "service_id": broker.name,
                 "broker": broker.address,
                 "port": broker.port,
@@ -284,6 +303,7 @@ def _build_network_tasks(
             },
             metadata={
                 "managed_by": "network",
+                "node_id": device.node_id or device.name,
                 "device_id": device.name,
                 "address": device.address,
             },
@@ -314,6 +334,7 @@ def _build_zwave_tasks(
             },
             metadata={
                 "managed_by": "zwave",
+                "node_id": service.node_id,
                 "service_id": service.name,
                 "url": service.url,
             },
@@ -346,6 +367,7 @@ def _build_wireguard_tasks(
             },
             metadata={
                 "managed_by": "wireguard",
+                "node_id": service.node_id,
                 "service_id": service.name,
                 "base_url": service.base_url,
                 "server_name": service.server_name,
@@ -356,18 +378,18 @@ def _build_wireguard_tasks(
     ]
 
 
-def _build_shelly_telemetry_tasks(
+def _build_home_assistant_telemetry_tasks(
     *,
-    shelly_telemetry_config: ShellyTelemetryConfig,
+    home_assistant_telemetry_config: HomeAssistantTelemetryConfig,
     interval_seconds: int,
     start_at: datetime,
 ) -> list[Task]:
     """Build one telemetry freshness observation per declared service."""
     return [
         Task(
-            id=f"shelly.telemetry.freshness:{service.name}",
-            name=f"Check Shelly telemetry service {service.name}",
-            command="shelly_telemetry.freshness",
+            id=f"home_assistant.telemetry.freshness:{service.name}",
+            name=f"Check Home Assistant telemetry service {service.name}",
+            command="home_assistant_telemetry.freshness",
             trigger=IntervalTrigger(
                 interval=timedelta(seconds=interval_seconds),
                 start_at=start_at,
@@ -376,21 +398,21 @@ def _build_shelly_telemetry_tasks(
                 "service_id": service.name,
                 "service_name": service.label,
                 "node_id": service.node_id,
-                "power_entity_id": service.power_entity_id,
-                "energy_entity_id": service.energy_entity_id,
+                "primary_entity_id": service.primary_entity_id,
+                "secondary_entity_id": service.secondary_entity_id,
                 "maximum_age_seconds": service.maximum_age_seconds,
             },
             metadata={
-                "managed_by": "shelly_telemetry",
+                "managed_by": "home_assistant_telemetry",
                 "service_id": service.name,
                 "service_name": service.label,
                 "node_id": service.node_id,
-                "power_entity_id": service.power_entity_id,
-                "energy_entity_id": service.energy_entity_id,
+                "primary_entity_id": service.primary_entity_id,
+                "secondary_entity_id": service.secondary_entity_id,
                 "maximum_age_seconds": service.maximum_age_seconds,
             },
         )
-        for service in shelly_telemetry_config.services
+        for service in home_assistant_telemetry_config.services
         if service.enabled
     ]
 
@@ -415,6 +437,8 @@ def _build_teleinformation_tasks(
                 "service_id": service.name,
                 "service_name": service.label,
                 "node_id": service.node_id,
+                "source_id": service.source_id,
+                "meter_id": service.meter_id,
                 "apparent_power_entity_id": service.apparent_power_entity_id,
                 "tariff_entity_id": service.tariff_entity_id,
                 "blue_off_peak_entity_id": service.blue_off_peak_entity_id,
@@ -430,6 +454,8 @@ def _build_teleinformation_tasks(
                 "service_id": service.name,
                 "service_name": service.label,
                 "node_id": service.node_id,
+                "source_id": service.source_id,
+                "meter_id": service.meter_id,
                 "apparent_power_entity_id": service.apparent_power_entity_id,
                 "tariff_entity_id": service.tariff_entity_id,
                 "maximum_age_seconds": service.maximum_age_seconds,
@@ -458,6 +484,41 @@ def _replace_plugin_tasks(
         scheduler.add_task(task)
 
 
+def _resolve_home_assistant_telemetry_config_path(path: Path) -> Path:
+    """Use the former Shelly config when an installation has not migrated yet."""
+    if path.exists():
+        return path
+
+    legacy_path = path.with_name("shelly-telemetry.yaml")
+    return legacy_path if legacy_path.exists() else path
+
+
+def _build_teleinformation_ingestion_runtime(
+    *,
+    configuration: TeleinformationPluginConfig,
+    frame_store: TeleinformationFrameStore,
+) -> TeleinformationIngestionHTTPServer | None:
+    """Build the optional direct teleinfo2mqtt receiver."""
+    if not configuration.enabled or configuration.mode != "direct_http":
+        return None
+
+    token = configuration.ingestion_token
+    if token is None and configuration.ingestion_token_environment_variable:
+        token = os.getenv(configuration.ingestion_token_environment_variable)
+    if not token:
+        source = configuration.ingestion_token_environment_variable or "configuration"
+        raise ValueError(
+            f"Direct Téléinformation ingestion token is missing ({source})."
+        )
+
+    return TeleinformationIngestionHTTPServer(
+        frame_store=frame_store,
+        token=token,
+        host=configuration.listen_host,
+        port=configuration.listen_port,
+    )
+
+
 def build_production_agent(
     *,
     application_config_path: Path = Path("config/shikamaru.yaml"),
@@ -469,7 +530,8 @@ def build_production_agent(
     network_config_path: Path = Path("config/plugins/network.yaml"),
     zwave_config_path: Path = Path("config/plugins/zwave.yaml"),
     wireguard_config_path: Path = Path("config/plugins/wireguard.yaml"),
-    shelly_telemetry_config_path: Path = Path("config/plugins/shelly-telemetry.yaml"),
+    home_assistant_telemetry_config_path: Path | None = None,
+    shelly_telemetry_config_path: Path | None = None,
     teleinformation_config_path: Path = Path("config/plugins/teleinformation.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
@@ -477,7 +539,8 @@ def build_production_agent(
     dhcp_check: DHCPCheck | None = None,
     zwave_check: ZWaveCheck | None = None,
     wireguard_check: WireGuardCheck | None = None,
-    shelly_telemetry_check: ShellyTelemetryCheck | None = None,
+    home_assistant_telemetry_check: HomeAssistantTelemetryCheck | None = None,
+    shelly_telemetry_check: HomeAssistantTelemetryCheck | None = None,
     teleinformation_check: TeleinformationCheck | None = None,
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
@@ -489,6 +552,8 @@ def build_production_agent(
     infrastructure = InfrastructureBuilder().build(infrastructure_config)
     current_infrastructure = infrastructure
     current_infrastructure_config = infrastructure_config
+    monitoring_registry = MonitoringScheduleRegistry()
+    monitoring_registry.replace_from_infrastructure(infrastructure_config)
     infrastructure_runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
 
     dhcp_plugin_config = DHCPConfigLoader().load(dhcp_config_path)
@@ -541,12 +606,24 @@ def build_production_agent(
         wireguard_plugin_config,
     )
 
-    shelly_telemetry_plugin_config = ShellyTelemetryConfigLoader().load(
-        shelly_telemetry_config_path
+    requested_home_assistant_telemetry_path = (
+        home_assistant_telemetry_config_path
+        or shelly_telemetry_config_path
+        or Path("config/plugins/home-assistant-telemetry.yaml")
     )
-    shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
-        infrastructure,
-        shelly_telemetry_plugin_config,
+    home_assistant_telemetry_config_path = (
+        _resolve_home_assistant_telemetry_config_path(
+            requested_home_assistant_telemetry_path
+        )
+    )
+    home_assistant_telemetry_plugin_config = HomeAssistantTelemetryConfigLoader().load(
+        home_assistant_telemetry_config_path
+    )
+    home_assistant_telemetry_config = (
+        HomeAssistantTelemetryConfigurationBuilder().build(
+            infrastructure,
+            home_assistant_telemetry_plugin_config,
+        )
     )
 
     teleinformation_plugin_config = TeleinformationConfigLoader().load(
@@ -555,6 +632,16 @@ def build_production_agent(
     teleinformation_config = TeleinformationConfigurationBuilder().build(
         infrastructure,
         teleinformation_plugin_config,
+    )
+    resolved_teleinformation_check = teleinformation_check or TeleinformationCheck()
+    teleinformation_frame_store = getattr(
+        resolved_teleinformation_check,
+        "frame_store",
+        TeleinformationFrameStore(),
+    )
+    teleinformation_ingestion_runtime = _build_teleinformation_ingestion_runtime(
+        configuration=teleinformation_plugin_config,
+        frame_store=teleinformation_frame_store,
     )
 
     event_bus = EventBus()
@@ -663,14 +750,18 @@ def build_production_agent(
     )
     plugin_manager.register(wireguard_plugin)
 
-    shelly_telemetry_plugin = ShellyTelemetryPlugin(
-        check=shelly_telemetry_check or ShellyTelemetryCheck(),
-        config=shelly_telemetry_config,
+    home_assistant_telemetry_plugin = HomeAssistantTelemetryPlugin(
+        check=(
+            home_assistant_telemetry_check
+            or shelly_telemetry_check
+            or HomeAssistantTelemetryCheck()
+        ),
+        config=home_assistant_telemetry_config,
     )
-    plugin_manager.register(shelly_telemetry_plugin)
+    plugin_manager.register(home_assistant_telemetry_plugin)
 
     teleinformation_plugin = TeleinformationPlugin(
-        check=teleinformation_check or TeleinformationCheck(),
+        check=resolved_teleinformation_check,
         config=teleinformation_config,
     )
     plugin_manager.register(teleinformation_plugin)
@@ -689,6 +780,7 @@ def build_production_agent(
         clock=resolved_clock,
         executor=DispatcherTaskExecutor(
             dispatcher=dispatcher,
+            monitoring_registry=monitoring_registry,
         ),
         event_bus=event_bus,
     )
@@ -787,15 +879,17 @@ def build_production_agent(
     _replace_plugin_tasks(
         scheduler,
         (
-            _build_shelly_telemetry_tasks(
-                shelly_telemetry_config=shelly_telemetry_config,
-                interval_seconds=(shelly_telemetry_plugin_config.interval_seconds),
+            _build_home_assistant_telemetry_tasks(
+                home_assistant_telemetry_config=home_assistant_telemetry_config,
+                interval_seconds=(
+                    home_assistant_telemetry_plugin_config.interval_seconds
+                ),
                 start_at=resolved_clock.now(),
             )
-            if shelly_telemetry_plugin_config.enabled
+            if home_assistant_telemetry_plugin_config.enabled
             else []
         ),
-        plugin_name="shelly_telemetry",
+        plugin_name="home_assistant_telemetry",
     )
     _replace_plugin_tasks(
         scheduler,
@@ -851,9 +945,11 @@ def build_production_agent(
             updated_infrastructure,
             wireguard_plugin_config,
         )
-        updated_shelly_telemetry_config = ShellyTelemetryConfigurationBuilder().build(
-            updated_infrastructure,
-            shelly_telemetry_plugin_config,
+        updated_home_assistant_telemetry_config = (
+            HomeAssistantTelemetryConfigurationBuilder().build(
+                updated_infrastructure,
+                home_assistant_telemetry_plugin_config,
+            )
         )
         updated_teleinformation_config = TeleinformationConfigurationBuilder().build(
             updated_infrastructure,
@@ -922,13 +1018,13 @@ def build_production_agent(
             if wireguard_plugin_config.enabled
             else []
         )
-        updated_shelly_telemetry_tasks = (
-            _build_shelly_telemetry_tasks(
-                shelly_telemetry_config=updated_shelly_telemetry_config,
-                interval_seconds=shelly_telemetry_plugin_config.interval_seconds,
+        updated_home_assistant_telemetry_tasks = (
+            _build_home_assistant_telemetry_tasks(
+                home_assistant_telemetry_config=updated_home_assistant_telemetry_config,
+                interval_seconds=home_assistant_telemetry_plugin_config.interval_seconds,
                 start_at=resolved_clock.now(),
             )
-            if shelly_telemetry_plugin_config.enabled
+            if home_assistant_telemetry_plugin_config.enabled
             else []
         )
         updated_teleinformation_tasks = (
@@ -952,7 +1048,9 @@ def build_production_agent(
         network_plugin.reconfigure(updated_network_config)
         zwave_plugin.reconfigure(updated_zwave_config)
         wireguard_plugin.reconfigure(updated_wireguard_config)
-        shelly_telemetry_plugin.reconfigure(updated_shelly_telemetry_config)
+        home_assistant_telemetry_plugin.reconfigure(
+            updated_home_assistant_telemetry_config
+        )
         teleinformation_plugin.reconfigure(updated_teleinformation_config)
         _replace_plugin_tasks(
             scheduler,
@@ -991,14 +1089,15 @@ def build_production_agent(
         )
         _replace_plugin_tasks(
             scheduler,
-            updated_shelly_telemetry_tasks,
-            plugin_name="shelly_telemetry",
+            updated_home_assistant_telemetry_tasks,
+            plugin_name="home_assistant_telemetry",
         )
         _replace_plugin_tasks(
             scheduler,
             updated_teleinformation_tasks,
             plugin_name="teleinformation",
         )
+        monitoring_registry.replace_from_infrastructure(changed_configuration)
         current_infrastructure = updated_infrastructure
         current_infrastructure_config = changed_configuration
 
@@ -1168,30 +1267,30 @@ def build_production_agent(
         )
         wireguard_plugin_config = configuration
 
-    def apply_shelly_telemetry_configuration(
-        configuration: ShellyTelemetryPluginConfig,
+    def apply_home_assistant_telemetry_configuration(
+        configuration: HomeAssistantTelemetryPluginConfig,
     ) -> None:
-        nonlocal shelly_telemetry_plugin_config
+        nonlocal home_assistant_telemetry_plugin_config
 
-        updated_config = ShellyTelemetryConfigurationBuilder().build(
+        updated_config = HomeAssistantTelemetryConfigurationBuilder().build(
             current_infrastructure,
             configuration,
         )
-        shelly_telemetry_plugin.reconfigure(updated_config)
+        home_assistant_telemetry_plugin.reconfigure(updated_config)
         _replace_plugin_tasks(
             scheduler,
             (
-                _build_shelly_telemetry_tasks(
-                    shelly_telemetry_config=updated_config,
+                _build_home_assistant_telemetry_tasks(
+                    home_assistant_telemetry_config=updated_config,
                     interval_seconds=configuration.interval_seconds,
                     start_at=resolved_clock.now(),
                 )
                 if configuration.enabled
                 else []
             ),
-            plugin_name="shelly_telemetry",
+            plugin_name="home_assistant_telemetry",
         )
-        shelly_telemetry_plugin_config = configuration
+        home_assistant_telemetry_plugin_config = configuration
 
     def apply_teleinformation_configuration(
         configuration: TeleinformationPluginConfig,
@@ -1203,6 +1302,12 @@ def build_production_agent(
             configuration,
         )
         teleinformation_plugin.reconfigure(updated_config)
+        agent.replace_teleinformation_ingestion_runtime(
+            _build_teleinformation_ingestion_runtime(
+                configuration=configuration,
+                frame_store=teleinformation_frame_store,
+            )
+        )
         _replace_plugin_tasks(
             scheduler,
             (
@@ -1306,25 +1411,27 @@ def build_production_agent(
             server_name=service.server_name,
         )
 
-    def test_shelly_telemetry_plugin() -> ObserverResult:
+    def test_home_assistant_telemetry_plugin() -> ObserverResult:
         services = [
             service
-            for service in shelly_telemetry_plugin.config.services
+            for service in home_assistant_telemetry_plugin.config.services
             if service.enabled
         ]
 
         if not services:
             raise ValueError(
-                "The Shelly telemetry plugin has no enabled Shelly telemetry service."
+                "The Home Assistant telemetry"
+                "plugin has no enabled Home"
+                "Assistant telemetry service."
             )
 
         service = services[0]
-        return shelly_telemetry_plugin.execute(
+        return home_assistant_telemetry_plugin.execute(
             service_id=service.name,
             service_name=service.label,
             node_id=service.node_id,
-            power_entity_id=service.power_entity_id,
-            energy_entity_id=service.energy_entity_id,
+            primary_entity_id=service.primary_entity_id,
+            secondary_entity_id=service.secondary_entity_id,
             maximum_age_seconds=service.maximum_age_seconds,
         )
 
@@ -1345,6 +1452,8 @@ def build_production_agent(
             service_id=service.name,
             service_name=service.label,
             node_id=service.node_id,
+            source_id=service.source_id,
+            meter_id=service.meter_id,
             apparent_power_entity_id=service.apparent_power_entity_id,
             tariff_entity_id=service.tariff_entity_id,
             blue_off_peak_entity_id=service.blue_off_peak_entity_id,
@@ -1369,6 +1478,7 @@ def build_production_agent(
             configuration.vision.infrastructure_refresh_seconds
         ),
         infrastructure_reconfigure=reconfigure_infrastructure,
+        teleinformation_ingestion_runtime=teleinformation_ingestion_runtime,
         home_assistant_publisher=mqtt_home_assistant_publisher,
     )
 
@@ -1386,6 +1496,15 @@ def build_production_agent(
             ) from error
 
         dhcp_repository = None
+        network_repository = None
+
+        if administration_config.network.enabled:
+            administration_network_config = administration_config.network
+            network_repository = NetworkManagerRepository(
+                helper_path=administration_network_config.helper_path,
+                sudo_path=administration_network_config.sudo_path,
+                rollback_seconds=administration_network_config.rollback_seconds,
+            )
 
         if administration_config.dhcp.enabled:
             administration_dhcp_config = administration_config.dhcp
@@ -1479,15 +1598,15 @@ def build_production_agent(
                     test_plugin=test_wireguard_plugin,
                 ),
                 PluginAdministrationBinding(
-                    identifier="shelly_telemetry",
-                    display_name="Shelly Telemetry",
-                    capabilities=("shelly.telemetry.freshness",),
-                    configuration_path=shelly_telemetry_config_path,
-                    configuration_model=ShellyTelemetryPluginConfig,
+                    identifier="home_assistant_telemetry",
+                    display_name="Télémétrie Home Assistant",
+                    capabilities=("home_assistant.telemetry.freshness",),
+                    configuration_path=home_assistant_telemetry_config_path,
+                    configuration_model=HomeAssistantTelemetryPluginConfig,
                     apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_shelly_telemetry_configuration(config)
+                        lambda: apply_home_assistant_telemetry_configuration(config)
                     ),
-                    test_plugin=test_shelly_telemetry_plugin,
+                    test_plugin=test_home_assistant_telemetry_plugin,
                 ),
                 PluginAdministrationBinding(
                     identifier="teleinformation",
@@ -1522,6 +1641,7 @@ def build_production_agent(
             ),
             dhcp_repository=dhcp_repository,
             plugin_repository=plugin_repository,
+            network_repository=network_repository,
             on_infrastructure_changed=lambda changed_configuration: (
                 agent.apply_infrastructure_configuration(
                     changed_configuration,

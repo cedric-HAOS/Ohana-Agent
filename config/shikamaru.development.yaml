@@ -42,6 +42,11 @@ administration:
   host: 127.0.0.1
   port: 8765
   token_file: config/management.development.token
+  network:
+    enabled: false
+    helper_path: /usr/local/sbin/ohana-network-helper
+    sudo_path: /usr/bin/sudo
+    rollback_seconds: 90
   dhcp:
     enabled: true
     server_node_id: infra-01

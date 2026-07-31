@@ -141,3 +141,74 @@ def test_dispatcher_task_executor_executes_plugin_observation_command() -> None:
     assert command.source == "dns.resolve"
     assert task.state is TaskState.WAITING
     assert task.execution_count == 1
+
+
+def test_dispatcher_task_executor_suspends_once_and_resumes() -> None:
+    from types import SimpleNamespace
+
+    from monitoring import MonitoringScheduleRegistry
+
+    class ScheduleDispatcher(FakeDispatcher):
+        def __init__(self) -> None:
+            super().__init__()
+            self.suspended: list[tuple[str, str]] = []
+
+        def publish_suspended(
+            self,
+            command: str,
+            arguments: dict[str, object],
+            *,
+            reason: str,
+            next_activation: datetime | None,
+        ) -> None:
+            del arguments, next_activation
+            self.suspended.append((command, reason))
+
+    registry = MonitoringScheduleRegistry()
+    registry.replace_from_infrastructure(
+        SimpleNamespace(
+            topology=SimpleNamespace(
+                devices=[
+                    SimpleNamespace(
+                        id="sun-01",
+                        node="sun-node",
+                        metadata={
+                            "monitoring_schedule": {
+                                "timezone": "Europe/Paris",
+                                "periods": [
+                                    {
+                                        "days": ["thursday"],
+                                        "start": "07:00",
+                                        "end": "22:00",
+                                    }
+                                ],
+                                "startup_grace_seconds": 0,
+                            }
+                        },
+                    )
+                ]
+            )
+        )
+    )
+    dispatcher = ScheduleDispatcher()
+    executor = DispatcherTaskExecutor(
+        dispatcher=dispatcher,
+        monitoring_registry=registry,
+    )
+    task = Task(
+        command="network.reachable",
+        trigger=IntervalTrigger(timedelta(seconds=30)),
+        arguments={"device_id": "sun-01"},
+        metadata={"node_id": "sun-node"},
+    )
+
+    suspended_at = datetime(2026, 7, 30, 4, 0, tzinfo=UTC)
+    active_at = datetime(2026, 7, 30, 6, 0, tzinfo=UTC)
+
+    assert executor.execute(task, suspended_at).success is True
+    assert executor.execute(task, suspended_at).success is True
+    assert len(dispatcher.suspended) == 1
+    assert dispatcher.executed == []
+
+    assert executor.execute(task, active_at).success is True
+    assert dispatcher.executed == [("network.reachable", {"device_id": "sun-01"})]

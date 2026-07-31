@@ -26,6 +26,10 @@ from scheduler import Scheduler, Task
 
 LOGGER = logging.getLogger(__name__)
 
+PLUGIN_IDENTIFIER_ALIASES = {
+    "shelly_telemetry": "home_assistant_telemetry",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class PluginAdministrationBinding:
@@ -62,6 +66,7 @@ class PluginAdministrationRepository:
 
     def read(self, identifier: str) -> PluginAdministrationState:
         """Return the current configuration and runtime state of one plugin."""
+        identifier = self._canonical_identifier(identifier)
         binding = self._binding(identifier)
         plugin = self._plugin(identifier)
         configuration = self._read_configuration(binding)
@@ -107,6 +112,7 @@ class PluginAdministrationRepository:
         payload: dict[str, Any],
     ) -> PluginAdministrationState:
         """Validate, persist and immediately apply a plugin configuration."""
+        identifier = self._canonical_identifier(identifier)
         binding = self._binding(identifier)
         update = PluginConfigurationUpdate.model_validate(payload)
         current_configuration = self._read_configuration(binding)
@@ -124,11 +130,22 @@ class PluginAdministrationRepository:
                 current_configuration,
                 field_name="app_token",
             )
-        elif identifier in {"shelly_telemetry", "teleinformation"}:
+        elif identifier == "home_assistant_telemetry":
             self._preserve_secret(
                 configuration_payload,
                 current_configuration,
                 field_name="access_token",
+            )
+        elif identifier == "teleinformation":
+            self._preserve_secret(
+                configuration_payload,
+                current_configuration,
+                field_name="access_token",
+            )
+            self._preserve_secret(
+                configuration_payload,
+                current_configuration,
+                field_name="ingestion_token",
             )
 
         configuration = binding.configuration_model.model_validate(
@@ -172,6 +189,7 @@ class PluginAdministrationRepository:
 
     def test(self, identifier: str) -> PluginTestResult:
         """Execute one immediate check with the current plugin configuration."""
+        identifier = self._canonical_identifier(identifier)
         binding = self._binding(identifier)
         self._plugin(identifier)
         result = binding.test_plugin()
@@ -184,6 +202,11 @@ class PluginAdministrationRepository:
             tested_at=result.timestamp,
             metadata=result.metadata,
         )
+
+    @staticmethod
+    def _canonical_identifier(identifier: str) -> str:
+        """Resolve identifiers retained for backward compatibility."""
+        return PLUGIN_IDENTIFIER_ALIASES.get(identifier, identifier)
 
     def _binding(self, identifier: str) -> PluginAdministrationBinding:
         binding = self.bindings.get(identifier)
@@ -344,10 +367,19 @@ class PluginAdministrationRepository:
                 payload,
                 field_name="app_token",
             )
-        elif identifier in {"shelly_telemetry", "teleinformation"}:
+        elif identifier == "home_assistant_telemetry":
             PluginAdministrationRepository._mask_secret(
                 payload,
                 field_name="access_token",
+            )
+        elif identifier == "teleinformation":
+            PluginAdministrationRepository._mask_secret(
+                payload,
+                field_name="access_token",
+            )
+            PluginAdministrationRepository._mask_secret(
+                payload,
+                field_name="ingestion_token",
             )
 
         return payload

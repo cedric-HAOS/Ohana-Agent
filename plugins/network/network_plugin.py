@@ -104,6 +104,7 @@ class NetworkPlugin(Plugin):
                 "device_label": str(label or resolved_device_id),
                 "node_id": node_id.strip() if isinstance(node_id, str) else None,
                 "address": result.address,
+                "resolved_address": result.resolved_address,
                 "method": result.method,
                 "attempts": result.attempts,
                 "consecutive_failures": self._consecutive_failures.get(

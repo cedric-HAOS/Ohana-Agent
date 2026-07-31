@@ -62,4 +62,9 @@ class ZWaveConfigurationBuilder:
             name=service.name,
             url=f"{scheme}://{service.endpoint.address}:{port}{path}",
             enabled=(service.enabled and service.endpoint.enabled),
+            node_id=(
+                service.metadata.get("node_id")
+                if isinstance(service.metadata.get("node_id"), str)
+                else None
+            ),
         )

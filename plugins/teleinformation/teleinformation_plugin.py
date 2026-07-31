@@ -27,7 +27,7 @@ _INDEX_ARGUMENTS = {
 
 
 class TeleinformationPlugin(Plugin):
-    """Plugin responsible for Linky Téléinformation freshness."""
+    """Plugin responsible for direct or legacy Linky data freshness."""
 
     def __init__(
         self,
@@ -52,10 +52,10 @@ class TeleinformationPlugin(Plugin):
         """Return the Téléinformation plugin manifest."""
         return PluginManifest(
             name="teleinformation",
-            version="0.1.1",
+            version="0.2.0",
             description=(
-                "Linky teleinformation freshness and Tempo tariff plugin "
-                "through Home Assistant."
+                "Linky teleinformation freshness from direct teleinfo2mqtt "
+                "frames, with a Home Assistant compatibility mode."
             ),
         )
 
@@ -71,19 +71,10 @@ class TeleinformationPlugin(Plugin):
         service_id = self._required_text(kwargs.get("service_id"), "service_id")
         service_name = self._optional_text(kwargs.get("service_name")) or service_id
         node_id = self._required_text(kwargs.get("node_id"), "node_id")
-        apparent_power_entity_id = self._required_text(
-            kwargs.get("apparent_power_entity_id"),
-            "apparent_power_entity_id",
-        )
-        tariff_entity_id = self._required_text(
-            kwargs.get("tariff_entity_id"),
-            "tariff_entity_id",
-        )
         maximum_age_seconds = kwargs.get(
             "maximum_age_seconds",
             self.config.maximum_age_seconds,
         )
-
         if (
             isinstance(maximum_age_seconds, bool)
             or not isinstance(maximum_age_seconds, int)
@@ -94,64 +85,78 @@ class TeleinformationPlugin(Plugin):
                 "'maximum_age_seconds' argument."
             )
 
-        index_entity_ids = {
-            index_key: entity_id
-            for index_key, argument_name in _INDEX_ARGUMENTS.items()
-            if (
-                entity_id := self._optional_entity_id(
-                    kwargs.get(argument_name),
-                    argument_name,
-                )
-            )
-            is not None
-        }
         started_at = perf_counter()
-        result = self._check.check(
-            service_name,
-            apparent_power_entity_id,
-            tariff_entity_id,
-            index_entity_ids=index_entity_ids,
-            home_assistant_url=self.config.home_assistant_url,
-            access_token=self.config.access_token,
-            access_token_environment_variable=(
-                self.config.access_token_environment_variable
-            ),
-            maximum_age_seconds=maximum_age_seconds,
-            timeout=self.config.timeout,
-            retries=self.config.retries,
-            verify_tls=self.config.verify_tls,
-        )
-        elapsed_ms = (perf_counter() - started_at) * 1000
-        message = self._message(result)
+        if self.config.mode == "direct_http":
+            source_id = self._optional_text(kwargs.get("source_id")) or "rpi-linky"
+            meter_id = self._required_text(kwargs.get("meter_id"), "meter_id")
+            result = self._check.check_direct(
+                service_name,
+                source_id=source_id,
+                meter_id=meter_id,
+                maximum_age_seconds=maximum_age_seconds,
+            )
+        else:
+            apparent_power_entity_id = self._required_text(
+                kwargs.get("apparent_power_entity_id"),
+                "apparent_power_entity_id",
+            )
+            tariff_entity_id = self._required_text(
+                kwargs.get("tariff_entity_id"),
+                "tariff_entity_id",
+            )
+            index_entity_ids = {
+                index_key: entity_id
+                for index_key, argument_name in _INDEX_ARGUMENTS.items()
+                if (
+                    entity_id := self._optional_entity_id(
+                        kwargs.get(argument_name),
+                        argument_name,
+                    )
+                )
+                is not None
+            }
+            result = self._check.check(
+                service_name,
+                apparent_power_entity_id,
+                tariff_entity_id,
+                index_entity_ids=index_entity_ids,
+                home_assistant_url=self.config.home_assistant_url,
+                access_token=self.config.access_token,
+                access_token_environment_variable=(
+                    self.config.access_token_environment_variable
+                ),
+                maximum_age_seconds=maximum_age_seconds,
+                timeout=self.config.timeout,
+                retries=self.config.retries,
+                verify_tls=self.config.verify_tls,
+            )
 
+        elapsed_ms = (perf_counter() - started_at) * 1000
         return ObserverResult(
             success=result.healthy,
             latency=elapsed_ms,
-            message=message,
+            message=self._message(result),
             check="teleinformation.freshness",
             description=(
-                "Vérifie que Home Assistant reçoit toujours la téléinformation "
-                "Linky et détermine la période Tempo courante."
+                "Vérifie la réception des trames Linky directement depuis "
+                "teleinfo2mqtt et détermine la période Tempo courante."
+                if result.mode == "direct_http"
+                else "Vérifie la téléinformation Linky via Home Assistant."
             ),
             metadata={
                 "target_type": "service",
                 "service_id": service_id,
                 "service_name": service_name,
                 "node_id": node_id,
+                "mode": result.mode,
+                "source_id": result.source_id,
+                "meter_id": result.meter_id,
                 "apparent_power": self._value_metadata(result.apparent_power),
                 "tariff_entity": self._value_metadata(result.tariff_value),
-                "tariff_number": (
-                    result.tariff.number if result.tariff is not None else None
-                ),
-                "tariff_color": (
-                    result.tariff.color if result.tariff is not None else None
-                ),
-                "tariff_period": (
-                    result.tariff.period if result.tariff is not None else None
-                ),
-                "tariff_label": (
-                    result.tariff.label if result.tariff is not None else None
-                ),
+                "tariff_number": result.tariff.number if result.tariff else None,
+                "tariff_color": result.tariff.color if result.tariff else None,
+                "tariff_period": result.tariff.period if result.tariff else None,
+                "tariff_label": result.tariff.label if result.tariff else None,
                 "active_index": (
                     self._value_metadata(result.active_index)
                     if result.active_index is not None
@@ -163,7 +168,14 @@ class TeleinformationPlugin(Plugin):
                 },
                 "maximum_age_seconds": maximum_age_seconds,
                 "attempts": result.attempts,
-                "home_assistant_url": self.config.home_assistant_url,
+                "home_assistant_url": (
+                    self.config.home_assistant_url
+                    if result.mode == "home_assistant"
+                    else None
+                ),
+                "ingestion_port": (
+                    self.config.listen_port if result.mode == "direct_http" else None
+                ),
                 "verify_tls": self.config.verify_tls,
                 "error": result.error,
             },
@@ -179,7 +191,6 @@ class TeleinformationPlugin(Plugin):
             return result.error or (
                 f"Téléinformation indisponible pour {result.meter_name}."
             )
-
         power = result.apparent_power
         power_text = (
             f"{power.value:g} {power.unit or 'VA'}"
@@ -191,50 +202,42 @@ class TeleinformationPlugin(Plugin):
         )
         active_index = result.active_index
         index_text = ""
-
         if active_index is not None and active_index.value is not None:
             index_text = (
                 f", index {active_index.value:g} {active_index.unit or ''}".rstrip()
             )
-
+        source_text = (
+            f" depuis {result.source_id}" if result.mode == "direct_http" else ""
+        )
         return (
-            f"Téléinformation fraîche pour {result.meter_name} : "
+            f"Téléinformation fraîche pour {result.meter_name}{source_text} : "
             f"{power_text}, {tariff_text}{index_text}."
         )
 
     @staticmethod
     def _required_text(value: object, field_name: str) -> str:
         normalized = TeleinformationPlugin._optional_text(value)
-
         if normalized is None:
             raise ValueError(
                 "TeleinformationPlugin.execute() requires a non-empty "
                 f"'{field_name}' argument."
             )
-
         return normalized
 
     @staticmethod
     def _optional_text(value: object) -> str | None:
         if not isinstance(value, str):
             return None
-
         normalized = value.strip()
         return normalized or None
 
     @classmethod
-    def _optional_entity_id(
-        cls,
-        value: object,
-        field_name: str,
-    ) -> str | None:
+    def _optional_entity_id(cls, value: object, field_name: str) -> str | None:
         normalized = cls._optional_text(value)
-
         if normalized is not None and "." not in normalized:
             raise ValueError(
                 f"TeleinformationPlugin.execute() received an invalid {field_name}."
             )
-
         return normalized
 
     @staticmethod

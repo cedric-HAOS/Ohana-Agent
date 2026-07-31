@@ -1,3 +1,6 @@
+# Legacy compatibility template.
+# New installations must use home-assistant-telemetry.example.yaml.
+# Agent 1.9.0 continues to load this file when the new configuration is absent.
 enabled: true
 timeout: 5.0
 retries: 1
@@ -7,5 +10,3 @@ home_assistant_url: http://ha-green.ohana.lan:8123
 access_token: null
 access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
 verify_tls: true
-# Shelly targets, Home Assistant entity IDs and freshness limits are declared
-# as services of type shelly_telemetry in infrastructure.yaml.

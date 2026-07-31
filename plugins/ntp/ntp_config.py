@@ -11,6 +11,7 @@ class NTPServerConfig:
     address: str
     port: int = 123
     enabled: bool = True
+    node_id: str | None = None
 
 
 @dataclass(frozen=True)

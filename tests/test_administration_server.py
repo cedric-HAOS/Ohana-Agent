@@ -268,3 +268,91 @@ def test_administration_server_exposes_plugin_routes(
     assert plugin["id"] == "dns"
     assert updated["enabled"] is False
     assert tested["success"] is True
+
+
+class FakeNetworkRepository:
+    """Expose deterministic host network changes."""
+
+    def read(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "available": True,
+            "interface": "eth0",
+            "connection_name": "Wired connection 1",
+            "method": "manual",
+            "address": "192.168.1.10/24",
+            "gateway": "192.168.1.1",
+            "dns_servers": ["192.168.1.11"],
+            "active": True,
+            "state": "connected",
+            "pending_change": None,
+        }
+
+    def apply(self, payload: dict[str, object]) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "transaction_id": "b" * 32,
+            "expires_at": "2026-07-30T12:00:00Z",
+            "state": self.read(),
+        }
+
+    def confirm(self, transaction_id: str) -> dict[str, object]:
+        assert transaction_id == "b" * 32
+        return self.read()
+
+    def rollback(self, transaction_id: str) -> dict[str, object]:
+        assert transaction_id == "b" * 32
+        return self.read()
+
+
+def test_administration_server_exposes_host_network_routes(tmp_path: Path) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            network_repository=FakeNetworkRepository(),  # type: ignore[arg-type]
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+
+    try:
+        capabilities = request_json(server, "/v1/capabilities")
+        state = request_json(server, "/v1/system/network")
+        change = request_json(
+            server,
+            "/v1/system/network",
+            method="PUT",
+            payload={
+                "schema_version": 1,
+                "settings": {
+                    "interface": "eth0",
+                    "method": "manual",
+                    "address": "192.168.1.10/24",
+                    "gateway": "192.168.1.1",
+                    "dns_servers": ["192.168.1.11"],
+                },
+            },
+        )
+        confirmed = request_json(
+            server,
+            f"/v1/system/network/{'b' * 32}/confirm",
+            method="POST",
+        )
+        rolled_back = request_json(
+            server,
+            f"/v1/system/network/{'b' * 32}/rollback",
+            method="POST",
+        )
+    finally:
+        server.stop()
+
+    assert "system.network.read" in capabilities["operations"]
+    assert state["interface"] == "eth0"
+    assert change["transaction_id"] == "b" * 32
+    assert confirmed["active"] is True
+    assert rolled_back["active"] is True

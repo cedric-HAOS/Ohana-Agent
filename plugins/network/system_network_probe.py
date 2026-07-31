@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import socket
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from time import perf_counter
 from plugins.network.network_probe_result import NetworkProbeResult
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
+AddressResolver = Callable[..., list[tuple[object, ...]]]
 
 
 @dataclass(slots=True)
@@ -19,12 +21,23 @@ class SystemNetworkProbe:
 
     runner: CommandRunner = subprocess.run
     system_name: str | None = None
+    resolver: AddressResolver = socket.getaddrinfo
 
     def probe(self, address: str, *, timeout: float) -> NetworkProbeResult:
         """Return presence detected by ICMP or the local neighbor table."""
         resolved_system = (self.system_name or platform.system()).lower()
+        resolved_address, resolution_error = self._resolve_address(address)
+
+        if resolution_error is not None:
+            return NetworkProbeResult(
+                address=address,
+                resolved_address=None,
+                reachable=None,
+                error=resolution_error,
+            )
+
         ping_command = self._ping_command(
-            address,
+            resolved_address,
             timeout=timeout,
             system_name=resolved_system,
         )
@@ -41,6 +54,7 @@ class SystemNetworkProbe:
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as error:
             return NetworkProbeResult(
                 address=address,
+                resolved_address=resolved_address,
                 reachable=None,
                 error=f"Unable to execute ICMP probe: {error}",
             )
@@ -50,13 +64,14 @@ class SystemNetworkProbe:
         if completed.returncode == 0:
             return NetworkProbeResult(
                 address=address,
+                resolved_address=resolved_address,
                 reachable=True,
                 method="icmp",
                 latency_ms=latency_ms,
             )
 
         arp_result = self._probe_neighbor_table(
-            address,
+            resolved_address,
             system_name=resolved_system,
             timeout=timeout,
         )
@@ -64,6 +79,7 @@ class SystemNetworkProbe:
         if arp_result is True:
             return NetworkProbeResult(
                 address=address,
+                resolved_address=resolved_address,
                 reachable=True,
                 method="arp",
                 latency_ms=latency_ms,
@@ -71,11 +87,41 @@ class SystemNetworkProbe:
 
         return NetworkProbeResult(
             address=address,
+            resolved_address=resolved_address,
             reachable=False,
             method="icmp",
             latency_ms=latency_ms,
             error=self._command_error(completed),
         )
+
+    def _resolve_address(self, address: str) -> tuple[str, str | None]:
+        try:
+            socket.inet_pton(socket.AF_INET, address)
+            return address, None
+        except OSError:
+            pass
+
+        try:
+            socket.inet_pton(socket.AF_INET6, address)
+            return address, None
+        except OSError:
+            pass
+
+        try:
+            results = self.resolver(address, None, type=socket.SOCK_STREAM)
+        except OSError as error:
+            return address, f"Unable to resolve hostname {address}: {error}"
+
+        for result in results:
+            sockaddr = result[4]
+
+            if isinstance(sockaddr, tuple) and sockaddr:
+                resolved = sockaddr[0]
+
+                if isinstance(resolved, str) and resolved:
+                    return resolved, None
+
+        return address, f"Unable to resolve hostname {address}: no address returned."
 
     def _probe_neighbor_table(
         self,

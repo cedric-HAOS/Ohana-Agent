@@ -1,5 +1,8 @@
 from builder.dhcp_configuration_builder import DHCPConfigurationBuilder
 from builder.dns_configuration_builder import DNSConfigurationBuilder
+from builder.home_assistant_telemetry_configuration_builder import (
+    HomeAssistantTelemetryConfigurationBuilder,
+)
 from builder.infrastructure_builder import InfrastructureBuilder
 from builder.mqtt_configuration_builder import MQTTConfigurationBuilder
 from builder.network_configuration_builder import NetworkConfigurationBuilder
@@ -16,6 +19,7 @@ from builder.zwave_configuration_builder import ZWaveConfigurationBuilder
 __all__ = [
     "DHCPConfigurationBuilder",
     "DNSConfigurationBuilder",
+    "HomeAssistantTelemetryConfigurationBuilder",
     "InfrastructureBuilder",
     "MQTTConfigurationBuilder",
     "NetworkConfigurationBuilder",

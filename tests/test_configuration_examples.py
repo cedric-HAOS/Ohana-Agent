@@ -3,11 +3,13 @@
 from configuration.loader import ConfigurationLoader
 from loader.dhcp_config_loader import DHCPConfigLoader
 from loader.dns_config_loader import DNSConfigLoader
+from loader.home_assistant_telemetry_config_loader import (
+    HomeAssistantTelemetryConfigLoader,
+)
 from loader.infrastructure_loader import InfrastructureLoader
 from loader.mqtt_config_loader import MQTTConfigLoader
 from loader.network_config_loader import NetworkConfigLoader
 from loader.ntp_config_loader import NTPConfigLoader
-from loader.shelly_telemetry_config_loader import ShellyTelemetryConfigLoader
 from loader.teleinformation_config_loader import TeleinformationConfigLoader
 from loader.wireguard_config_loader import WireGuardConfigLoader
 from loader.zwave_config_loader import ZWaveConfigLoader
@@ -129,9 +131,9 @@ def test_wireguard_example_configuration_is_valid() -> None:
     assert configuration.app_token is None
 
 
-def test_shelly_telemetry_example_configuration_is_valid() -> None:
-    configuration = ShellyTelemetryConfigLoader().load(
-        "config/plugins/shelly-telemetry.example.yaml",
+def test_home_assistant_telemetry_example_configuration_is_valid() -> None:
+    configuration = HomeAssistantTelemetryConfigLoader().load(
+        "config/plugins/home-assistant-telemetry.example.yaml",
     )
 
     assert configuration.enabled is True
@@ -145,10 +147,12 @@ def test_teleinformation_example_configuration_is_valid() -> None:
         "config/plugins/teleinformation.example.yaml",
     )
 
-    assert configuration.enabled is True
-    assert configuration.interval_seconds == 60
-    assert configuration.maximum_age_seconds == 180
-    assert configuration.home_assistant_url == ("http://ha-green.ohana.lan:8123")
-    assert configuration.access_token_environment_variable == (
-        "OHANA_HOME_ASSISTANT_TOKEN"
+    assert configuration.enabled is False
+    assert configuration.mode == "direct_http"
+    assert configuration.interval_seconds == 30
+    assert configuration.maximum_age_seconds == 30
+    assert configuration.listen_host == "0.0.0.0"
+    assert configuration.listen_port == 8770
+    assert configuration.ingestion_token_environment_variable == (
+        "OHANA_TELEINFORMATION_INGESTION_TOKEN"
     )

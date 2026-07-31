@@ -46,7 +46,7 @@ def test_shelly_telemetry_plugin_returns_service_observation() -> None:
     )
 
     assert result.success is True
-    assert result.check == "shelly.telemetry.freshness"
+    assert result.check == "home_assistant.telemetry.freshness"
     assert result.metadata["target_type"] == "service"
     assert result.metadata["service_id"] == "shelly-telemetry-cuisine"
     assert result.metadata["node_id"] == "shelly-cuisine"
@@ -55,8 +55,8 @@ def test_shelly_telemetry_plugin_returns_service_observation() -> None:
     assert check.calls[0][2]["maximum_age_seconds"] == 600
 
 
-def test_shelly_telemetry_plugin_requires_power_entity() -> None:
-    with pytest.raises(ValueError, match="power_entity_id"):
+def test_shelly_telemetry_plugin_requires_primary_entity() -> None:
+    with pytest.raises(ValueError, match="primary_entity_id"):
         ShellyTelemetryPlugin().execute(
             service_id="shelly-telemetry-cuisine",
             service_name="Télémétrie cuisine",

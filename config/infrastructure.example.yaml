@@ -102,19 +102,13 @@ services:
     name: Téléinformation Linky
     type: teleinformation
     node: linky-01
-    implementation: teleinfo2mqtt via MQTT et Home Assistant
+    implementation: teleinfo2mqtt via HTTP direct
     enabled: true
     critical: false
     metadata:
-      apparent_power_entity_id: sensor.teleinfo_041964385922_sinsts
-      tariff_entity_id: sensor.teleinfo_041964385922_ntarf
-      blue_off_peak_entity_id: sensor.teleinfo_041964385922_easf01
-      blue_peak_entity_id: sensor.teleinfo_041964385922_easf02
-      white_off_peak_entity_id: sensor.teleinfo_041964385922_easf03
-      white_peak_entity_id: sensor.teleinfo_041964385922_easf04
-      red_off_peak_entity_id: sensor.teleinfo_041964385922_easf05
-      red_peak_entity_id: sensor.teleinfo_041964385922_easf06
-      maximum_age_seconds: 180
+      meter_id: "041964385922"
+      source_id: rpi-linky
+      maximum_age_seconds: 30
 
   - id: mqtt-primary
     name: MQTT principal
@@ -150,16 +144,16 @@ services:
 
   # Exemple désactivé : adapter les identifiants d'entités Home Assistant
   # avant activation.
-  - id: shelly-telemetry-cuisine
+  - id: home-assistant-telemetry-cuisine
     name: Télémétrie Shelly cuisine
-    type: shelly_telemetry
+    type: home_assistant_telemetry
     node: shelly-cuisine
     implementation: Home Assistant
     enabled: false
     critical: false
     metadata:
-      power_entity_id: sensor.shelly_cuisine_power
-      energy_entity_id: sensor.shelly_cuisine_energy
+      primary_entity_id: sensor.shelly_cuisine_power
+      secondary_entity_id: sensor.shelly_cuisine_energy
       maximum_age_seconds: 900
 
 topology:
@@ -238,6 +232,15 @@ topology:
       node: shelly-cuisine
       metadata:
         role: energy_meter
+        # Exemple de plage pour un équipement actif uniquement en journée.
+        monitoring_schedule:
+          enabled: false
+          timezone: Europe/Paris
+          periods:
+            - days: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+              start: "07:00"
+              end: "22:00"
+          startup_grace_seconds: 300
 
   links:
     - id: internet-box-01

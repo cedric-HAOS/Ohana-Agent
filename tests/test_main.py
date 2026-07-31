@@ -45,8 +45,11 @@ def test_parse_arguments_uses_default_configuration_paths(
     assert arguments.network_config == Path("config/plugins/network.yaml")
     assert arguments.zwave_config == Path("config/plugins/zwave.yaml")
     assert arguments.wireguard_config == Path("config/plugins/wireguard.yaml")
-    assert arguments.shelly_telemetry_config == Path(
-        "config/plugins/shelly-telemetry.yaml"
+    assert arguments.home_assistant_telemetry_config == Path(
+        "config/plugins/home-assistant-telemetry.yaml"
+    )
+    assert arguments.shelly_telemetry_config == (
+        arguments.home_assistant_telemetry_config
     )
     assert arguments.teleinformation_config == Path(
         "config/plugins/teleinformation.yaml"
@@ -286,7 +289,7 @@ def test_main_builds_and_runs_production_agent(
         network_config_path: Path,
         zwave_config_path: Path,
         wireguard_config_path: Path,
-        shelly_telemetry_config_path: Path,
+        home_assistant_telemetry_config_path: Path,
         teleinformation_config_path: Path,
     ) -> FakeAgent:
         calls.append(
@@ -301,7 +304,7 @@ def test_main_builds_and_runs_production_agent(
                 network_config_path,
                 zwave_config_path,
                 wireguard_config_path,
-                shelly_telemetry_config_path,
+                home_assistant_telemetry_config_path,
                 teleinformation_config_path,
             )
         )

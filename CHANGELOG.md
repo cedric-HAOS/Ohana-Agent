@@ -6,6 +6,81 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.0] — Lot C : administration réseau sécurisée — 2026-07-30
+
+## Ajouté
+
+- Lecture de l’état NetworkManager de l’hôte Agent : interface, connexion,
+  adresse IPv4, passerelle, DNS et mode statique ou DHCP.
+- API d’administration `system.network.*` pour préparer, appliquer, confirmer
+  ou restaurer une configuration réseau.
+- Helper privilégié limité `ohana-agent-network-helper`, sans droit root
+  général pour le processus Agent.
+- Application des changements avec sauvegarde et retour automatique entre 30
+  et 300 secondes si la nouvelle configuration n’est pas confirmée.
+
+## Sécurité
+
+- Une seule transaction réseau peut être en attente à la fois.
+- Les interfaces, adresses, passerelles, DNS et identifiants de transaction sont
+  validés avant toute commande NetworkManager.
+- Les instantanés de restauration sont conservés dans un répertoire root en
+  permissions `0700`, avec fichiers `0600`.
+
+## Qualité
+
+- Tests des modèles réseau, du repository, des routes HTTP et du refus d’une
+  seconde transaction en attente.
+- Version du paquet alignée sur `1.11.0`.
+
+---
+
+# [1.10.0] — Lot B : Téléinformation directe et plages de surveillance — 2026-07-30
+
+## Ajouté
+
+- Récepteur HTTP authentifié dédié aux trames décodées envoyées directement par
+  `teleinfo2mqtt`, sans dépendance à Home Assistant ni au broker de HA-Green.
+- Mode `direct_http` du plugin Téléinformation, avec identification de la source
+  et du compteur Linky, contrôle de `SINSTS`, `NTARF` et de l’index Tempo actif.
+- Plages horaires facultatives sur les équipements, avec fuseau horaire, jours
+  actifs et délai de démarrage.
+- État `suspended` publié lors de la suspension planifiée et exclu des incidents
+  et de la dégradation de la santé globale.
+
+## Compatibilité
+
+- Le mode historique Home Assistant reste accepté pour les configurations
+  Téléinformation existantes.
+- Une seule observation de suspension est publiée par période continue afin de
+  ne pas remplir inutilement l’historique.
+
+## Qualité
+
+- Tests du récepteur HTTP, de son authentification, du stockage des trames, du
+  contrôle direct Tempo et des plages horaires, y compris les périodes passant
+  minuit et le délai de démarrage.
+- Version interne du plugin Téléinformation portée à `0.2.0`.
+- Version du paquet alignée sur `1.10.0`.
+
+---
+
+# [1.9.0] — Lot A : télémétrie générique et cibles réseau — 2026-07-30
+
+## Ajouté
+
+- Plugin `home_assistant_telemetry` et capacité `home_assistant.telemetry.freshness`.
+- Prise en charge des noms d’hôte et noms DNS pour les équipements.
+- Adresse résolue exposée dans les observations de présence réseau.
+
+## Modifié
+
+- Shelly Telemetry devient **Télémétrie Home Assistant**.
+- Les services et configurations `shelly_telemetry` restent acceptés pendant la migration.
+- Nouvel argument `--home-assistant-telemetry-config`, avec ancien argument conservé comme alias.
+
+---
+
 # [1.8.1] — Fraîcheur Tempo contextuelle — 2026-07-29
 
 ## Corrigé

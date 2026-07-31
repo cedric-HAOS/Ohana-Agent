@@ -11,6 +11,7 @@ class WireGuardServiceConfig:
     base_url: str
     server_name: str = "wireguard"
     enabled: bool = True
+    node_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -98,8 +98,12 @@ def test_wheel_contains_runtime_modules(
         "plugins/zwave/zwave_plugin.py",
         "plugins/wireguard/wireguard_plugin.py",
         "plugins/wireguard/authorize_freebox.py",
+        "plugins/home_assistant_telemetry/home_assistant_telemetry_plugin.py",
         "plugins/shelly_telemetry/shelly_telemetry_plugin.py",
         "plugins/teleinformation/teleinformation_plugin.py",
+        "plugins/teleinformation/teleinformation_ingestion.py",
+        "plugins/teleinformation/teleinformation_frame_store.py",
+        "monitoring/schedule.py",
     }
 
     assert required_modules <= wheel_members
@@ -112,6 +116,7 @@ def test_wheel_contains_runtime_modules(
         "infrastructure/",
         "loader/",
         "memory/",
+        "monitoring/",
         "mqtt/",
         "observer/",
         "plugin/",
@@ -213,6 +218,7 @@ def test_sdist_contains_configuration_examples_only(
         "config/plugins/network.example.yaml",
         "config/plugins/zwave.example.yaml",
         "config/plugins/wireguard.example.yaml",
+        "config/plugins/home-assistant-telemetry.example.yaml",
         "config/plugins/shelly-telemetry.example.yaml",
         "config/plugins/teleinformation.example.yaml",
     }
@@ -227,6 +233,7 @@ def test_sdist_contains_configuration_examples_only(
         "config/plugins/network.yaml",
         "config/plugins/zwave.yaml",
         "config/plugins/wireguard.yaml",
+        "config/plugins/home-assistant-telemetry.yaml",
         "config/plugins/shelly-telemetry.yaml",
         "config/plugins/teleinformation.yaml",
     }

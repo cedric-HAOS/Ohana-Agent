@@ -27,7 +27,7 @@ Ohana-Agent :8765
     +-- plugins/network.yaml
     +-- plugins/zwave.yaml
     +-- plugins/wireguard.yaml
-    +-- plugins/shelly-telemetry.yaml
+    +-- plugins/home-assistant-telemetry.yaml
     +-- plugins/teleinformation.yaml
 ```
 
@@ -44,6 +44,10 @@ avec l'Agent sur la boucle locale.
 | `PUT` | `/v1/infrastructure` | Valider et remplacer l'architecture |
 | `GET` | `/v1/dhcp` | Lire les paramètres, réservations et baux |
 | `PUT` | `/v1/dhcp` | Valider et remplacer la configuration DHCP |
+| `GET` | `/v1/system/network` | Lire l’état NetworkManager de l’hôte Agent |
+| `PUT` | `/v1/system/network` | Appliquer une configuration IPv4 avec retour automatique |
+| `POST` | `/v1/system/network/{transaction_id}/confirm` | Confirmer la nouvelle configuration |
+| `POST` | `/v1/system/network/{transaction_id}/rollback` | Restaurer immédiatement l’ancienne configuration |
 | `GET` | `/v1/plugins` | Lister les plugins administrables et leur état |
 | `GET` | `/v1/plugins/{plugin_id}` | Lire un plugin et sa configuration publique |
 | `PUT` | `/v1/plugins/{plugin_id}` | Valider, enregistrer et appliquer sa configuration |
@@ -53,15 +57,36 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
 
 - `infrastructure.read` et `infrastructure.write` ;
 - `dhcp.read`, `dhcp.write` et `dhcp.leases.read` lorsque DHCP est activé ;
-- `plugins.read`, `plugins.write` et `plugins.test` lorsque l'administration des
-  plugins est disponible.
+- `plugins.read`, `plugins.write` et `plugins.test` lorsque l’administration des
+  plugins est disponible ;
+- `system.network.read`, `system.network.write`, `system.network.confirm` et
+  `system.network.rollback` lorsque le helper NetworkManager est installé.
+
+## Administration réseau de l’hôte
+
+Ohana-Agent ne lance jamais `nmcli` avec les droits de son utilisateur de
+service. Ohana-Installer déploie un helper root dédié et une règle `sudoers`
+limitée à ce seul exécutable. Le document reçu depuis Vision ne peut contenir
+ni chemin arbitraire ni commande système.
+
+Lors d’une modification :
+
+1. Agent valide l’interface, le mode IPv4, l’adresse, la passerelle et les DNS ;
+2. le helper sauvegarde la connexion NetworkManager active ;
+3. un rollback systemd est programmé entre 30 et 300 secondes ;
+4. la nouvelle configuration est appliquée ;
+5. Vision doit confirmer la transaction après reconnexion ;
+6. sans confirmation, l’ancienne connexion est restaurée automatiquement.
+
+Une seule transaction peut être en attente. Les instantanés sont stockés sous
+`/var/lib/ohana-agent/network` avec des permissions réservées à root.
 
 ## Plugins administrables
 
 L'inventaire provient du `PluginManager`. Un plugin ne peut donc pas apparaître
 dans l'API s'il n'est pas réellement enregistré dans l'Agent.
 
-La version 1.8.1 expose :
+La version 1.11.0 expose :
 
 - **DHCP** — capacité `dhcp.status` ;
 - **DNS** — capacité `dns.resolve` ;
@@ -70,7 +95,7 @@ La version 1.8.1 expose :
 - **Présence réseau** — capacité `network.reachable` ;
 - **Z-Wave** — capacité `zwave.status` ;
 - **WireGuard** — capacité `wireguard.status` ;
-- **Shelly Telemetry** — capacité `shelly.telemetry.freshness` ;
+- **Télémétrie Home Assistant** — capacité `home_assistant.telemetry.freshness` ;
 - **Téléinformation** — capacité `teleinformation.freshness`.
 
 Pour chaque plugin, l'API fournit notamment :

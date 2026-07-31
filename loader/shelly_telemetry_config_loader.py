@@ -1,17 +1,9 @@
-"""Shelly telemetry plugin configuration loader."""
+"""Compatibility alias for the former Shelly telemetry loader."""
 
-from pathlib import Path
+from loader.home_assistant_telemetry_config_loader import (
+    HomeAssistantTelemetryConfigLoader,
+)
 
-import yaml
+ShellyTelemetryConfigLoader = HomeAssistantTelemetryConfigLoader
 
-from configuration.shelly_telemetry import ShellyTelemetryPluginConfig
-
-
-class ShellyTelemetryConfigLoader:
-    """Load declarative Shelly telemetry configuration from YAML."""
-
-    def load(self, path: str | Path) -> ShellyTelemetryPluginConfig:
-        """Load and validate a Shelly telemetry plugin configuration."""
-        file_path = Path(path)
-        data = yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
-        return ShellyTelemetryPluginConfig.model_validate(data)
+__all__ = ["ShellyTelemetryConfigLoader"]

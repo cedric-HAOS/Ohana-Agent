@@ -268,3 +268,64 @@ def test_teleinformation_rejects_unknown_ntarf_value() -> None:
 
     assert result.healthy is False
     assert "invalid NTARF" in (result.error or "")
+
+
+def test_direct_teleinformation_uses_agent_reception_time() -> None:
+    from plugins.teleinformation.teleinformation_frame_store import (
+        TeleinformationFrameStore,
+    )
+
+    received_at = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
+    store = TeleinformationFrameStore()
+    store.put(
+        source="rpi-linky",
+        meter_id="041964385922",
+        received_at=received_at,
+        frame={
+            "SINSTS": {"raw": "01392", "value": 1392},
+            "NTARF": {"raw": "02", "value": 2},
+            "EASF02": {"raw": "006931422", "value": 6931422},
+        },
+    )
+
+    result = TeleinformationCheck(frame_store=store).check_direct(
+        "Téléinformation Linky",
+        source_id="rpi-linky",
+        meter_id="041964385922",
+        maximum_age_seconds=30,
+        now=datetime(2026, 7, 30, 10, 0, 10, tzinfo=UTC),
+    )
+
+    assert result.healthy is True
+    assert result.mode == "direct_http"
+    assert result.apparent_power.value == 1392
+    assert result.tariff is not None
+    assert result.tariff.label == "HP Bleue"
+    assert result.active_index is not None
+    assert result.active_index.entity_id == "EASF02"
+    assert result.active_index.value == 6931422
+
+
+def test_direct_teleinformation_rejects_stale_frame() -> None:
+    from plugins.teleinformation.teleinformation_frame_store import (
+        TeleinformationFrameStore,
+    )
+
+    store = TeleinformationFrameStore()
+    store.put(
+        source="rpi-linky",
+        meter_id="041964385922",
+        received_at=datetime(2026, 7, 30, 9, 59, tzinfo=UTC),
+        frame={"SINSTS": 1392, "NTARF": 2, "EASF02": 6931422},
+    )
+
+    result = TeleinformationCheck(frame_store=store).check_direct(
+        "Téléinformation Linky",
+        source_id="rpi-linky",
+        meter_id="041964385922",
+        maximum_age_seconds=30,
+        now=datetime(2026, 7, 30, 10, 0, tzinfo=UTC),
+    )
+
+    assert result.healthy is False
+    assert "60 secondes" in (result.error or "")

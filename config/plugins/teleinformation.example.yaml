@@ -1,11 +1,17 @@
-enabled: true
-timeout: 5.0
-retries: 1
-interval_seconds: 60
-maximum_age_seconds: 180
+# Mode recommandé : réception directe des trames depuis teleinfo2mqtt.
+enabled: false
+mode: direct_http
+interval_seconds: 30
+maximum_age_seconds: 30
+listen_host: 0.0.0.0
+listen_port: 8770
+ingestion_token: null
+ingestion_token_environment_variable: OHANA_TELEINFORMATION_INGESTION_TOKEN
+
+# Compatibilité temporaire avec l’ancien mode Home Assistant.
 home_assistant_url: http://ha-green.ohana.lan:8123
 access_token: null
 access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
+timeout: 5.0
+retries: 1
 verify_tls: true
-# Les entités Linky sont déclarées dans les services de type teleinformation
-# du fichier infrastructure.yaml.

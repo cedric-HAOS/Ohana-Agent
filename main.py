@@ -88,10 +88,12 @@ def parse_arguments() -> argparse.Namespace:
         help="WireGuard observation plugin configuration file.",
     )
     parser.add_argument(
+        "--home-assistant-telemetry-config",
         "--shelly-telemetry-config",
+        dest="home_assistant_telemetry_config",
         type=Path,
-        default=Path("config/plugins/shelly-telemetry.yaml"),
-        help="Shelly telemetry observation plugin configuration file.",
+        default=Path("config/plugins/home-assistant-telemetry.yaml"),
+        help="Home Assistant telemetry plugin configuration file.",
     )
     parser.add_argument(
         "--teleinformation-config",
@@ -112,7 +114,10 @@ def parse_arguments() -> argparse.Namespace:
         help="Console logging level.",
     )
 
-    return parser.parse_args()
+    arguments = parser.parse_args()
+    # Deprecated attribute retained for callers that still inspect the old name.
+    arguments.shelly_telemetry_config = arguments.home_assistant_telemetry_config
+    return arguments
 
 
 def configure_logging(level: str) -> None:
@@ -176,7 +181,9 @@ def main() -> int:
         network_config_path=arguments.network_config,
         zwave_config_path=arguments.zwave_config,
         wireguard_config_path=arguments.wireguard_config,
-        shelly_telemetry_config_path=arguments.shelly_telemetry_config,
+        home_assistant_telemetry_config_path=(
+            arguments.home_assistant_telemetry_config
+        ),
         teleinformation_config_path=arguments.teleinformation_config,
     )
 

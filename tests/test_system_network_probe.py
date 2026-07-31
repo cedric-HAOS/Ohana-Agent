@@ -86,3 +86,45 @@ def test_system_network_probe_returns_unknown_when_ping_is_unavailable() -> None
     assert result.reachable is None
     assert result.method is None
     assert "Unable to execute ICMP probe" in (result.error or "")
+
+
+def test_system_network_probe_resolves_hostname_before_icmp() -> None:
+    runner = FakeRunner([completed(["ping"], 0)])
+    resolver_calls: list[tuple[str, object]] = []
+
+    def resolver(host: str, port: object, **kwargs: object):
+        resolver_calls.append((host, port))
+        assert kwargs["type"]
+        return [(2, 1, 6, "", ("192.168.1.71", 0))]
+
+    probe = SystemNetworkProbe(
+        runner=runner,
+        resolver=resolver,
+        system_name="Linux",
+    )
+
+    result = probe.probe("she-01.ohana.lan", timeout=1.0)
+
+    assert resolver_calls == [("she-01.ohana.lan", None)]
+    assert result.address == "she-01.ohana.lan"
+    assert result.resolved_address == "192.168.1.71"
+    assert result.reachable is True
+    assert runner.commands == [["ping", "-c", "1", "-W", "1", "192.168.1.71"]]
+
+
+def test_system_network_probe_reports_hostname_resolution_error() -> None:
+    def resolver(host: str, port: object, **kwargs: object):
+        del host, port, kwargs
+        raise OSError("name not known")
+
+    probe = SystemNetworkProbe(
+        runner=FakeRunner([]),
+        resolver=resolver,
+        system_name="Linux",
+    )
+
+    result = probe.probe("missing.ohana.lan", timeout=1.0)
+
+    assert result.reachable is None
+    assert result.resolved_address is None
+    assert "Unable to resolve hostname" in (result.error or "")

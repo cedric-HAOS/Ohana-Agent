@@ -1,30 +1,11 @@
-"""Runtime configuration used by the Shelly telemetry plugin."""
+"""Compatibility aliases for Shelly Telemetry runtime configuration."""
 
-from dataclasses import dataclass, field
+from plugins.home_assistant_telemetry.home_assistant_telemetry_config import (
+    HomeAssistantTelemetryConfig,
+    HomeAssistantTelemetryServiceConfig,
+)
 
+ShellyTelemetryConfig = HomeAssistantTelemetryConfig
+ShellyTelemetryServiceConfig = HomeAssistantTelemetryServiceConfig
 
-@dataclass(frozen=True, slots=True)
-class ShellyTelemetryServiceConfig:
-    """Home Assistant entities used to observe one infrastructure service."""
-
-    name: str
-    label: str
-    node_id: str
-    power_entity_id: str
-    energy_entity_id: str | None = None
-    maximum_age_seconds: int = 900
-    enabled: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class ShellyTelemetryConfig:
-    """Runtime configuration for Shelly telemetry freshness checks."""
-
-    services: list[ShellyTelemetryServiceConfig] = field(default_factory=list)
-    home_assistant_url: str = "http://ha-green.ohana.lan:8123"
-    access_token: str | None = None
-    access_token_environment_variable: str | None = "OHANA_HOME_ASSISTANT_TOKEN"
-    timeout: float = 5.0
-    retries: int = 1
-    maximum_age_seconds: int = 900
-    verify_tls: bool = True
+__all__ = ["ShellyTelemetryConfig", "ShellyTelemetryServiceConfig"]

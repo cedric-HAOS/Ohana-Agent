@@ -11,6 +11,7 @@ class MQTTBrokerConfig:
     address: str
     port: int = 1883
     enabled: bool = True
+    node_id: str | None = None
 
 
 @dataclass(frozen=True)

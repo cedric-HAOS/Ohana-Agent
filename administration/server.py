@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 from collections.abc import Callable
+from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.metadata import PackageNotFoundError
@@ -26,6 +27,10 @@ from administration.models import (
     AdministrationCapabilities,
     DHCPConfiguration,
 )
+from administration.network import (
+    NetworkAdministrationError,
+    NetworkManagerRepository,
+)
 from administration.plugins import PluginAdministrationRepository
 from configuration.infrastructure import InfrastructureConfig
 
@@ -42,6 +47,7 @@ class AdministrationService:
         infrastructure_repository: InfrastructureConfigurationRepository,
         dhcp_repository: DnsmasqDHCPRepository | None = None,
         plugin_repository: PluginAdministrationRepository | None = None,
+        network_repository: NetworkManagerRepository | None = None,
         on_infrastructure_changed: (
             Callable[[InfrastructureConfig], None] | None
         ) = None,
@@ -50,6 +56,7 @@ class AdministrationService:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
         self.plugin_repository = plugin_repository
+        self.network_repository = network_repository
         self.on_infrastructure_changed = on_infrastructure_changed
         self.agent_version = agent_version or self._installed_agent_version()
 
@@ -66,6 +73,16 @@ class AdministrationService:
                     "dhcp.read",
                     "dhcp.write",
                     "dhcp.leases.read",
+                ]
+            )
+
+        if self.network_repository is not None:
+            operations.extend(
+                [
+                    "system.network.read",
+                    "system.network.write",
+                    "system.network.confirm",
+                    "system.network.rollback",
                 ]
             )
 
@@ -125,6 +142,30 @@ class AdministrationService:
 
         configuration = DHCPConfiguration.model_validate(payload)
         return self.dhcp_repository.write(configuration)
+
+    def read_network(self) -> object:
+        """Return the active NetworkManager configuration of the Agent host."""
+        if self.network_repository is None:
+            raise LookupError("Agent network administration is unavailable")
+        return self.network_repository.read()
+
+    def write_network(self, payload: dict[str, Any]) -> object:
+        """Apply a candidate host network configuration with rollback protection."""
+        if self.network_repository is None:
+            raise LookupError("Agent network administration is unavailable")
+        return self.network_repository.apply(payload)
+
+    def confirm_network(self, transaction_id: str) -> object:
+        """Confirm a pending host network configuration."""
+        if self.network_repository is None:
+            raise LookupError("Agent network administration is unavailable")
+        return self.network_repository.confirm(transaction_id)
+
+    def rollback_network(self, transaction_id: str) -> object:
+        """Restore the previous host network configuration immediately."""
+        if self.network_repository is None:
+            raise LookupError("Agent network administration is unavailable")
+        return self.network_repository.rollback(transaction_id)
 
     def list_plugins(self) -> object:
         """Return all registered and administrable plugins."""
@@ -249,6 +290,7 @@ class AdministrationHTTPServer:
                     "/v1/infrastructure": service.read_infrastructure,
                     "/v1/dhcp": service.read_dhcp,
                     "/v1/plugins": service.list_plugins,
+                    "/v1/system/network": service.read_network,
                 }
                 operation = routes.get(path)
 
@@ -279,6 +321,7 @@ class AdministrationHTTPServer:
                 routes: dict[str, Callable[[dict[str, Any]], object]] = {
                     "/v1/infrastructure": service.write_infrastructure,
                     "/v1/dhcp": service.write_dhcp,
+                    "/v1/system/network": service.write_network,
                 }
                 operation = routes.get(path)
 
@@ -325,6 +368,18 @@ class AdministrationHTTPServer:
                     if identifier and "/" not in identifier:
                         self._execute(lambda: service.test_plugin(identifier))
                         return
+
+                network_prefix = "/v1/system/network/"
+                for action, operation in (
+                    ("confirm", service.confirm_network),
+                    ("rollback", service.rollback_network),
+                ):
+                    action_suffix = f"/{action}"
+                    if path.startswith(network_prefix) and path.endswith(action_suffix):
+                        transaction_id = path[len(network_prefix) : -len(action_suffix)]
+                        if transaction_id and "/" not in transaction_id:
+                            self._execute(partial(operation, transaction_id))
+                            return
 
                 self._write_error(
                     HTTPStatus.NOT_FOUND,
@@ -412,6 +467,7 @@ class AdministrationHTTPServer:
                     return
                 except (
                     DHCPConfigurationError,
+                    NetworkAdministrationError,
                     ValidationError,
                     ValueError,
                 ) as error:

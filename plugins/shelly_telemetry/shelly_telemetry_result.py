@@ -1,23 +1,18 @@
-"""Results exposed by the Shelly telemetry check."""
+"""Compatibility result types for the former Shelly telemetry plugin."""
 
 from dataclasses import dataclass
-from datetime import datetime
 
+from plugins.home_assistant_telemetry.home_assistant_telemetry_result import (
+    HomeAssistantTelemetryCheckResult,
+    HomeAssistantTelemetryValue,
+)
 
-@dataclass(frozen=True, slots=True)
-class ShellyTelemetryValue:
-    """One validated Home Assistant sensor value."""
-
-    entity_id: str
-    value: float | None = None
-    unit: str | None = None
-    reported_at: datetime | None = None
-    age_seconds: float | None = None
+ShellyTelemetryValue = HomeAssistantTelemetryValue
 
 
 @dataclass(frozen=True, slots=True)
 class ShellyTelemetryCheckResult:
-    """Freshness result for one Shelly device."""
+    """Legacy result shape translated by the compatibility check wrapper."""
 
     device_name: str
     healthy: bool
@@ -25,3 +20,10 @@ class ShellyTelemetryCheckResult:
     energy: ShellyTelemetryValue | None = None
     attempts: int = 1
     error: str | None = None
+
+
+__all__ = [
+    "HomeAssistantTelemetryCheckResult",
+    "ShellyTelemetryCheckResult",
+    "ShellyTelemetryValue",
+]

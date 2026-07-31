@@ -29,6 +29,16 @@ class AdministrationRuntime(Protocol):
         """Stop accepting administration requests."""
 
 
+class TeleinformationIngestionRuntime(Protocol):
+    """Lifecycle exposed by the direct teleinformation receiver."""
+
+    def start(self) -> None:
+        """Start accepting teleinfo2mqtt frames."""
+
+    def stop(self) -> None:
+        """Stop accepting teleinfo2mqtt frames."""
+
+
 class HomeAssistantPublisherRuntime(Protocol):
     """Lifecycle exposed by the MQTT Home Assistant publisher."""
 
@@ -53,6 +63,7 @@ class ProductionAgent:
     infrastructure_retry_seconds: float = 10.0
     infrastructure_refresh_seconds: float = 300.0
     administration_runtime: AdministrationRuntime | None = None
+    teleinformation_ingestion_runtime: TeleinformationIngestionRuntime | None = None
     home_assistant_publisher: HomeAssistantPublisherRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     monotonic_clock: Callable[[], float] = field(
@@ -122,6 +133,7 @@ class ProductionAgent:
 
         self._stop_event.clear()
         self._start_administration()
+        self._start_teleinformation_ingestion()
         self._start_home_assistant_publisher()
 
         if not self._synchronize_infrastructure():
@@ -153,6 +165,7 @@ class ProductionAgent:
         """Run until a stop request is received."""
         self._stop_event.clear()
         self._start_administration()
+        self._start_teleinformation_ingestion()
         self._start_home_assistant_publisher()
 
         try:
@@ -196,6 +209,9 @@ class ProductionAgent:
         if self.administration_runtime is not None:
             self.administration_runtime.stop()
 
+        if self.teleinformation_ingestion_runtime is not None:
+            self.teleinformation_ingestion_runtime.stop()
+
         if self.home_assistant_publisher is not None:
             self.home_assistant_publisher.stop()
 
@@ -223,6 +239,22 @@ class ProductionAgent:
         with self._runtime_lock:
             reconfigure()
 
+    def replace_teleinformation_ingestion_runtime(
+        self,
+        runtime: TeleinformationIngestionRuntime | None,
+    ) -> None:
+        """Replace the direct receiver while plugin configuration is applied."""
+        with self._runtime_lock:
+            previous = self.teleinformation_ingestion_runtime
+            was_running = bool(
+                previous is not None and getattr(previous, "running", False)
+            )
+            if previous is not None:
+                previous.stop()
+            self.teleinformation_ingestion_runtime = runtime
+            if runtime is not None and (was_running or self.scheduler.running):
+                runtime.start()
+
     def apply_infrastructure_configuration(
         self,
         configuration: InfrastructureConfig,
@@ -247,6 +279,10 @@ class ProductionAgent:
     def _start_administration(self) -> None:
         if self.administration_runtime is not None:
             self.administration_runtime.start()
+
+    def _start_teleinformation_ingestion(self) -> None:
+        if self.teleinformation_ingestion_runtime is not None:
+            self.teleinformation_ingestion_runtime.start()
 
     def _start_home_assistant_publisher(self) -> None:
         if self.home_assistant_publisher is not None:

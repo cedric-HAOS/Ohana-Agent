@@ -49,7 +49,7 @@ class FakeTeleinformationCheck:
 def test_teleinformation_plugin_manifest_uses_patch_version() -> None:
     plugin = TeleinformationPlugin()
 
-    assert plugin.manifest.version == "0.1.1"
+    assert plugin.manifest.version == "0.2.0"
 
 
 def test_teleinformation_plugin_returns_service_observation() -> None:

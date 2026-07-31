@@ -391,7 +391,7 @@ def test_validator_rejects_invalid_topology_device_address() -> None:
     config = build_valid_topology_config()
     assert config.topology is not None
     invalid_device = config.topology.devices[0].model_copy(
-        update={"address": "not-an-ip"}
+        update={"address": "not_an_ip"}
     )
     invalid_topology = config.topology.model_copy(
         update={
@@ -405,6 +405,44 @@ def test_validator_rejects_invalid_topology_device_address() -> None:
 
     with pytest.raises(
         InfrastructureValidationError,
-        match="Invalid IP address for topology device 'router'",
+        match="Invalid host or IP address for topology device 'router'",
     ):
+        InfrastructureValidator().validate(config)
+
+
+def test_validator_accepts_hostname_endpoint_and_topology_address() -> None:
+    config = build_valid_topology_config()
+    assert config.topology is not None
+    node = config.nodes[0].model_copy(
+        update={
+            "endpoint": NodeEndpointConfig(
+                type="hostname", address="infra-01.ohana.lan"
+            )
+        }
+    )
+    device = config.topology.devices[0].model_copy(
+        update={"address": "infra-01.ohana.lan"}
+    )
+    topology = config.topology.model_copy(
+        update={"devices": [device, *config.topology.devices[1:]]}
+    )
+    config = config.model_copy(
+        update={"nodes": [node, *config.nodes[1:]], "topology": topology}
+    )
+
+    InfrastructureValidator().validate(config)
+
+
+def test_validator_rejects_hostname_with_underscore() -> None:
+    config = build_valid_topology_config()
+    assert config.topology is not None
+    device = config.topology.devices[0].model_copy(
+        update={"address": "she_01.ohana.lan"}
+    )
+    topology = config.topology.model_copy(
+        update={"devices": [device, *config.topology.devices[1:]]}
+    )
+    config = config.model_copy(update={"topology": topology})
+
+    with pytest.raises(InfrastructureValidationError):
         InfrastructureValidator().validate(config)

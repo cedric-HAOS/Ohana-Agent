@@ -36,6 +36,7 @@ class NetworkCheck:
 
         return NetworkProbeResult(
             address=last_result.address,
+            resolved_address=last_result.resolved_address,
             reachable=last_result.reachable,
             method=last_result.method,
             latency_ms=last_result.latency_ms,

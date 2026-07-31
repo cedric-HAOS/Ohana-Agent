@@ -248,6 +248,7 @@ def test_production_bootstrap_builds_dns_task() -> None:
     }
     assert dhcp_tasks[0].metadata == {
         "managed_by": "dhcp",
+        "node_id": "infra-01",
         "service_id": "dhcp-primary",
         "server": "192.168.1.10",
         "port": 67,
@@ -259,6 +260,7 @@ def test_production_bootstrap_builds_dns_task() -> None:
     }
     assert dns_tasks[0].metadata == {
         "managed_by": "dns",
+        "node_id": "infra-01",
         "service_id": "dns-primary",
         "server": "192.168.1.10",
     }
@@ -270,6 +272,7 @@ def test_production_bootstrap_builds_dns_task() -> None:
     }
     assert network_tasks[0].metadata == {
         "managed_by": "network",
+        "node_id": "infra-01",
         "device_id": "rpi-link",
         "address": "192.168.1.10",
     }
@@ -509,6 +512,7 @@ def test_production_bootstrap_reconfigures_ntp_tasks_from_infrastructure() -> No
     }
     assert ntp_tasks[0].metadata == {
         "managed_by": "ntp",
+        "node_id": "infra-01",
         "service_id": "ntp-primary",
         "server": "192.168.1.10",
         "port": 123,
@@ -585,6 +589,7 @@ def test_production_bootstrap_reconfigures_mqtt_tasks_from_infrastructure() -> N
     }
     assert mqtt_tasks[0].metadata == {
         "managed_by": "mqtt",
+        "node_id": "infra-01",
         "service_id": "mqtt-primary",
         "broker": "192.168.1.10",
         "port": 1883,
@@ -735,8 +740,11 @@ administration:
     assert agent.administration_runtime is not None
     repository = agent.administration_runtime.service.plugin_repository
     assert repository is not None
-    initial = repository.read("shelly_telemetry")
+    initial = repository.read("home_assistant_telemetry")
+    legacy_initial = repository.read("shelly_telemetry")
     assert initial.task_count == 0
+    assert legacy_initial.id == "home_assistant_telemetry"
+    assert legacy_initial.name == "Télémétrie Home Assistant"
 
     agent.apply_infrastructure_configuration(
         infrastructure_with_shelly,
@@ -745,11 +753,11 @@ administration:
         ),
     )
 
-    after_architecture = repository.read("shelly_telemetry")
+    after_architecture = repository.read("home_assistant_telemetry")
     assert after_architecture.task_count == 2
 
     updated = repository.write(
-        "shelly_telemetry",
+        "home_assistant_telemetry",
         {
             "enabled": True,
             "configuration": {
@@ -765,14 +773,14 @@ administration:
     tasks = [
         task
         for task in agent.scheduler.list_tasks()
-        if task.metadata.get("managed_by") == "shelly_telemetry"
+        if task.metadata.get("managed_by") == "home_assistant_telemetry"
     ]
     assert [task.arguments["service_id"] for task in tasks] == [
         "shelly-garage",
         "shelly-kitchen",
     ]
     assert {task.command for task in tasks} == {
-        "shelly_telemetry.freshness",
+        "home_assistant_telemetry.freshness",
     }
 
     execution = agent.scheduler.executor.execute(tasks[0], clock.now())
@@ -789,7 +797,7 @@ administration:
     assert len(observations) == 1
     assert observations[0]["node_id"] == "infra-01"
     assert observations[0]["service_id"] == "shelly-garage"
-    assert observations[0]["capability_id"] == "shelly.telemetry.freshness"
+    assert observations[0]["capability_id"] == "home_assistant.telemetry.freshness"
     assert observations[0]["status"] == "healthy"
 
 

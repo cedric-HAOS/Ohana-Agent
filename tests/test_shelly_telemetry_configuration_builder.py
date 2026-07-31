@@ -88,8 +88,8 @@ def test_shelly_telemetry_builder_keeps_disabled_service_unscheduled() -> None:
     assert runtime.services[0].enabled is False
 
 
-def test_shelly_telemetry_builder_requires_power_entity() -> None:
-    with pytest.raises(ValueError, match="power_entity_id"):
+def test_shelly_telemetry_builder_requires_primary_entity() -> None:
+    with pytest.raises(ValueError, match="primary_entity_id"):
         ShellyTelemetryConfigurationBuilder().build(
             build_runtime(
                 infrastructure_with_shelly_service(include_power_entity=False)

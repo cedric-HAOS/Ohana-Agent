@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.8.1"
+    assert project["version"] == "1.11.0"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"
@@ -53,6 +53,7 @@ def test_package_declares_runtime_dependencies() -> None:
         "dnspython>=2.7,<3",
         "paho-mqtt>=2,<3",
         "aiohttp>=3.11,<4",
+        "tzdata>=2025.2",
         "zwave-js-server-python>=0.72,<1",
     ]
 
@@ -79,6 +80,7 @@ def test_package_declares_console_entry_point() -> None:
     assert project["scripts"] == {
         "ohana-agent": "main:main",
         "ohana-agent-authorize-freebox": ("plugins.wireguard.authorize_freebox:main"),
+        "ohana-agent-network-helper": "administration.network_helper:main",
     }
 
 

@@ -60,22 +60,17 @@ def test_infrastructure_example_yaml_declares_services() -> None:
     assert services_by_id["dhcp-primary"]["node"] == "infra-01"
     assert services_by_id["wireguard-freebox"]["type"] == "wireguard"
     assert services_by_id["wireguard-freebox"]["node"] == "box-01"
-    assert services_by_id["shelly-telemetry-cuisine"]["type"] == "shelly_telemetry"
+    assert (
+        services_by_id["home-assistant-telemetry-cuisine"]["type"]
+        == "home_assistant_telemetry"
+    )
     teleinformation = services_by_id["teleinformation"]
     assert teleinformation["type"] == "teleinformation"
     assert teleinformation["node"] == "linky-01"
-    assert teleinformation["implementation"] == (
-        "teleinfo2mqtt via MQTT et Home Assistant"
-    )
-    assert teleinformation["metadata"]["apparent_power_entity_id"] == (
-        "sensor.teleinfo_041964385922_sinsts"
-    )
-    assert teleinformation["metadata"]["tariff_entity_id"] == (
-        "sensor.teleinfo_041964385922_ntarf"
-    )
-    assert teleinformation["metadata"]["red_peak_entity_id"] == (
-        "sensor.teleinfo_041964385922_easf06"
-    )
+    assert teleinformation["implementation"] == "teleinfo2mqtt via HTTP direct"
+    assert teleinformation["metadata"]["meter_id"] == "041964385922"
+    assert teleinformation["metadata"]["source_id"] == "rpi-linky"
+    assert teleinformation["metadata"]["maximum_age_seconds"] == 30
 
 
 def test_infrastructure_example_yaml_declares_service_endpoints() -> None:
@@ -99,3 +94,8 @@ def test_infrastructure_example_yaml_declares_topology() -> None:
     assert topology["devices"]
     assert topology["links"]
     assert topology["layouts"]
+    devices = {device["id"]: device for device in topology["devices"]}
+    schedule = devices["shelly-cuisine"]["metadata"]["monitoring_schedule"]
+    assert schedule["enabled"] is False
+    assert schedule["timezone"] == "Europe/Paris"
+    assert schedule["startup_grace_seconds"] == 300

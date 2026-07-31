@@ -30,7 +30,8 @@ def test_systemd_service_uses_reference_executable_and_configuration() -> None:
     assert "--zwave-config /etc/ohana-agent/plugins/zwave.yaml" in service
     assert "--wireguard-config /etc/ohana-agent/plugins/wireguard.yaml" in service
     assert (
-        "--shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml"
+        "--home-assistant-telemetry-config "
+        "/etc/ohana-agent/plugins/home-assistant-telemetry.yaml"
     ) in service
     assert (
         "--teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml"

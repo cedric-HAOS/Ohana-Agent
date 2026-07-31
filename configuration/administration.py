@@ -34,6 +34,15 @@ class DHCPAdministrationConfig(Config):
     reload_request_path: Path = Path("/run/ohana-agent/dhcp-reload.request")
 
 
+class NetworkAdministrationConfig(Config):
+    """Restricted helper used to administer the Agent host network."""
+
+    enabled: bool = False
+    helper_path: Path = Path("/usr/local/sbin/ohana-network-helper")
+    sudo_path: Path = Path("/usr/bin/sudo")
+    rollback_seconds: int = Field(default=90, ge=30, le=300)
+
+
 class AdministrationConfig(Config):
     """Agent administration endpoint configuration."""
 
@@ -42,3 +51,6 @@ class AdministrationConfig(Config):
     port: int = Field(default=8765, ge=1, le=65535)
     token_file: Path = Path("/etc/ohana-agent/management.token")
     dhcp: DHCPAdministrationConfig = Field(default_factory=DHCPAdministrationConfig)
+    network: NetworkAdministrationConfig = Field(
+        default_factory=NetworkAdministrationConfig
+    )

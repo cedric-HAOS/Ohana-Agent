@@ -61,7 +61,7 @@ def test_install_script_does_not_manage_configuration() -> None:
     assert '"${CONFIG_ROOT}/plugins/network.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/zwave.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/wireguard.yaml"' in script
-    assert '"${CONFIG_ROOT}/plugins/shelly-telemetry.yaml"' in script
+    assert '"${CONFIG_ROOT}/plugins/home-assistant-telemetry.yaml"' in script
     assert '"${CONFIG_ROOT}/plugins/teleinformation.yaml"' in script
 
     assert "shikamaru.example.yaml" not in script
@@ -73,7 +73,7 @@ def test_install_script_does_not_manage_configuration() -> None:
     assert "network.example.yaml" not in script
     assert "zwave.example.yaml" not in script
     assert "wireguard.example.yaml" not in script
-    assert "shelly-telemetry.example.yaml" not in script
+    assert "home-assistant-telemetry.example.yaml" not in script
     assert "teleinformation.example.yaml" not in script
 
 
@@ -110,6 +110,7 @@ def test_update_script_preserves_configuration_and_service_state() -> None:
     assert "network.yaml" not in script
     assert "zwave.yaml" not in script
     assert "wireguard.yaml" not in script
+    assert "home-assistant-telemetry.yaml" not in script
     assert "shelly-telemetry.yaml" not in script
     assert "teleinformation.yaml" not in script
 

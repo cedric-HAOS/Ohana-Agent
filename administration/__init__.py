@@ -9,6 +9,11 @@ from administration.infrastructure import (
 )
 from administration.models import (
     AdministrationCapabilities,
+    AgentNetworkChange,
+    AgentNetworkChangeRequest,
+    AgentNetworkPendingChange,
+    AgentNetworkSettings,
+    AgentNetworkState,
     DHCPAdministrationState,
     DHCPConfiguration,
     DHCPLease,
@@ -18,6 +23,10 @@ from administration.models import (
     PluginAdministrationState,
     PluginConfigurationUpdate,
     PluginTestResult,
+)
+from administration.network import (
+    NetworkAdministrationError,
+    NetworkManagerRepository,
 )
 from administration.plugins import (
     PluginAdministrationBinding,
@@ -40,6 +49,13 @@ __all__ = [
     "DHCPSettings",
     "DnsmasqDHCPRepository",
     "InfrastructureConfigurationRepository",
+    "AgentNetworkChange",
+    "AgentNetworkChangeRequest",
+    "AgentNetworkPendingChange",
+    "AgentNetworkSettings",
+    "AgentNetworkState",
+    "NetworkAdministrationError",
+    "NetworkManagerRepository",
     "PluginTestResult",
     "PluginConfigurationUpdate",
     "PluginAdministrationState",

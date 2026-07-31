@@ -6,5 +6,6 @@ class ObservationStatus(StrEnum):
 
     UNKNOWN = "unknown"
     HEALTHY = "healthy"
+    SUSPENDED = "suspended"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"

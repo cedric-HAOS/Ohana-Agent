@@ -128,6 +128,40 @@ Principaux acquis :
 
 ---
 
+# v1.9.0 — Lot A : télémétrie générique et cibles réseau
+
+**Statut : terminé.**
+
+Principaux acquis :
+
+- remplacement fonctionnel de Shelly Telemetry par le plugin générique
+  `home_assistant_telemetry` ;
+- migration compatible des anciens services, configurations et appels
+  d’administration `shelly_telemetry` ;
+- acceptation des noms d’hôte et noms DNS dans l’infrastructure ;
+- résolution DNS au moment des contrôles de présence réseau ;
+- conservation de la cible déclarée et de l’adresse résolue dans l’observation.
+
+---
+
+# v1.10.0 — Lot B : Téléinformation directe et plages de surveillance
+
+**Statut : terminé.**
+
+Principaux acquis :
+
+- réception HTTP directe des trames décodées de `teleinfo2mqtt` ;
+- indépendance fonctionnelle vis-à-vis de Home Assistant et du broker hébergé
+  sur HA-Green pour la supervision Linky ;
+- conservation temporaire du mode Home Assistant pour la migration ;
+- plages horaires configurables au niveau des équipements ;
+- héritage automatique des plages par leurs tâches de présence réseau et de
+  services ;
+- état `suspended` neutre pour les incidents et la santé globale ;
+- publication unique de la transition de suspension.
+
+---
+
 # v2.0.0 — Actions contrôlées
 
 Objectif : passer progressivement de l'observation à l'action.
@@ -184,3 +218,11 @@ Principaux acquis :
 - index inactifs conservés comme données informatives ;
 - grâce de 30 secondes lors des bascules tarifaires.
 
+
+
+# v1.11.0 — Lot C : administration réseau sécurisée
+
+- [x] Lecture NetworkManager de l’hôte Agent.
+- [x] Helper privilégié limité et API versionnée.
+- [x] Application avec sauvegarde, confirmation et rollback automatique.
+- [x] Protection contre les transactions concurrentes.

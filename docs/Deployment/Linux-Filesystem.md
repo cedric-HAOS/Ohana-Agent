@@ -12,7 +12,7 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.8.1.
+Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.11.0.
 
 ---
 
@@ -46,7 +46,7 @@ L’installation Linux respecte les principes suivants :
 │   │       ├── network.yaml
 │   │       ├── zwave.yaml
 │   │       ├── wireguard.yaml
-│   │       ├── shelly-telemetry.yaml
+│   │       ├── home-assistant-telemetry.yaml
 │   │       └── teleinformation.yaml
 │   │
 │   └── systemd/
@@ -119,7 +119,7 @@ La structure retenue est :
     ├── network.yaml
     ├── zwave.yaml
     ├── wireguard.yaml
-    ├── shelly-telemetry.yaml
+    ├── home-assistant-telemetry.yaml
     └── teleinformation.yaml
 ```
 
@@ -235,15 +235,15 @@ Ce fichier règle la vérification générique des équipements adressables :
 Les adresses des équipements restent déclarées dans `infrastructure.yaml`,
 directement sur l’équipement ou par l’intermédiaire de son nœud.
 
-### Plugin Shelly Telemetry
+### Plugin Télémétrie Home Assistant
 
 ```text
-/etc/ohana-agent/plugins/shelly-telemetry.yaml
+/etc/ohana-agent/plugins/home-assistant-telemetry.yaml
 ```
 
 Ce fichier configure la connexion Home Assistant et la fréquence globale des
-contrôles Shelly. Les entités restent déclarées dans les services
-`shelly_telemetry` de `infrastructure.yaml`.
+contrôles génériques. Les entités restent déclarées dans les services
+`home_assistant_telemetry` de `infrastructure.yaml`.
 
 ### Plugin Téléinformation
 
@@ -353,7 +353,7 @@ avec les chemins de configuration explicites :
 --network-config /etc/ohana-agent/plugins/network.yaml
 --zwave-config /etc/ohana-agent/plugins/zwave.yaml
 --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml
---shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml
+--home-assistant-telemetry-config /etc/ohana-agent/plugins/home-assistant-telemetry.yaml
 --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml
 ```
 
@@ -473,7 +473,7 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--network-config` | `/etc/ohana-agent/plugins/network.yaml` |
 | `--zwave-config` | `/etc/ohana-agent/plugins/zwave.yaml` |
 | `--wireguard-config` | `/etc/ohana-agent/plugins/wireguard.yaml` |
-| `--shelly-telemetry-config` | `/etc/ohana-agent/plugins/shelly-telemetry.yaml` |
+| `--home-assistant-telemetry-config` | `/etc/ohana-agent/plugins/home-assistant-telemetry.yaml` |
 | `--teleinformation-config` | `/etc/ohana-agent/plugins/teleinformation.yaml` |
 | `--log-level`      | niveau choisi par le service            |
 
@@ -490,7 +490,7 @@ Commande de référence :
   --network-config /etc/ohana-agent/plugins/network.yaml \
   --zwave-config /etc/ohana-agent/plugins/zwave.yaml \
   --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
-  --shelly-telemetry-config /etc/ohana-agent/plugins/shelly-telemetry.yaml \
+  --home-assistant-telemetry-config /etc/ohana-agent/plugins/home-assistant-telemetry.yaml \
   --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml \
   --log-level INFO
 ```
@@ -513,7 +513,7 @@ config/plugins/mqtt.yaml
 config/plugins/network.yaml
 config/plugins/zwave.yaml
 config/plugins/wireguard.yaml
-config/plugins/shelly-telemetry.yaml
+config/plugins/home-assistant-telemetry.yaml
 config/plugins/teleinformation.yaml
 ```
 
@@ -555,7 +555,7 @@ Ils ne devront être ajoutés que lorsqu’un composant de production les utilis
 
 ---
 
-## Contrat pour la version 1.8.1
+## Contrat pour la version 1.11.0
 
 L’arborescence Linux de référence d’Ohana-Agent 1.5.0 est :
 
@@ -571,3 +571,17 @@ Groupe         ohana-agent
 ```
 
 Cette structure doit être utilisée par le service `systemd`, les procédures d’installation et le futur Ohana-Installer.
+
+
+## Administration NetworkManager
+
+Ohana-Installer 1.0.13 installe :
+
+```text
+/usr/local/sbin/ohana-network-helper
+/etc/sudoers.d/ohana-agent-network
+/var/lib/ohana-agent/network/
+```
+
+Le wrapper et la règle sudoers sont détenus par root. Le répertoire d’état
+contient uniquement les instantanés nécessaires au retour automatique.

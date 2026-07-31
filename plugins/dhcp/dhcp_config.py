@@ -12,6 +12,7 @@ class DHCPServerConfig:
     address: str
     port: int = 67
     enabled: bool = True
+    node_id: str | None = None
 
 
 @dataclass(frozen=True)

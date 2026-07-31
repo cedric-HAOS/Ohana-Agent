@@ -68,4 +68,9 @@ class WireGuardConfigurationBuilder:
             base_url=f"{scheme}://{authority}",
             server_name=server_name.strip(),
             enabled=(service.enabled and service.endpoint.enabled),
+            node_id=(
+                service.metadata.get("node_id")
+                if isinstance(service.metadata.get("node_id"), str)
+                else None
+            ),
         )

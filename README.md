@@ -27,7 +27,9 @@ dispatcher et restaure la publication automatique vers Vision. La version
 `teleinfo2mqtt`, MQTT et Home Assistant, avec interprétation du tarif Tempo. La
 version 1.8.1 adapte la fraîcheur au fonctionnement réel de Tempo : `NTARF` et
 les index inactifs peuvent rester inchangés, tandis que `SINSTS` et l’index actif
-restent surveillés.
+restent surveillés. La version 1.9.0 généralise Shelly Telemetry en
+**Télémétrie Home Assistant**, accepte les noms DNS comme cibles réseau et
+conserve les anciens contrats le temps de leur migration. La version 1.10.0 reçoit directement les trames décodées de `teleinfo2mqtt` sur une API dédiée et ajoute des plages horaires de surveillance aux équipements. La version 1.11.0 ajoute la lecture et la modification sécurisée de la configuration NetworkManager de l’hôte Agent, avec sauvegarde et retour automatique.
 
 ---
 
@@ -37,7 +39,7 @@ Ohana-Agent expose une API locale permettant à Ohana-Vision de modifier
 l’infrastructure, le DHCP et la configuration des plugins intégrés.
 
 L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DHCP,
-DNS, NTP, MQTT, Présence réseau, Z-Wave, WireGuard, Shelly Telemetry et
+DNS, NTP, MQTT, Présence réseau, Z-Wave, WireGuard, Télémétrie Home Assistant et
 Téléinformation peuvent être activés, reconfigurés et testés sans redémarrer
 l’Agent.
 Les secrets MQTT, Freebox et Home Assistant restent masqués.
@@ -47,7 +49,9 @@ Les secrets MQTT, Freebox et Home Assistant restent masqués.
   `/etc/ohana-agent/management.token` ;
 - l'Agent demeure seul propriétaire des fichiers de configuration ;
 - une configuration DHCP n'est conservée que si `dnsmasq --test` l'accepte ;
-- toute écriture est atomique et restaurée automatiquement en cas d'échec.
+- toute écriture est atomique et restaurée automatiquement en cas d’échec ;
+- les modifications réseau passent par un helper root limité et doivent être
+  confirmées avant l’expiration du délai de retour.
 
 Le contrat et le modèle de sécurité sont détaillés dans
 [`docs/Administration.md`](docs/Administration.md).
@@ -93,7 +97,7 @@ plugins/
 ├── mqtt/
 ├── network/
 ├── ntp/
-├── shelly_telemetry/
+├── home_assistant_telemetry/
 ├── teleinformation/
 ├── wireguard/
 └── zwave/
@@ -101,11 +105,55 @@ plugins/
 
 Chaque plugin possède sa configuration et produit des observations standardisées.
 
+## Téléinformation directe depuis RPI-Linky
+
+Le mode recommandé ne consulte plus Home Assistant. `teleinfo2mqtt` envoie chaque
+trame décodée directement au récepteur dédié d’Ohana-Agent :
+
+```text
+Compteur Linky → RPI-Linky / teleinfo2mqtt → HTTP → Ohana-Agent
+                                      └──→ MQTT → HA-Green
+```
+
+Le récepteur écoute par défaut sur le port `8770` et accepte uniquement :
+
+```text
+POST /v1/teleinformation/frames
+Authorization: Bearer <jeton dédié>
+```
+
+La sortie MQTT de `teleinfo2mqtt` et la sortie Ohana restent indépendantes. Une
+indisponibilité de HA-Green ne bloque donc pas les trames reçues par Agent, et une
+indisponibilité d’Agent ne bloque pas Home Assistant. Le mode historique
+`home_assistant` reste disponible pendant la migration.
+
+## Plages horaires de surveillance
+
+Une plage facultative peut être placée dans les métadonnées d’un équipement.
+Toutes les tâches rattachées à son nœud héritent de cette plage :
+
+```yaml
+metadata:
+  monitoring_schedule:
+    enabled: true
+    timezone: Europe/Paris
+    periods:
+      - days: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+        start: "07:00"
+        end: "22:00"
+    startup_grace_seconds: 300
+```
+
+En dehors de la plage et pendant le délai de démarrage, le service prend l’état
+`Suspended`. Cet état reste visible dans Vision sans créer d’incident ni
+dégrader la santé globale. Une seule observation est publiée au début de chaque
+période de suspension.
+
 ## Présence réseau des équipements
 
 Le plugin `network` découvre automatiquement les équipements de
 `topology.devices` qui possèdent une adresse ou qui référencent un nœud avec un
-endpoint IP. Il produit la capacité `network.reachable`.
+endpoint IP ou DNS. Il produit la capacité `network.reachable`.
 
 La vérification reste volontairement légère :
 
@@ -444,11 +492,16 @@ La commande utilise par défaut
 validée sur l’écran de la Freebox. Aucun dépôt source n’est nécessaire sur
 INFRA-01.
 
-## Plugin Shelly Telemetry
+## Plugin Télémétrie Home Assistant
 
 ```text
-config/plugins/shelly-telemetry.yaml
+config/plugins/home-assistant-telemetry.yaml
 ```
+
+L’ancien identifiant `shelly_telemetry`, ses métadonnées `power_entity_id` /
+`energy_entity_id` et l’argument CLI historique restent acceptés pendant la
+migration vers la configuration générique.
+
 
 ```yaml
 enabled: true
@@ -461,7 +514,7 @@ access_token_environment_variable: OHANA_HOME_ASSISTANT_TOKEN
 
 La connexion Home Assistant et la politique de fraîcheur restent globales. Un
 contrôle est déclaré dans `infrastructure.yaml` sous la forme d'un **service**
-`shelly_telemetry` rattaché au nœud de l'équipement :
+`home_assistant_telemetry` rattaché au nœud de l'équipement :
 
 ```yaml
 nodes:
@@ -472,16 +525,16 @@ nodes:
       address: 192.168.1.40
 
 services:
-  - id: shelly-telemetry-cuisine
+  - id: home-assistant-telemetry-cuisine
     name: Télémétrie Shelly cuisine
-    type: shelly_telemetry
+    type: home_assistant_telemetry
     node: shelly-cuisine
     implementation: Home Assistant
     enabled: true
     critical: false
     metadata:
-      power_entity_id: sensor.shelly_cuisine_power
-      energy_entity_id: sensor.shelly_cuisine_energy
+      primary_entity_id: sensor.shelly_cuisine_power
+      secondary_entity_id: sensor.shelly_cuisine_energy
       maximum_age_seconds: 900
 ```
 
@@ -497,12 +550,22 @@ l’entité est indisponible, invalide ou trop ancienne.
 config/plugins/teleinformation.yaml
 ```
 
-Le plugin vérifie que Home Assistant reçoit toujours les trames Linky publiées
-par `teleinfo2mqtt` sur RPI-Linky. `SINSTS` doit rester récent en permanence.
-`NTARF` est validé pour déterminer la période Tempo, mais son ancienneté est
-normale puisqu’il ne change qu’aux bascules tarifaires. Parmi les index
-`EASF01` à `EASF06`, seul celui désigné par `NTARF` doit rester récent ; les cinq
-autres sont purement informatifs pendant leur période inactive.
+Le mode recommandé `direct_http` ne consulte ni Home Assistant ni le broker
+MQTT de HA-Green. Le fork `teleinfo2mqtt Ohana` transmet chaque trame décodée
+directement à l’API d’ingestion d’Agent, en parallèle de sa publication MQTT :
+
+```yaml
+enabled: true
+mode: direct_http
+interval_seconds: 30
+maximum_age_seconds: 30
+listen_host: 0.0.0.0
+listen_port: 8770
+ingestion_token: null
+ingestion_token_environment_variable: OHANA_TELEINFORMATION_INGESTION_TOKEN
+```
+
+Le service d’architecture identifie le compteur et la source RPI-Linky :
 
 ```yaml
 services:
@@ -510,25 +573,22 @@ services:
     name: Téléinformation Linky
     type: teleinformation
     node: linky-01
-    implementation: teleinfo2mqtt via MQTT et Home Assistant
+    implementation: teleinfo2mqtt via HTTP direct
     enabled: true
     metadata:
-      apparent_power_entity_id: sensor.teleinfo_041964385922_sinsts
-      tariff_entity_id: sensor.teleinfo_041964385922_ntarf
-      blue_off_peak_entity_id: sensor.teleinfo_041964385922_easf01
-      blue_peak_entity_id: sensor.teleinfo_041964385922_easf02
-      white_off_peak_entity_id: sensor.teleinfo_041964385922_easf03
-      white_peak_entity_id: sensor.teleinfo_041964385922_easf04
-      red_off_peak_entity_id: sensor.teleinfo_041964385922_easf05
-      red_peak_entity_id: sensor.teleinfo_041964385922_easf06
-      maximum_age_seconds: 180
+      meter_id: "041964385922"
+      source_id: rpi-linky
+      maximum_age_seconds: 30
 ```
 
-La valeur `NTARF` est traduite ainsi : `1/2` Bleu, `3/4` Blanc et `5/6`
-Rouge ; les valeurs impaires correspondent aux heures creuses et les valeurs
-paires aux heures pleines. Une grâce de 30 secondes est appliquée lors d’une
-bascule afin de laisser au nouvel index actif le temps de recevoir sa première
-mesure. La capacité publiée est `teleinformation.freshness`.
+Agent horodate la réception de la trame. `SINSTS` doit être présent et la
+trame doit rester récente. `NTARF` doit contenir une valeur de 1 à 6 et désigne
+l’index Tempo actif parmi `EASF01` à `EASF06`. Les index inactifs ne sont pas
+considérés comme périmés. La capacité publiée reste
+`teleinformation.freshness`.
+
+Le mode `home_assistant` et les anciens identifiants d’entités restent acceptés
+pendant la migration des installations 1.8.x et 1.9.x.
 
 ---
 
@@ -578,7 +638,7 @@ ohana-agent \
   --network-config config/plugins/network.yaml \
   --zwave-config config/plugins/zwave.yaml \
   --wireguard-config config/plugins/wireguard.yaml \
-  --shelly-telemetry-config config/plugins/shelly-telemetry.yaml \
+  --home-assistant-telemetry-config config/plugins/home-assistant-telemetry.yaml \
   --teleinformation-config config/plugins/teleinformation.yaml
 ```
 
@@ -618,7 +678,7 @@ Le code courant comprend notamment :
 - Scheduler et Dispatcher ;
 - EventBus ;
 - Plugin SDK et Plugin Manager ;
-- plugins DHCP, DNS, NTP, MQTT, présence réseau, Z-Wave, WireGuard, Shelly Telemetry et Téléinformation ;
+- plugins DHCP, DNS, NTP, MQTT, présence réseau, Z-Wave, WireGuard, Télémétrie Home Assistant et Téléinformation ;
 - Observation Engine ;
 - Observation Export Pipeline ;
 - synchronisation persistante avec Ohana-Vision ;

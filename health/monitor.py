@@ -11,6 +11,7 @@ class HealthStatus(StrEnum):
     """Represents the health status of a component."""
 
     HEALTHY = "healthy"
+    SUSPENDED = "suspended"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
     UNKNOWN = "unknown"
@@ -73,7 +74,14 @@ class HealthMonitor:
         if HealthStatus.DEGRADED in statuses:
             return HealthStatus.DEGRADED
 
-        if all(status == HealthStatus.HEALTHY for status in statuses):
+        active_statuses = [
+            status for status in statuses if status is not HealthStatus.SUSPENDED
+        ]
+
+        if not active_statuses and statuses:
+            return HealthStatus.SUSPENDED
+
+        if all(status == HealthStatus.HEALTHY for status in active_statuses):
             return HealthStatus.HEALTHY
 
         return HealthStatus.UNKNOWN

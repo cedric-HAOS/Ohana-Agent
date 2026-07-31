@@ -24,6 +24,8 @@ class ServiceType(StrEnum):
     HOME_ASSISTANT = "home_assistant"
     ZWAVE = "zwave"
     WIREGUARD = "wireguard"
+    HOME_ASSISTANT_TELEMETRY = "home_assistant_telemetry"
+    # Deprecated service identifier accepted during migration.
     SHELLY_TELEMETRY = "shelly_telemetry"
     TELEINFORMATION = "teleinformation"
 
@@ -33,5 +35,6 @@ class HealthStatus(StrEnum):
 
     UNKNOWN = "unknown"
     HEALTHY = "healthy"
+    SUSPENDED = "suspended"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"

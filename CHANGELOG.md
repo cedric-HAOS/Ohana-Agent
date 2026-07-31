@@ -6,6 +6,21 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.2] — Résolution des serveurs DNS nommés — 2026-07-31
+
+## Corrigé
+
+- Résolution préalable des noms d’hôte utilisés comme serveurs DNS explicites
+  afin de fournir à `dnspython` l’adresse IP qu’il exige, sans modifier le nom
+  de serveur publié dans les observations.
+
+## Qualité
+
+- Tests de résolution des serveurs DNS nommés et des erreurs de résolution.
+- Version du paquet alignée sur `1.11.2`.
+
+---
+
 # [1.11.1] — Application fiable des réservations DHCP — 2026-07-31
 
 ## Ajouté

@@ -42,6 +42,13 @@ class PluginObservationDispatcher:
         """Publish an explicit suspended observation for one scheduled target."""
         plugin_command = self.parse(command, arguments=arguments)
         metadata = dict(arguments)
+        device_id = metadata.get("device_id")
+        if isinstance(device_id, str) and device_id.strip():
+            # The plugin normally adds this discriminator to its result. A
+            # suspended task bypasses plugin execution, so preserve the same
+            # routing information explicitly.
+            metadata["target_type"] = "device"
+            metadata["device_id"] = device_id.strip()
         metadata["monitoring_suspended"] = True
         metadata["next_activation"] = (
             next_activation.isoformat() if next_activation is not None else None

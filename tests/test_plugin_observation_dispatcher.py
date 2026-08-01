@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from observer import Observation, ObservationPublished, ObservationStatus
+from observer.observer_result import ObserverResult
 from observer.plugin_observation_dispatcher import (
     PluginObservationDispatcher,
 )
@@ -32,6 +33,39 @@ class FakePluginObservationExecutor:
         )
 
         return ObservationPublished(observation=observation)
+
+
+@dataclass
+class FakeObservationEngine:
+    """Capture results routed by suspended dispatcher calls."""
+
+    calls: list[tuple[ObserverResult, str, str | None]] = field(default_factory=list)
+
+    def process_result(
+        self,
+        result: ObserverResult,
+        *,
+        target_name: str,
+        source: str | None = None,
+    ) -> ObservationPublished:
+        self.calls.append((result, target_name, source))
+        return ObservationPublished(
+            observation=Observation(
+                node=target_name,
+                service=target_name,
+                capability=source or result.check,
+                status=ObservationStatus.SUSPENDED,
+                success=True,
+                message=result.message,
+                source=source or result.check,
+                metadata=result.metadata,
+            )
+        )
+
+
+@dataclass
+class SuspendedPluginObservationExecutor:
+    observation_engine: FakeObservationEngine
 
 
 def test_dispatcher_dispatches_plugin_command() -> None:
@@ -116,3 +150,29 @@ def test_dispatcher_uses_device_id_as_presence_target() -> None:
 
     assert command.target_name == "infra-01"
     assert command.arguments["device_id"] == "infra-01"
+
+
+def test_dispatcher_preserves_device_routing_for_suspended_task() -> None:
+    engine = FakeObservationEngine()
+    dispatcher = PluginObservationDispatcher(
+        executor=SuspendedPluginObservationExecutor(observation_engine=engine)  # type: ignore[arg-type]
+    )
+
+    dispatcher.publish_suspended(
+        "network.reachable",
+        {
+            "address": "192.168.1.60",
+            "device_id": " sun-01 ",
+            "node_id": "sun-01",
+        },
+        reason="Monitoring is outside its configured schedule.",
+        next_activation=None,
+    )
+
+    result, target_name, source = engine.calls[0]
+    assert target_name == "sun-01"
+    assert source == "network.reachable"
+    assert result.metadata["target_type"] == "device"
+    assert result.metadata["device_id"] == "sun-01"
+    assert result.metadata["node_id"] == "sun-01"
+    assert result.metadata["monitoring_suspended"] is True

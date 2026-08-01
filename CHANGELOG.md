@@ -6,6 +6,24 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.5] — Routage des suspensions d’équipements — 2026-08-01
+
+## Corrigé
+
+- Les observations suspendues des équipements conservent désormais le
+  discriminant `target_type: device` normalement ajouté par le plugin réseau.
+- Une surveillance planifiée hors plage est ainsi routée vers l’équipement
+  concerné au lieu d’être interprétée comme un service d’infrastructure.
+
+## Qualité
+
+- Reproduction du second crash observé sur Infra-01 après le déploiement de
+  1.11.4 pour la surveillance planifiée de `SUN-01`.
+- Tests du routage suspendu, du moteur d’observation et de l’export Vision.
+- Version du paquet alignée sur `1.11.5`.
+
+---
+
 # [1.11.4] — Stabilité des surveillances planifiées — 2026-08-01
 
 ## Corrigé

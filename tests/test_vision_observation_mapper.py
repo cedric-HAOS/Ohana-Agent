@@ -67,6 +67,7 @@ def test_mapper_builds_vision_observation_payload() -> None:
     ("agent_status", "vision_status"),
     [
         (ObservationStatus.HEALTHY, "healthy"),
+        (ObservationStatus.SUSPENDED, "unknown"),
         (ObservationStatus.DEGRADED, "degraded"),
         (ObservationStatus.UNHEALTHY, "unavailable"),
         (ObservationStatus.UNKNOWN, "unknown"),

@@ -114,3 +114,33 @@ def test_observation_is_mapped_and_sent_over_http() -> None:
         "success": True,
         "message": "DNS resolution succeeded.",
     }
+
+
+def test_suspended_observation_is_exported_as_unknown() -> None:
+    with run_pipeline_server() as observation_url:
+        exporter = VisionObservationExporter(
+            client=HttpVisionClient(observation_url=observation_url),
+            mapper=VisionObservationMapper(),
+        )
+        observation = Observation(
+            node="sun-01",
+            service="sun-01",
+            capability="network.presence",
+            status=ObservationStatus.SUSPENDED,
+            success=True,
+            message="Monitoring is outside its configured schedule.",
+            source="network.presence",
+            latency_ms=0.0,
+            metadata={
+                "monitoring_suspended": True,
+                "next_activation": "2026-08-02T08:00:00+02:00",
+            },
+        )
+
+        exporter.export(observation)
+
+    assert len(PipelineRequestHandler.payloads) == 1
+    payload = PipelineRequestHandler.payloads[0]
+    assert payload["status"] == "unknown"
+    assert payload["metadata"]["monitoring_suspended"] is True
+    assert payload["metadata"]["next_activation"] == "2026-08-02T08:00:00+02:00"

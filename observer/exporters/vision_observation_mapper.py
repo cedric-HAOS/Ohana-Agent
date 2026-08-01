@@ -11,6 +11,10 @@ class VisionObservationMapper:
 
     _STATUS_MAPPING = {
         ObservationStatus.HEALTHY: "healthy",
+        # Vision has no dedicated suspended state. A scheduled suspension is
+        # not a failure, so expose it as unknown and preserve the suspension
+        # details in observation metadata.
+        ObservationStatus.SUSPENDED: "unknown",
         ObservationStatus.DEGRADED: "degraded",
         ObservationStatus.UNHEALTHY: "unavailable",
         ObservationStatus.UNKNOWN: "unknown",

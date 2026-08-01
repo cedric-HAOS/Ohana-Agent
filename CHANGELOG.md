@@ -6,6 +6,24 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.4] — Stabilité des surveillances planifiées — 2026-08-01
+
+## Corrigé
+
+- Les observations suspendues hors de leur plage horaire sont désormais
+  exportées vers Ohana-Vision avec l'état `unknown`, seul état neutre accepté
+  par le contrat Vision, au lieu de provoquer l'arrêt d'Ohana-Agent.
+- Les métadonnées `monitoring_suspended` et `next_activation` sont conservées
+  afin de distinguer une suspension planifiée d'une panne.
+
+## Qualité
+
+- Test du mapping de tous les états Agent, y compris `SUSPENDED`.
+- Test d'intégration de l'export HTTP d'une observation suspendue vers Vision.
+- Version du paquet alignée sur `1.11.4`.
+
+---
+
 # [1.11.3] — Stabilité MQTT Home Assistant — 2026-08-01
 
 ## Corrigé

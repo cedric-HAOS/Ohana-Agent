@@ -246,6 +246,18 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
     ) -> None:
         """Apply broker and Home Assistant export settings immediately."""
         with self._lock:
+            if config == self.config:
+                if infrastructure is not None:
+                    self.infrastructure = infrastructure
+                    self._last_summary_payload = None
+
+                if self.enabled and not self._started:
+                    self.start()
+                elif infrastructure is not None and self._connected:
+                    self._publish_summary(force=True)
+
+                return
+
             self.stop()
             self.config = config
             if infrastructure is not None:
@@ -408,7 +420,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         if not force and payload == self._last_summary_payload:
             return
 
-        if self._safe_publish(self._summary_topic(), payload, retain=False):
+        if self._safe_publish(self._summary_topic(), payload, retain=True):
             self._last_summary_payload = payload
 
     def _safe_publish(self, topic: str, payload: str, *, retain: bool) -> bool:

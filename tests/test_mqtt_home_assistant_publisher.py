@@ -282,6 +282,12 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     assert "homeassistant/binary_sensor/ohana_critical_incident/config" in topics
     assert "ohana/status" in topics
     assert "ohana/health/summary" in topics
+    summary_publications = [
+        publication
+        for publication in fake_client.published
+        if publication[0] == "ohana/health/summary"
+    ]
+    assert summary_publications[-1][3] is True
 
     discovery_payload = next(
         json.loads(payload)
@@ -297,3 +303,44 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     assert fake_client.disconnected is True
     assert fake_client.loop_stopped is True
     assert fake_client.published[-1][:2] == ("ohana/status", "offline")
+
+
+def test_infrastructure_reconfiguration_keeps_mqtt_availability_online() -> None:
+    """Infrastructure changes must not create a false MQTT outage."""
+    fake_client = FakePahoClient()
+    config = MQTTConfig(
+        brokers=[
+            MQTTBrokerConfig(
+                name="mqtt-primary",
+                address="192.168.1.247",
+            )
+        ],
+        home_assistant=MQTTHomeAssistantConfig(
+            enabled=True,
+            topic_prefix="ohana",
+        ),
+    )
+    publisher = MQTTHomeAssistantPublisher(
+        config=config,
+        infrastructure=make_infrastructure(),
+        client_factory=lambda client_id: fake_client,
+        agent_version="1.11.3",
+    )
+    publisher.start()
+    publications_before = len(fake_client.published)
+
+    publisher.reconfigure(
+        config,
+        infrastructure=make_infrastructure(),
+    )
+
+    new_publications = fake_client.published[publications_before:]
+    assert publisher.connected is True
+    assert fake_client.disconnected is False
+    assert fake_client.loop_stopped is False
+    assert not any(
+        topic == "ohana/status" and payload == "offline"
+        for topic, payload, _qos, _retain in new_publications
+    )
+    assert [topic for topic, *_ in new_publications] == ["ohana/health/summary"]
+    assert new_publications[0][3] is True

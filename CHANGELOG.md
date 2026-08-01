@@ -6,6 +6,24 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.3] — Stabilité MQTT Home Assistant — 2026-08-01
+
+## Corrigé
+
+- Les mises à jour d’infrastructure ne redémarrent plus la connexion MQTT
+  lorsque sa configuration est inchangée et ne publient donc plus un faux état
+  `offline` dans Home Assistant.
+- Le résumé de santé MQTT est désormais retenu afin de restaurer immédiatement
+  l’état des entités après une reconnexion de Home Assistant.
+
+## Qualité
+
+- Test de non-régression vérifiant qu’une reconfiguration d’infrastructure ne
+  déconnecte pas le publisher et ne publie pas `offline`.
+- Version du paquet alignée sur `1.11.3`.
+
+---
+
 # [1.11.2] — Résolution des serveurs DNS nommés — 2026-07-31
 
 ## Corrigé

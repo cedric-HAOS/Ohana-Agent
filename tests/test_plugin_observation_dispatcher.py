@@ -176,3 +176,26 @@ def test_dispatcher_preserves_device_routing_for_suspended_task() -> None:
     assert result.metadata["device_id"] == "sun-01"
     assert result.metadata["node_id"] == "sun-01"
     assert result.metadata["monitoring_suspended"] is True
+
+
+def test_dispatcher_uses_public_capability_for_suspended_telemetry() -> None:
+    engine = FakeObservationEngine()
+    dispatcher = PluginObservationDispatcher(
+        executor=SuspendedPluginObservationExecutor(observation_engine=engine)  # type: ignore[arg-type]
+    )
+
+    event = dispatcher.publish_suspended(
+        "home_assistant_telemetry.freshness",
+        {
+            "service_id": "mesure-puissance-3",
+            "node_id": "sun-01",
+        },
+        reason="Monitoring is outside its configured schedule.",
+        next_activation=None,
+    )
+
+    result, target_name, source = engine.calls[0]
+    assert target_name == "mesure-puissance-3"
+    assert source == "home_assistant.telemetry.freshness"
+    assert result.check == "home_assistant.telemetry.freshness"
+    assert event.observation.capability == "home_assistant.telemetry.freshness"

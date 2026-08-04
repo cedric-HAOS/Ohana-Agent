@@ -6,6 +6,24 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.6] — Cohérence des capacités suspendues — 2026-08-04
+
+## Corrigé
+
+- Les suspensions planifiées du plugin de télémétrie Home Assistant publient
+  désormais la capacité publique `home_assistant.telemetry.freshness`, comme
+  les observations exécutées, au lieu de la commande interne
+  `home_assistant_telemetry.freshness`.
+- La timeline ne conserve plus deux capacités concurrentes pouvant maintenir
+  un ancien état indisponible pendant une plage de surveillance inactive.
+
+## Qualité
+
+- Test du chemin suspendu pour garantir l'identifiant envoyé à Ohana-Vision.
+- Version du paquet alignée sur `1.11.6`.
+
+---
+
 # [1.11.5] — Routage des suspensions d’équipements — 2026-08-01
 
 ## Corrigé

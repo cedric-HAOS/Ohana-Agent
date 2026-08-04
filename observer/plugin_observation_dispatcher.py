@@ -11,6 +11,10 @@ from observer.plugin_observation_executor import (
 )
 from plugin.plugin_command import PluginCommand
 
+_OBSERVATION_SOURCES = {
+    "home_assistant_telemetry.freshness": "home_assistant.telemetry.freshness",
+}
+
 
 @dataclass(slots=True)
 class PluginObservationDispatcher:
@@ -41,6 +45,7 @@ class PluginObservationDispatcher:
     ) -> ObservationPublished:
         """Publish an explicit suspended observation for one scheduled target."""
         plugin_command = self.parse(command, arguments=arguments)
+        observation_source = _OBSERVATION_SOURCES.get(command, command)
         metadata = dict(arguments)
         device_id = metadata.get("device_id")
         if isinstance(device_id, str) and device_id.strip():
@@ -57,7 +62,7 @@ class PluginObservationDispatcher:
             success=True,
             latency=0.0,
             message=reason,
-            check=command,
+            check=observation_source,
             description="Surveillance suspendue par la plage horaire de l'équipement.",
             metadata=metadata,
             health=HealthStatus.SUSPENDED,
@@ -65,7 +70,7 @@ class PluginObservationDispatcher:
         return self.executor.observation_engine.process_result(
             result,
             target_name=plugin_command.target_name,
-            source=command,
+            source=observation_source,
         )
 
     @staticmethod

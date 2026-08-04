@@ -291,7 +291,7 @@ class ZWaveDiscoveryHandler:
         return {
             "device_id": device_id,
             "label": cls._node_label(node),
-            "kind": "smart_device",
+            "kind": "zwave_module",
             "node_id": None,
             "address": None,
             "metadata": {

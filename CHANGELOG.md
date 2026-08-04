@@ -6,6 +6,23 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.8] — Type dédié aux modules Z-Wave — 2026-08-04
+
+## Modifié
+
+- Les équipements découverts par Z-Wave JS sont désormais publiés avec le
+  type explicite `zwave_module`, distinct des passerelles et des objets
+  connectés génériques.
+- Le contrat de topologie accepte officiellement le type « Module Z-Wave ».
+
+## Qualité
+
+- Tests de découverte adaptés pour vérifier le nouveau type tout en préservant
+  les équipements manuels existants.
+- Version du paquet alignée sur `1.11.8`.
+
+---
+
 # [1.11.7] — Découverte automatique des nœuds Z-Wave — 2026-08-04
 
 ## Ajouté

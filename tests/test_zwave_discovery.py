@@ -119,6 +119,7 @@ def test_discovery_adds_nodes_and_gateway_links_only() -> None:
         "zwave-zwave-main-node-3",
     ]
     assert discovered[0]["label"] == "Porte entree"
+    assert all(device["kind"] == "zwave_module" for device in discovered)
     assert discovered[0]["node_id"] is None
     assert all(link["source_device_id"] == "rpi-zwave" for link in topology["links"])
     assert {link["target_device_id"] for link in topology["links"]} == {
@@ -180,7 +181,7 @@ def test_controller_failure_marks_known_nodes_unknown_without_removing_them() ->
         {
             "device_id": "zwave-zwave-main-node-4",
             "label": "Z-Wave 4",
-            "kind": "smart_device",
+            "kind": "zwave_module",
             "node_id": None,
             "metadata": {
                 "managed_by": "zwave_discovery",

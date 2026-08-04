@@ -208,6 +208,9 @@ sont considérés vivants — un équipement sur batterie endormi n’est donc p
 signalé en panne. L’état `dead` est indisponible et l’état devient inconnu si
 le contrôleur ne permet plus de l’observer.
 
+Chaque nœud découvert porte le type de topologie dédié `zwave_module`, ce qui
+permet à Vision de lui appliquer un libellé et une icône radio explicites.
+
 La topologie ne reproduit pas le maillage Z-Wave : chaque équipement découvert
 est uniquement rattaché à la passerelle portant le rôle `zwave_gateway`. Les
 points d’accès HTTP historiques continuent de contrôler le serveur, mais ne

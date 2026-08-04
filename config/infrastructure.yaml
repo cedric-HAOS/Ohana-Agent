@@ -17,6 +17,13 @@ nodes:
       type: ip
       address: 192.168.1.10
 
+  - id: zwave-01
+    name: ZWAVE-01
+    description: Passerelle Z-Wave
+    endpoint:
+      type: ip
+      address: 192.168.1.11
+
 services:
   - id: dhcp-primary
     name: DHCP principal
@@ -32,6 +39,15 @@ services:
     type: dns
     node: infra-01
     port: 53
+
+  - id: zwave-primary
+    name: Z-Wave JS
+    type: zwave
+    node: zwave-01
+    port: 3000
+    implementation: Z-Wave JS Server
+    enabled: true
+    critical: true
 
 topology:
   metadata:
@@ -99,6 +115,7 @@ topology:
     - id: rpi-zwave
       label: RPI-ZWAVE
       kind: raspberry_pi
+      node: zwave-01
       metadata:
         role: zwave_gateway
 

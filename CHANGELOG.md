@@ -6,6 +6,32 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.7] — Découverte automatique des nœuds Z-Wave — 2026-08-04
+
+## Ajouté
+
+- Le plugin Z-Wave découvre automatiquement les nœuds exposés par Z-Wave JS
+  via WebSocket et les projette dans la topologie publiée vers Vision.
+- Une observation `zwave.node.alive` est publiée pour chaque équipement afin
+  d’exposer explicitement son état vivant, mort ou inconnu.
+- Les états `alive`, `awake` et `asleep` sont considérés sains afin qu’un
+  équipement sur batterie endormi ne soit pas signalé en panne.
+
+## Modifié
+
+- La topologie Z-Wave ne reproduit pas le maillage radio : chaque équipement
+  découvert est uniquement rattaché à la passerelle `zwave_gateway`.
+- La configuration de production déclare `ZWAVE-01` et le service Z-Wave JS
+  WebSocket sur le port 3000.
+
+## Qualité
+
+- Tests de découverte, réconciliation, retrait de nœud, panne du contrôleur et
+  intégration complète du démarrage Agent vers Vision.
+- Version du paquet alignée sur `1.11.7`.
+
+---
+
 # [1.11.6] — Cohérence des capacités suspendues — 2026-08-04
 
 ## Corrigé

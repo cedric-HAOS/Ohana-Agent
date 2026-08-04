@@ -4,7 +4,7 @@ import pytest
 
 from plugins.zwave.zwave_config import ZWaveConfig
 from plugins.zwave.zwave_plugin import ZWavePlugin
-from plugins.zwave.zwave_result import ZWaveHealthResult
+from plugins.zwave.zwave_result import ZWaveHealthResult, ZWaveNodeResult
 
 
 class FakeZWaveCheck:
@@ -34,6 +34,14 @@ def test_zwave_plugin_returns_observer_result() -> None:
             driver_version="15.0.0",
             home_id="0x12345678",
             node_count=12,
+            nodes=(
+                ZWaveNodeResult(
+                    node_id=7,
+                    status="dead",
+                    name="Prise garage",
+                ),
+            ),
+            discovery_complete=True,
         )
     )
     plugin = ZWavePlugin(
@@ -49,6 +57,24 @@ def test_zwave_plugin_returns_observer_result() -> None:
     assert result.check == "zwave.status"
     assert result.metadata["node_count"] == 12
     assert result.metadata["driver_version"] == "15.0.0"
+    assert result.metadata["discovery_complete"] is True
+    assert result.metadata["nodes"] == [
+        {
+            "node_id": 7,
+            "status": "dead",
+            "alive": False,
+            "ready": False,
+            "name": "Prise garage",
+            "label": None,
+            "location": None,
+            "manufacturer": None,
+            "product_id": None,
+            "product_type": None,
+            "firmware_version": None,
+            "can_sleep": False,
+            "last_seen": None,
+        }
+    ]
     assert check.calls == [("ws://192.168.1.11:3000", 2.0, 2, False)]
 
 

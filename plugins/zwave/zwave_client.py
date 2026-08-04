@@ -7,11 +7,12 @@ import ssl
 from collections.abc import Awaitable, Callable
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from plugins.zwave.zwave_result import ZWaveHealthResult
+from plugins.zwave.zwave_result import ZWaveHealthResult, ZWaveNodeResult
 
 WebSocketQuery = Callable[[str, float, bool], Awaitable[ZWaveHealthResult]]
 
@@ -156,6 +157,12 @@ class ZWaveHealthClient:
                     driver_version=str(version.driver_version),
                     home_id=str(version.home_id),
                     node_count=len(driver.controller.nodes),
+                    nodes=tuple(
+                        self._map_node(node)
+                        for node in driver.controller.nodes.values()
+                        if not bool(getattr(node, "is_controller_node", False))
+                    ),
+                    discovery_complete=True,
                 )
         except Exception as error:  # Health probes must report failures as data.
             return ZWaveHealthResult(
@@ -183,6 +190,44 @@ class ZWaveHealthClient:
                     listen_task,
                     return_exceptions=True,
                 )
+
+    @staticmethod
+    def _map_node(node: Any) -> ZWaveNodeResult:
+        """Map a library node without leaking version-specific objects."""
+
+        def optional_text(name: str) -> str | None:
+            value = getattr(node, name, None)
+
+            if value is None:
+                return None
+
+            text = str(value).strip()
+            return text or None
+
+        status = getattr(node, "status", None)
+        status_name = getattr(status, "name", status)
+        normalized_status = str(status_name or "unknown").strip().lower()
+        last_seen = getattr(node, "last_seen", None)
+
+        if last_seen is not None and hasattr(last_seen, "isoformat"):
+            last_seen = last_seen.isoformat()
+        elif last_seen is not None:
+            last_seen = str(last_seen)
+
+        return ZWaveNodeResult(
+            node_id=int(node.node_id),
+            status=normalized_status,
+            ready=bool(getattr(node, "ready", False)),
+            name=optional_text("name"),
+            label=optional_text("label"),
+            location=optional_text("location"),
+            manufacturer=optional_text("manufacturer"),
+            product_id=getattr(node, "product_id", None),
+            product_type=getattr(node, "product_type", None),
+            firmware_version=optional_text("firmware_version"),
+            can_sleep=bool(getattr(node, "can_sleep", False)),
+            last_seen=last_seen,
+        )
 
     @staticmethod
     def _query_http(

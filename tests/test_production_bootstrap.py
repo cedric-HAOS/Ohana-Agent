@@ -24,6 +24,7 @@ from plugins.teleinformation.teleinformation_result import (
     TeleinformationTariff,
     TeleinformationValue,
 )
+from plugins.zwave.zwave_result import ZWaveHealthResult, ZWaveNodeResult
 from scheduler.clock import FakeClock
 
 
@@ -93,6 +94,36 @@ class FakeNetworkCheck:
             reachable=True,
             method="icmp",
             latency_ms=1.0,
+        )
+
+
+class FakeZWaveCheck:
+    """Return deterministic Z-Wave discovery without contacting the gateway."""
+
+    def check(
+        self,
+        url: str,
+        *,
+        timeout: float,
+        retries: int,
+        verify_tls: bool,
+    ) -> ZWaveHealthResult:
+        del timeout, retries, verify_tls
+        return ZWaveHealthResult(
+            url=url,
+            healthy=True,
+            response="Z-Wave JS driver ready",
+            home_id="305419896",
+            node_count=2,
+            nodes=(
+                ZWaveNodeResult(
+                    node_id=2,
+                    status="asleep",
+                    name="Detecteur entree",
+                    can_sleep=True,
+                ),
+            ),
+            discovery_complete=True,
         )
 
 
@@ -237,10 +268,12 @@ def test_production_bootstrap_builds_dns_task() -> None:
     dhcp_tasks = [task for task in tasks if task.command == "dhcp.status"]
     dns_tasks = [task for task in tasks if task.command == "dns.resolve"]
     network_tasks = [task for task in tasks if task.command == "network.reachable"]
+    zwave_tasks = [task for task in tasks if task.command == "zwave.status"]
 
     assert len(dhcp_tasks) == 1
     assert len(dns_tasks) == 1
-    assert len(network_tasks) == 1
+    assert len(network_tasks) == 2
+    assert len(zwave_tasks) == 1
     assert dhcp_tasks[0].arguments == {
         "server": "192.168.1.10",
         "port": 67,
@@ -276,6 +309,10 @@ def test_production_bootstrap_builds_dns_task() -> None:
         "device_id": "rpi-link",
         "address": "192.168.1.10",
     }
+    assert zwave_tasks[0].arguments == {
+        "url": "ws://192.168.1.11:3000",
+        "service_id": "zwave-primary",
+    }
     assert agent.infrastructure_retry_seconds == 10.0
     assert agent.infrastructure_refresh_seconds == 300.0
     assert agent.infrastructure_payload is not None
@@ -301,18 +338,14 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
         clock=clock,
         network_check=FakeNetworkCheck(),
         dhcp_check=FakeDHCPCheck(),
+        zwave_check=FakeZWaveCheck(),
     )
 
     agent.start()
     agent.tick()
     agent.stop()
 
-    assert [operation for operation, _payload in vision_client.operations] == [
-        "infrastructure",
-        "observation",
-        "observation",
-        "observation",
-    ]
+    assert vision_client.operations[0][0] == "infrastructure"
 
     infrastructure_payload = vision_client.operations[0][1]
 
@@ -320,6 +353,22 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
     assert len(infrastructure_payload["topology"]["devices"]) == 9
     assert len(infrastructure_payload["topology"]["links"]) == 8
     assert len(infrastructure_payload["topology"]["layouts"]) == 1
+
+    discovered_infrastructure_index = next(
+        index
+        for index, (operation, payload) in enumerate(vision_client.operations)
+        if operation == "infrastructure"
+        and any(
+            device["device_id"] == "zwave-zwave-primary-node-2"
+            for device in payload["topology"]["devices"]
+        )
+    )
+    zwave_node_observation_index = next(
+        index
+        for index, (operation, payload) in enumerate(vision_client.operations)
+        if operation == "observation" and payload["capability_id"] == "zwave.node.alive"
+    )
+    assert discovered_infrastructure_index < zwave_node_observation_index
 
     observations = {
         payload["capability_id"]: payload
@@ -345,12 +394,23 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
     assert dns_observation["metadata"]["hostname"] == "example.com"
     assert dns_observation["metadata"]["server"] == "192.168.1.10"
 
-    network_observation = observations["network.reachable"]
+    network_observation = next(
+        payload
+        for operation, payload in vision_client.operations
+        if operation == "observation"
+        and payload["capability_id"] == "network.reachable"
+        and payload["service_id"] == "rpi-link"
+    )
     assert network_observation["node_id"] == "infra-01"
     assert network_observation["service_id"] == "rpi-link"
     assert network_observation["status"] == "healthy"
     assert network_observation["metadata"]["device_id"] == "rpi-link"
     assert network_observation["metadata"]["address"] == "192.168.1.10"
+
+    zwave_node_observation = observations["zwave.node.alive"]
+    assert zwave_node_observation["service_id"] == ("zwave-zwave-primary-node-2")
+    assert zwave_node_observation["status"] == "healthy"
+    assert zwave_node_observation["metadata"]["status"] == "asleep"
 
 
 def test_production_bootstrap_reconfigures_dns_tasks_from_infrastructure() -> None:

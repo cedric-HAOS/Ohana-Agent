@@ -57,7 +57,27 @@ def test_zwave_client_reports_ready_websocket_driver(
         async def listen(self, driver_ready: asyncio.Event) -> None:
             self.driver = SimpleNamespace(
                 controller=SimpleNamespace(
-                    nodes={1: object(), 2: object()},
+                    nodes={
+                        1: SimpleNamespace(
+                            node_id=1,
+                            is_controller_node=True,
+                        ),
+                        2: SimpleNamespace(
+                            node_id=2,
+                            is_controller_node=False,
+                            status=SimpleNamespace(name="ASLEEP"),
+                            ready=True,
+                            name="Detecteur entree",
+                            label="Door sensor",
+                            location="Entree",
+                            manufacturer="Aeotec",
+                            product_id=2,
+                            product_type=1,
+                            firmware_version="1.2",
+                            can_sleep=True,
+                            last_seen=None,
+                        ),
+                    },
                 ),
             )
             driver_ready.set()
@@ -87,3 +107,10 @@ def test_zwave_client_reports_ready_websocket_driver(
     assert result.driver_version == "15.0.0"
     assert result.home_id == str(0x12345678)
     assert result.node_count == 2
+    assert result.discovery_complete is True
+    assert len(result.nodes) == 1
+    assert result.nodes[0].node_id == 2
+    assert result.nodes[0].status == "asleep"
+    assert result.nodes[0].alive is True
+    assert result.nodes[0].name == "Detecteur entree"
+    assert result.nodes[0].can_sleep is True

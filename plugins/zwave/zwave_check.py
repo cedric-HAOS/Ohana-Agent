@@ -48,6 +48,8 @@ class ZWaveCheck:
             driver_version=last_result.driver_version,
             home_id=last_result.home_id,
             node_count=last_result.node_count,
+            nodes=last_result.nodes,
+            discovery_complete=last_result.discovery_complete,
             attempts=attempts,
             error=last_result.error,
         )

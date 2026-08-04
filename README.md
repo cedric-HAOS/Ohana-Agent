@@ -200,6 +200,19 @@ les installations qui exposent un autre point d’accès. Une observation
 `zwave.status` n’est saine que lorsque la connexion est ouverte et que le
 pilote Z-Wave est initialisé.
 
+Avec une connexion `ws` ou `wss`, l’Agent découvre aussi automatiquement les
+nœuds exposés par Z-Wave JS. Il les ajoute à la topologie publiée vers Vision
+sans modifier `infrastructure.yaml`, puis publie une observation
+`zwave.node.alive` pour chacun d’eux. Les états `alive`, `awake` et `asleep`
+sont considérés vivants — un équipement sur batterie endormi n’est donc pas
+signalé en panne. L’état `dead` est indisponible et l’état devient inconnu si
+le contrôleur ne permet plus de l’observer.
+
+La topologie ne reproduit pas le maillage Z-Wave : chaque équipement découvert
+est uniquement rattaché à la passerelle portant le rôle `zwave_gateway`. Les
+points d’accès HTTP historiques continuent de contrôler le serveur, mais ne
+permettent pas cette découverte détaillée.
+
 ## Observations standardisées
 
 Tous les plugins produisent le même modèle d'observation :

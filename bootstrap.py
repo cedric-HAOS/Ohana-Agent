@@ -119,6 +119,7 @@ from plugins.wireguard.wireguard_config import WireGuardConfig
 from plugins.wireguard.wireguard_plugin import WireGuardPlugin
 from plugins.zwave.zwave_check import ZWaveCheck
 from plugins.zwave.zwave_config import ZWaveConfig
+from plugins.zwave.zwave_discovery import ZWaveDiscoveryHandler
 from plugins.zwave.zwave_plugin import ZWavePlugin
 from production_agent import ProductionAgent
 from scheduler import (
@@ -1480,6 +1481,16 @@ def build_production_agent(
         infrastructure_reconfigure=reconfigure_infrastructure,
         teleinformation_ingestion_runtime=teleinformation_ingestion_runtime,
         home_assistant_publisher=mqtt_home_assistant_publisher,
+    )
+
+    zwave_discovery_handler = ZWaveDiscoveryHandler(
+        observation_engine=observation_engine,
+        infrastructure_payload=lambda: agent.infrastructure_payload,
+        update_infrastructure=agent.update_infrastructure_payload,
+    )
+    event_bus.subscribe(
+        ObservationPublished,
+        zwave_discovery_handler.handle,
     )
 
     if configuration.administration.enabled:

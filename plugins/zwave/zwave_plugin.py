@@ -75,6 +75,24 @@ class ZWavePlugin(Plugin):
             if result.healthy
             else result.error or f"Z-Wave controller is unavailable at {result.url}."
         )
+        nodes = [
+            {
+                "node_id": node.node_id,
+                "status": node.status,
+                "alive": node.alive,
+                "ready": node.ready,
+                "name": node.name,
+                "label": node.label,
+                "location": node.location,
+                "manufacturer": node.manufacturer,
+                "product_id": node.product_id,
+                "product_type": node.product_type,
+                "firmware_version": node.firmware_version,
+                "can_sleep": node.can_sleep,
+                "last_seen": node.last_seen,
+            }
+            for node in result.nodes
+        ]
 
         return ObserverResult(
             success=result.healthy,
@@ -90,6 +108,8 @@ class ZWavePlugin(Plugin):
                 "driver_version": result.driver_version,
                 "home_id": result.home_id,
                 "node_count": result.node_count,
+                "nodes": nodes,
+                "discovery_complete": result.discovery_complete,
                 "attempts": result.attempts,
                 "verify_tls": self.config.verify_tls,
                 "error": result.error,

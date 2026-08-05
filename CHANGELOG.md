@@ -6,6 +6,19 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.9] — Correction test ping — 2026-08-05
+
+## Modifié
+
+- Une réponse ICMP Windows n’est désormais valide que si elle contient un TTL..
+
+## Qualité
+
+- Tests adaptés.
+- Version du paquet alignée sur `1.11.9`.
+
+---
+
 # [1.11.8] — Type dédié aux modules Z-Wave — 2026-08-04
 
 ## Modifié

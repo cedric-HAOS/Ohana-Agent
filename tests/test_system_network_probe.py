@@ -52,6 +52,48 @@ def test_system_network_probe_uses_icmp_success() -> None:
     assert runner.commands == [["ping", "-c", "1", "-W", "1", "192.168.1.10"]]
 
 
+def test_system_network_probe_accepts_windows_echo_reply() -> None:
+    runner = FakeRunner(
+        [
+            completed(
+                ["ping"],
+                0,
+                stdout="Reply from 192.168.1.10: bytes=32 time=2ms TTL=64",
+            )
+        ]
+    )
+    probe = SystemNetworkProbe(runner=runner, system_name="Windows")
+
+    result = probe.probe("192.168.1.10", timeout=1.0)
+
+    assert result.reachable is True
+    assert result.method == "icmp"
+
+
+def test_system_network_probe_rejects_windows_destination_unreachable() -> None:
+    runner = FakeRunner(
+        [
+            completed(
+                ["ping"],
+                0,
+                stdout=(
+                    "Réponse de 192.168.1.148 : "
+                    "Impossible de joindre l’hôte de destination."
+                ),
+            ),
+            completed(["arp"], 0, stdout="Aucune entrée ARP trouvée."),
+        ]
+    )
+    probe = SystemNetworkProbe(runner=runner, system_name="Windows")
+
+    result = probe.probe("192.168.1.99", timeout=1.0)
+
+    assert result.reachable is False
+    assert result.method == "icmp"
+    assert "Impossible de joindre" in (result.error or "")
+    assert runner.commands[1] == ["arp", "-a", "192.168.1.99"]
+
+
 def test_system_network_probe_accepts_arp_confirmation() -> None:
     runner = FakeRunner(
         [

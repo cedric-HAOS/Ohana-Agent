@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import re
 import socket
 import subprocess
 from collections.abc import Callable, Sequence
@@ -61,7 +62,7 @@ class SystemNetworkProbe:
 
         latency_ms = (perf_counter() - started_at) * 1000
 
-        if completed.returncode == 0:
+        if self._icmp_succeeded(completed, system_name=resolved_system):
             return NetworkProbeResult(
                 address=address,
                 resolved_address=resolved_address,
@@ -153,6 +154,27 @@ class SystemNetworkProbe:
 
         unavailable_states = ("failed", "incomplete", "no arp entries")
         return not any(state in output for state in unavailable_states)
+
+    @staticmethod
+    def _icmp_succeeded(
+        completed: subprocess.CompletedProcess[str],
+        *,
+        system_name: str,
+    ) -> bool:
+        """Return whether ping received an echo reply from the target.
+
+        Windows ping may exit with status 0 when a router or the local host
+        returns an ICMP "destination unreachable" response.  A real Windows
+        echo reply includes a TTL field regardless of the display language.
+        """
+        if completed.returncode != 0:
+            return False
+
+        if system_name != "windows":
+            return True
+
+        output = f"{completed.stdout}\n{completed.stderr}"
+        return re.search(r"\bttl\s*[=:]", output, flags=re.IGNORECASE) is not None
 
     @staticmethod
     def _ping_command(

@@ -81,7 +81,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._connected_event = Event()
         self._lock = RLock()
         self._latest_observations: dict[tuple[str, str, str], Observation] = {}
-        self._last_summary_payload: str | None = None
+        self._last_summary_state: tuple[Any, ...] | None = None
         self._next_heartbeat_at: float | None = None
 
     @property
@@ -213,7 +213,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             if self._next_heartbeat_at is None or now < self._next_heartbeat_at:
                 return
 
-            self._publish_summary(force=True)
+            self._publish_summary(force=False)
             self._next_heartbeat_at = now + self.config.home_assistant.heartbeat_seconds
 
     def export(self, observation: Observation) -> None:
@@ -416,12 +416,32 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
     def _publish_summary(self, *, force: bool) -> None:
         summary = self.build_summary()
         payload = summary.to_json()
+        state = self._summary_state(summary)
 
-        if not force and payload == self._last_summary_payload:
+        if not force and state == self._last_summary_state:
             return
 
         if self._safe_publish(self._summary_topic(), payload, retain=True):
-            self._last_summary_payload = payload
+            self._last_summary_state = state
+
+    @staticmethod
+    def _summary_state(
+        summary: MQTTHomeAssistantHealthSummary,
+    ) -> tuple[Any, ...]:
+        """Return the meaningful Home Assistant state."""
+        return (
+            summary.score,
+            summary.state,
+            summary.active_alerts,
+            summary.critical_incidents,
+            summary.healthy_services,
+            summary.degraded_services,
+            summary.unavailable_services,
+            summary.stale_capabilities,
+            summary.critical_service,
+            summary.critical_equipment,
+            summary.critical_capability,
+        )
 
     def _safe_publish(self, topic: str, payload: str, *, retain: bool) -> bool:
         client = self._client
@@ -447,10 +467,6 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
     def _discovery_payloads(self) -> tuple[tuple[str, str, dict[str, Any]], ...]:
         state_topic = self._summary_topic()
         availability_topic = self._status_topic()
-        expire_after = max(
-            self.config.home_assistant.heartbeat_seconds * 3,
-            180,
-        )
         device = {
             "identifiers": ["ohana-platform"],
             "name": "Ohana Platform",
@@ -467,7 +483,6 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             "availability_topic": availability_topic,
             "payload_available": "online",
             "payload_not_available": "offline",
-            "expire_after": expire_after,
             "device": device,
             "origin": origin,
         }

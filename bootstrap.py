@@ -99,6 +99,12 @@ from plugins.home_assistant_telemetry.home_assistant_telemetry_plugin import (
     HomeAssistantTelemetryPlugin,
 )
 from plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
+from plugins.mqtt.host_health import (
+    HostHealthMonitor,
+    HostHealthObservationMapper,
+    HostHealthReporter,
+    SystemHostProbe,
+)
 from plugins.mqtt.mqtt_check import MQTTCheck
 from plugins.mqtt.mqtt_config import MQTTConfig
 from plugins.mqtt.mqtt_plugin import MQTTPlugin
@@ -683,18 +689,29 @@ def build_production_agent(
             )
             resolved_vision_client = vision_export_runtime
 
+    vision_observation_exporter = VisionObservationExporter(
+        client=resolved_vision_client,
+        mapper=VisionObservationMapper(),
+    )
     mqtt_home_assistant_publisher = MQTTHomeAssistantPublisher(
         config=mqtt_config,
         infrastructure=infrastructure_config,
+    )
+    host_health_observation_mapper = HostHealthObservationMapper()
+    host_health_reporter = HostHealthReporter(
+        HostHealthMonitor(SystemHostProbe()),
+        sinks=(
+            mqtt_home_assistant_publisher.publish_host_health,
+            lambda snapshot: vision_observation_exporter.export(
+                host_health_observation_mapper.to_observation(snapshot)
+            ),
+        ),
     )
 
     export_handler = ObservationExportHandler(
         pipeline=ObservationExportPipeline(
             exporters=[
-                VisionObservationExporter(
-                    client=resolved_vision_client,
-                    mapper=VisionObservationMapper(),
-                ),
+                vision_observation_exporter,
                 mqtt_home_assistant_publisher,
             ]
         )
@@ -1503,6 +1520,7 @@ def build_production_agent(
         infrastructure_reconfigure=reconfigure_infrastructure,
         teleinformation_ingestion_runtime=teleinformation_ingestion_runtime,
         home_assistant_publisher=mqtt_home_assistant_publisher,
+        host_health_runtime=host_health_reporter,
         vision_export_runtime=vision_export_runtime,
     )
 

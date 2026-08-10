@@ -420,8 +420,9 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
         utc_now=lambda: datetime(2026, 7, 28, 14, 0, tzinfo=UTC),
         monotonic_clock=lambda: 10.0,
         agent_version="1.8.1",
-        host_health_monitor=FakeHostHealthMonitor(),
     )
+
+    publisher.publish_host_health(FakeHostHealthMonitor().collect())
 
     publisher.start()
 
@@ -507,10 +508,9 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     assert fake_client.published[-1][:2] == ("ohana/status", "offline")
 
 
-def test_publisher_refreshes_host_health_on_heartbeat() -> None:
+def test_publisher_publishes_shared_host_health_snapshots() -> None:
     fake_client = FakePahoClient()
     host_health_monitor = FakeHostHealthMonitor()
-    clock = [10.0]
     publisher = MQTTHomeAssistantPublisher(
         config=MQTTConfig(
             brokers=[
@@ -526,14 +526,11 @@ def test_publisher_refreshes_host_health_on_heartbeat() -> None:
         ),
         infrastructure=make_infrastructure(),
         client_factory=lambda _client_id: fake_client,
-        monotonic_clock=lambda: clock[0],
-        host_health_monitor=host_health_monitor,
     )
     publisher.start()
 
-    publisher.tick()
-    clock[0] = 70.0
-    publisher.tick()
+    publisher.publish_host_health(host_health_monitor.collect())
+    publisher.publish_host_health(host_health_monitor.collect())
 
     host_publications = [
         publication

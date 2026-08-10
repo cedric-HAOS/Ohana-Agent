@@ -17,7 +17,7 @@ from configuration.infrastructure import InfrastructureConfig
 from observer.observation import Observation
 from observer.observation_exporter import ObservationExporter
 from observer.observation_status import ObservationStatus
-from plugins.mqtt.host_health import HostHealthMonitor, SystemHostProbe
+from plugins.mqtt.host_health import HostHealthSnapshot
 from plugins.mqtt.mqtt_config import MQTTConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -84,7 +84,6 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         utc_now: Callable[[], datetime] | None = None,
         monotonic_clock: Callable[[], float] = monotonic,
         agent_version: str | None = None,
-        host_health_monitor: HostHealthMonitor | None = None,
     ) -> None:
         self.config = config
         self.infrastructure = infrastructure
@@ -92,10 +91,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._utc_now = utc_now or (lambda: datetime.now(UTC))
         self._monotonic_clock = monotonic_clock
         self._agent_version = agent_version or self._resolve_agent_version()
-        self._host_health_monitor = host_health_monitor or HostHealthMonitor(
-            SystemHostProbe(monotonic_clock=monotonic_clock),
-            utc_now=self._utc_now,
-        )
+        self._latest_host_health: HostHealthSnapshot | None = None
         self._client: Any | None = None
         self._connected = False
         self._started = False
@@ -235,7 +231,6 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 return
 
             self._publish_summary(force=False)
-            self._publish_host_health()
             self._next_heartbeat_at = now + self.config.home_assistant.heartbeat_seconds
 
     def export(self, observation: Observation) -> None:
@@ -417,7 +412,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._publish_discovery()
         self._safe_publish(self._status_topic(), "online", retain=True)
         self._publish_summary(force=True)
-        self._publish_host_health()
+        self._publish_latest_host_health()
 
     def _on_disconnect(
         self,
@@ -468,15 +463,18 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         if self._safe_publish(self._summary_topic(), payload, retain=True):
             self._last_summary_state = state
 
-    def _publish_host_health(self) -> None:
-        try:
-            snapshot = self._host_health_monitor.collect()
-        except Exception as error:
-            LOGGER.warning("Unable to collect host health: %s", error)
+    def publish_host_health(self, snapshot: HostHealthSnapshot) -> None:
+        """Publish the shared host snapshot when MQTT is connected."""
+        with self._lock:
+            self._latest_host_health = snapshot
+            self._publish_latest_host_health()
+
+    def _publish_latest_host_health(self) -> None:
+        if not self._connected or self._latest_host_health is None:
             return
         self._safe_publish(
             self._host_health_topic(),
-            snapshot.to_json(),
+            self._latest_host_health.to_json(),
             retain=True,
         )
 
@@ -775,20 +773,13 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             host_sensor(
                 "ohana_host_uptime",
                 "Uptime hôte",
-                "host_uptime_seconds",
-                nullable=True,
-                unit_of_measurement="s",
-                device_class="duration",
-                state_class="total_increasing",
+                "host_uptime",
                 icon="mdi:timer-outline",
             ),
             host_sensor(
                 "ohana_agent_uptime",
                 "Uptime Agent",
-                "agent_uptime_seconds",
-                unit_of_measurement="s",
-                device_class="duration",
-                state_class="total_increasing",
+                "agent_uptime",
                 icon="mdi:timer-cog-outline",
             ),
         )

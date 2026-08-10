@@ -8,7 +8,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from plugins.mqtt.host_health import HostHealthMonitor, HostMetrics, SystemHostProbe
+from plugins.mqtt.host_health import (
+    HostHealthMonitor,
+    HostHealthObservationMapper,
+    HostHealthReporter,
+    HostMetrics,
+    SystemHostProbe,
+    format_uptime,
+)
 
 
 def test_system_host_probe_reads_linux_metrics(
@@ -191,3 +198,55 @@ def test_host_health_recovers_after_pressure_clears() -> None:
 
     assert snapshot.state == "healthy"
     assert snapshot.reasons == ()
+
+
+def test_host_health_formats_uptimes_for_humans() -> None:
+    assert format_uptime(None) == "Inconnu"
+    assert format_uptime(45) == "45 s"
+    assert format_uptime(121) == "2 min"
+    assert format_uptime(761_354) == "8 j 19 h 29 min"
+
+    snapshot = HostHealthMonitor(FakeHostProbe(make_metrics())).collect()
+
+    assert snapshot.to_dict()["host_uptime"] == "1 h 0 min"
+    assert snapshot.to_dict()["agent_uptime"] == "10 min"
+
+
+def test_host_health_maps_to_device_observation_for_vision() -> None:
+    snapshot = HostHealthMonitor(
+        FakeHostProbe(make_metrics(memory_percent=96.0)),
+        required_samples=1,
+    ).collect()
+
+    observation = HostHealthObservationMapper().to_observation(snapshot)
+
+    assert observation.node == "infra-01"
+    assert observation.service == "ohana-host"
+    assert observation.capability == "host.health"
+    assert observation.status.value == "unhealthy"
+    assert observation.metadata["target_type"] == "device"
+    assert observation.metadata["host_health"]["memory_percent"] == 96.0
+
+
+def test_host_health_reporter_shares_the_same_periodic_snapshot() -> None:
+    clock = [10.0]
+    monitor = HostHealthMonitor(FakeHostProbe(make_metrics()))
+    first_sink = []
+    second_sink = []
+    reporter = HostHealthReporter(
+        monitor,
+        sinks=(first_sink.append, second_sink.append),
+        interval_seconds=60,
+        monotonic_clock=lambda: clock[0],
+    )
+
+    reporter.start()
+    reporter.tick()
+    clock[0] = 70.0
+    reporter.tick()
+
+    assert first_sink == second_sink
+    assert len(first_sink) == 2
+    assert reporter.running is True
+    reporter.stop()
+    assert reporter.running is False

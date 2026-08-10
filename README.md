@@ -93,6 +93,10 @@ systemd d'Agent et les éventuelles unités `ohana-*` en échec. Les métriques 
 ressources doivent dépasser leur seuil pendant trois mesures consécutives ; le
 disque presque plein et les incidents systemd sont immédiats.
 
+Les uptimes sont présentés sous forme compacte (`8 j 19 h 29 min`). Le même
+snapshot, avec les secondes brutes conservées, est envoyé à Vision via la
+capacité `host.health` afin que les deux interfaces affichent la même mesure.
+
 Le document d'infrastructure définit notamment :
 
 - l'identité de l'infrastructure ;

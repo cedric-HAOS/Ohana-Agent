@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import shutil
@@ -14,6 +15,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any
+
+from observer import Observation, ObservationStatus
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,10 +70,39 @@ class HostHealthSnapshot:
     def to_json(self) -> str:
         """Serialize the snapshot using stable compact JSON."""
         return json.dumps(
-            asdict(self),
+            self.to_dict(),
             ensure_ascii=False,
             separators=(",", ":"),
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the complete transport representation."""
+        payload = asdict(self)
+        payload["host_uptime"] = format_uptime(self.host_uptime_seconds)
+        payload["agent_uptime"] = format_uptime(self.agent_uptime_seconds)
+        return payload
+
+
+def format_uptime(seconds: int | None) -> str:
+    """Format an uptime as a compact French human-readable duration."""
+    if seconds is None:
+        return "Inconnu"
+
+    remaining = max(int(seconds), 0)
+    days, remaining = divmod(remaining, 86_400)
+    hours, remaining = divmod(remaining, 3_600)
+    minutes, seconds = divmod(remaining, 60)
+
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days} j")
+    if hours or days:
+        parts.append(f"{hours} h")
+    if minutes or hours or days:
+        parts.append(f"{minutes} min")
+    if not parts:
+        parts.append(f"{seconds} s")
+    return " ".join(parts)
 
 
 class SystemHostProbe:
@@ -363,3 +397,91 @@ class HostHealthMonitor:
             )
 
         return conditions
+
+
+class HostHealthObservationMapper:
+    """Map one host snapshot to the standard Agent-to-Vision contract."""
+
+    _STATUS_MAPPING = {
+        "healthy": ObservationStatus.HEALTHY,
+        "degraded": ObservationStatus.DEGRADED,
+        "critical": ObservationStatus.UNHEALTHY,
+    }
+
+    def to_observation(self, snapshot: HostHealthSnapshot) -> Observation:
+        """Build a device-scoped observation that does not alter service health."""
+        status = self._STATUS_MAPPING.get(snapshot.state, ObservationStatus.UNKNOWN)
+        return Observation(
+            node=snapshot.hostname,
+            service="ohana-host",
+            capability="host.health",
+            status=status,
+            success=status is ObservationStatus.HEALTHY,
+            message=(
+                ", ".join(snapshot.reasons) if snapshot.reasons else "Host healthy"
+            ),
+            source="host-health",
+            timestamp=datetime.fromisoformat(snapshot.updated_at),
+            metadata={
+                "target_type": "device",
+                "device_id": snapshot.hostname,
+                "host_health": snapshot.to_dict(),
+            },
+        )
+
+
+class HostHealthReporter:
+    """Collect one snapshot and deliver it to Home Assistant and Vision."""
+
+    def __init__(
+        self,
+        monitor: HostHealthMonitor,
+        *,
+        sinks: tuple[Callable[[HostHealthSnapshot], None], ...],
+        interval_seconds: float = 60.0,
+        monotonic_clock: Callable[[], float] = monotonic,
+    ) -> None:
+        if interval_seconds <= 0:
+            raise ValueError("interval_seconds must be greater than zero.")
+        self._monitor = monitor
+        self._sinks = sinks
+        self._interval_seconds = interval_seconds
+        self._monotonic_clock = monotonic_clock
+        self._started = False
+        self._next_collection_at: float | None = None
+
+    @property
+    def running(self) -> bool:
+        """Return whether periodic collection is active."""
+        return self._started
+
+    def start(self) -> None:
+        """Publish an initial snapshot and schedule the next collection."""
+        if self._started:
+            return
+        self._started = True
+        self._publish()
+        self._next_collection_at = self._monotonic_clock() + self._interval_seconds
+
+    def tick(self) -> None:
+        """Publish a snapshot when the collection interval is due."""
+        if not self._started:
+            return
+        now = self._monotonic_clock()
+        if self._next_collection_at is not None and now < self._next_collection_at:
+            return
+        self._publish()
+        self._next_collection_at = now + self._interval_seconds
+
+    def stop(self) -> None:
+        """Stop periodic collection."""
+        self._started = False
+        self._next_collection_at = None
+
+    def _publish(self) -> None:
+        snapshot = self._monitor.collect()
+        for sink in self._sinks:
+            try:
+                sink(snapshot)
+            except Exception as error:
+                LOGGER.warning("Unable to publish host health: %s", error)

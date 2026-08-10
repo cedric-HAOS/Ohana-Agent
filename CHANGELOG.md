@@ -6,6 +6,27 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.3] — Santé hôte partagée et uptimes lisibles — 2026-08-10
+
+## Modifié
+
+- La santé de la machine hôte est collectée une seule fois par Agent puis
+  publiée à l'identique vers Home Assistant et Vision.
+- Les uptimes de l'hôte et d'Agent sont affichés sous forme compacte en jours,
+  heures et minutes, tout en conservant les secondes brutes dans le snapshot.
+
+## Ajouté
+
+- Agent transmet à Vision une observation `host.health` avec les ressources,
+  la température disponible, les uptimes et les diagnostics systemd.
+
+## Qualité
+
+- Tests du formatage des durées, du mapping d'observation et du reporter
+  partagé entre ses deux destinations.
+
+---
+
 # [1.12.2] — Correctif santé hôte et helper DHCP — 2026-08-10
 
 ## Corrigé

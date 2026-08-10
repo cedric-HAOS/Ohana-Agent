@@ -62,6 +62,19 @@ class VisionExportRuntime(Protocol):
         """Stop retrying and close durable storage."""
 
 
+class HostHealthRuntime(Protocol):
+    """Lifecycle exposed by periodic host health reporting."""
+
+    def start(self) -> None:
+        """Publish the initial host snapshot."""
+
+    def tick(self) -> None:
+        """Publish a host snapshot when due."""
+
+    def stop(self) -> None:
+        """Stop periodic host reporting."""
+
+
 @dataclass(slots=True)
 class ProductionAgent:
     """Run the configured Ohana-Agent scheduler continuously."""
@@ -75,6 +88,7 @@ class ProductionAgent:
     administration_runtime: AdministrationRuntime | None = None
     teleinformation_ingestion_runtime: TeleinformationIngestionRuntime | None = None
     home_assistant_publisher: HomeAssistantPublisherRuntime | None = None
+    host_health_runtime: HostHealthRuntime | None = None
     vision_export_runtime: VisionExportRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     monotonic_clock: Callable[[], float] = field(
@@ -151,6 +165,7 @@ class ProductionAgent:
         if not self._synchronize_infrastructure():
             return
 
+        self._start_host_health()
         self._start_scheduler()
 
     def tick(self) -> None:
@@ -172,6 +187,7 @@ class ProductionAgent:
                     )
 
             self._tick_home_assistant_publisher()
+            self._tick_host_health()
 
     def run(self) -> None:
         """Run until a stop request is received."""
@@ -193,6 +209,7 @@ class ProductionAgent:
                         continue
 
                 if not self.scheduler.running:
+                    self._start_host_health()
                     self._start_scheduler()
 
                 if self._stop_event.wait(self.tick_interval_seconds):
@@ -227,6 +244,9 @@ class ProductionAgent:
 
         if self.home_assistant_publisher is not None:
             self.home_assistant_publisher.stop()
+
+        if self.host_health_runtime is not None:
+            self.host_health_runtime.stop()
 
         if self.vision_export_runtime is not None:
             self.vision_export_runtime.stop()
@@ -311,6 +331,14 @@ class ProductionAgent:
     def _tick_home_assistant_publisher(self) -> None:
         if self.home_assistant_publisher is not None:
             self.home_assistant_publisher.tick()
+
+    def _start_host_health(self) -> None:
+        if self.host_health_runtime is not None:
+            self.host_health_runtime.start()
+
+    def _tick_host_health(self) -> None:
+        if self.host_health_runtime is not None:
+            self.host_health_runtime.tick()
 
     def _start_scheduler(self) -> None:
         """Start observations after infrastructure synchronization."""

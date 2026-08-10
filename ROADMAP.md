@@ -1,187 +1,192 @@
 # ROADMAP
 
-## Vision
+## Mission
 
-Ohana-Agent garantit les capacités attendues d'une infrastructure déclarative. Il observe les services réels, normalise leurs états et fournit à Ohana-Vision la définition de référence de l'infrastructure et de sa topologie.
+Ohana-Agent garantit les capacités attendues d'une infrastructure déclarative.
+Il observe les services réels, normalise leurs états et fournit à Ohana-Vision
+la définition de référence de l'infrastructure, de sa topologie et de ses
+observations.
+
+Agent reste propriétaire de la configuration et de l'exécution. Ses capacités
+d'administration sont exposées par des contrats publics, versionnés et conçus
+pour revenir à un état sûr en cas d'échec.
+
+## État actuel
+
+**Version publiée : 1.12.0 — Livraison durable vers Vision.**
+
+Le socle actuel couvre notamment :
+
+- l'infrastructure déclarative et sa synchronisation avec Vision ;
+- le scheduler, le pipeline d'observation et le Plugin Manager ;
+- l'administration locale sécurisée de l'infrastructure, du réseau, du DHCP et
+  des plugins ;
+- les observations DNS, NTP, MQTT, DHCP, réseau, Z-Wave, WireGuard,
+  Téléinformation et télémétrie Home Assistant ;
+- les plages de surveillance et l'état suspendu neutre ;
+- la publication MQTT Discovery vers Home Assistant ;
+- la livraison durable et ordonnée des observations vers Vision.
+
+Le détail exhaustif des versions et correctifs publiés est conservé dans le
+[CHANGELOG](CHANGELOG.md).
 
 ---
 
-# Versions publiées
+## Jalons livrés
 
-## v1.0.0 — Agent de production
-
-**Statut : terminé.**
-
-Principaux acquis :
+### 1.0 — Agent de production
 
 - configuration stricte et versionnée ;
-- infrastructure déclarative ;
-- scheduler, dispatcher et EventBus ;
-- Plugin SDK et Plugin Manager ;
-- plugin DNS ;
-- moteur d'observation ;
-- export HTTP vers Ohana-Vision ;
-- bootstrap de production ;
-- service systemd ;
-- scripts d'installation et de mise à jour ;
-- packaging wheel et sdist ;
-- audit final de production.
+- infrastructure déclarative, scheduler, dispatcher et EventBus ;
+- Plugin SDK, Plugin Manager et premier plugin DNS ;
+- export HTTP vers Vision, service systemd et packaging installable.
 
-## v1.1.0 — Infrastructure et topologie synchronisées
+**Statut : livré.**
 
-**Statut : terminé.**
+### 1.1 — Infrastructure et topologie synchronisées
 
-Objectifs réalisés :
+- Agent comme source de vérité de l'infrastructure ;
+- équipements, liaisons, layouts et positions logiques ;
+- contrat public vers Vision et synchronisation résiliente ;
+- suspension puis reprise automatique lors d'une désynchronisation initiale.
 
-- Agent propriétaire de la définition d'infrastructure ;
-- topologie déclarative dans `infrastructure.yaml` ;
-- équipements, liens et layouts ;
-- positions logiques `column` / `row` ;
-- contrat public versionné vers Ohana-Vision ;
-- transmission par `PUT /api/infrastructure` ;
-- validation des références et des cellules de grille ;
-- première synchronisation obligatoire avant les observations ;
-- nouvelle tentative toutes les 10 secondes ;
-- rafraîchissement toutes les 5 minutes ;
-- suspension des observations lorsque Vision est désynchronisé ;
-- reprise automatique après resynchronisation ;
-- tests d'intégration réels Agent ↔ Vision.
+**Statut : livré.**
 
----
-
-## v1.2.0 — Administration graphique
-
-**Statut : terminé.**
-
-Principaux acquis :
+### 1.2 — Administration graphique
 
 - API locale d'administration protégée ;
-- gestion de l'infrastructure depuis Ohana-Vision ;
+- gestion de l'infrastructure depuis Vision ;
 - gestion DHCP et réservations dnsmasq ;
-- synchronisation immédiate du snapshot d'infrastructure.
+- découverte dynamique des services DNS et replanification sans redémarrage.
 
-## v1.2.1 — Services DNS dynamiques
+**Statut : livré.**
 
-**Statut : terminé.**
+### 1.3 — Plugins et administration
 
-Principaux acquis :
+- intégration de NTP et MQTT au pipeline d'observation ;
+- inventaire des plugins réellement enregistrés ;
+- lecture, activation, modification, reconfiguration et test immédiat ;
+- restauration de la configuration en cas d'échec et protection des secrets.
 
-- découverte de tous les services DNS depuis l'infrastructure ;
-- observations distinctes pour chaque identifiant de service ;
-- ajout et suppression de tâches DNS sans redémarrage ;
-- absence de limite au nombre de services DNS déclarés.
+**Statut : livré.**
 
----
+### 1.4 — Présence réseau des équipements
 
-# v1.3.0 — Plugins et administration
-
-**Statut : terminé.**
-
-Principaux acquis :
-
-- plugins NTP et MQTT intégrés au pipeline d’observation ;
-- contrat d’administration versionné des plugins ;
-- inventaire fondé sur les plugins réellement enregistrés ;
-- exposition des plugins DNS, NTP et MQTT ;
-- activation, désactivation et modification de leur configuration ;
-- reconfiguration et replanification sans redémarrage ;
-- test immédiat de chaque capacité ;
-- restauration automatique en cas d’échec d’application ;
-- protection des secrets MQTT ;
-- DHCP conservé dans son administration dédiée tant qu’il ne constitue pas un
-  plugin d’observation du `PluginManager`.
-
----
-
-# v1.4.0 — Présence réseau des équipements
-
-**Statut : terminé.**
-
-Principaux acquis :
-
-- découverte des équipements adressables depuis la topologie ;
+- découverte des équipements adressables ;
 - observation générique `network.reachable` ;
 - détection ICMP avec confirmation ARP locale ;
-- répartition temporelle des contrôles pour préserver la légèreté du scheduler ;
-- seuil d'échecs consécutifs avant déclaration d'absence ;
-- état intermédiaire `unknown` ;
-- absence d'impact sur la santé globale des capacités ;
-- replanification après modification de l'infrastructure ;
-- configuration et administration du plugin réseau.
+- seuil d'échecs, état inconnu et absence d'incidence sur la santé globale.
 
----
+**Statut : livré.**
 
-# v1.5.0 — Observation DHCP
+### 1.5 — Observation DHCP
 
-**Statut : terminé.**
+- plugin DHCP intégré au Plugin Manager ;
+- observation non intrusive de dnsmasq, de sa plage et de ses baux ;
+- calcul de l'occupation et seuil de santé configurable ;
+- reconfiguration et test immédiat sans redémarrage de l'Agent.
 
-Principaux acquis :
+**Statut : livré.**
 
-- plugin DHCP enregistré dans le `PluginManager` ;
-- découverte des services DHCP depuis l’infrastructure ;
-- observation `dhcp.status` du service dnsmasq local ;
-- lecture de la plage et des baux sans allocation artificielle ;
-- calcul de l’occupation de la plage et seuil de santé configurable ;
-- reconfiguration, planification et test immédiat sans redémarrage ;
-- commande système interne non modifiable depuis Vision ;
-- maintien de l’administration DHCP dédiée pour les paramètres et réservations.
+### 1.6 et 1.7 — Z-Wave, WireGuard et télémétrie
 
----
+- observations Z-Wave et WireGuard ;
+- intégration Freebox WireGuard ;
+- télémétrie Shelly par service ;
+- replanification dynamique et exécution selon les services déclarés.
 
-# v1.9.0 — Lot A : télémétrie générique et cibles réseau
+**Statut : livré.**
 
-**Statut : terminé.**
+### 1.8 — Téléinformation Linky
 
-Principaux acquis :
+- plugin `teleinformation` intégré au Plugin Manager ;
+- contrôle contextuel de la fraîcheur de SINSTS, NTARF et des index Tempo ;
+- lecture des index EASF01 à EASF06 ;
+- administration, test immédiat et publication vers Vision.
 
-- remplacement fonctionnel de Shelly Telemetry par le plugin générique
+**Statut : livré.**
+
+### 1.9 — Télémétrie générique et cibles réseau
+
+- remplacement compatible de Shelly Telemetry par
   `home_assistant_telemetry` ;
-- migration compatible des anciens services, configurations et appels
-  d’administration `shelly_telemetry` ;
-- acceptation des noms d’hôte et noms DNS dans l’infrastructure ;
-- résolution DNS au moment des contrôles de présence réseau ;
-- conservation de la cible déclarée et de l’adresse résolue dans l’observation.
+- acceptation des noms d'hôte et noms DNS dans l'infrastructure ;
+- résolution au moment du contrôle avec conservation de la cible déclarée.
+
+**Statut : livré.**
+
+### 1.10 — Téléinformation directe et plages de surveillance
+
+- réception HTTP directe des données de `teleinfo2mqtt` ;
+- indépendance fonctionnelle vis-à-vis de Home Assistant pour Linky ;
+- plages horaires héritées par la présence réseau et les services ;
+- état suspendu neutre et publication unique de la transition.
+
+**Statut : livré.**
+
+### 1.11 — Administration réseau et stabilité opérationnelle
+
+- lecture et configuration NetworkManager avec helper privilégié restreint ;
+- sauvegarde, confirmation et rollback automatique ;
+- application fiable des réservations DHCP ;
+- découverte des équipements Z-Wave et publication de leur état ;
+- stabilisation des suspensions planifiées et de la présence réseau Windows ;
+- synthèse Home Assistant stable et alertes contextualisées par équipement et
+  capacité.
+
+**Statut : livré.**
+
+### 1.12 — Livraison durable vers Vision
+
+- outbox SQLite écrite avant la première tentative d'envoi ;
+- rejeu ordonné après une indisponibilité ou un redémarrage ;
+- identifiant immuable et message transmis au premier niveau du contrat ;
+- poursuite des observations lorsque Vision devient indisponible après la
+  synchronisation initiale.
+
+**Statut : livré.**
 
 ---
 
-# v1.10.0 — Lot B : Téléinformation directe et plages de surveillance
+## Prochaines priorités
 
-**Statut : terminé.**
+### Maintenant — Consolidation de la version 1.12
 
-Principaux acquis :
+- exposer des diagnostics exploitables sur la taille et l'âge du backlog ;
+- cadrer la rétention et la maintenance de l'outbox ;
+- renforcer les scénarios de reprise après interruption prolongée ;
+- conserver une publication Home Assistant concise et stable lors des
+  dégradations.
 
-- réception HTTP directe des trames décodées de `teleinfo2mqtt` ;
-- indépendance fonctionnelle vis-à-vis de Home Assistant et du broker hébergé
-  sur HA-Green pour la supervision Linky ;
-- conservation temporaire du mode Home Assistant pour la migration ;
-- plages horaires configurables au niveau des équipements ;
-- héritage automatique des plages par leurs tâches de présence réseau et de
-  services ;
-- état `suspended` neutre pour les incidents et la santé globale ;
-- publication unique de la transition de suspension.
+**Statut : en consolidation.**
 
----
+### Ensuite — Actions contrôlées
 
-# v2.0.0 — Actions contrôlées
-
-Objectif : passer progressivement de l'observation à l'action.
-
-Pistes envisagées :
+Objectif : passer progressivement de l'observation à l'action sans introduire
+d'auto-réparation implicite.
 
 - politiques explicites de remédiation ;
 - redémarrage contrôlé de services ;
 - bascule de capacités redondantes ;
-- exécution d'actions validées ;
-- audit et traçabilité des actions ;
-- mécanismes de sécurité et d'autorisation.
+- exécution d'actions validées et suivi de leur résultat ;
+- audit, autorisation et stratégie de retour à un état sûr.
 
-Aucune auto-réparation ne sera introduite sans contrat public, contrôle explicite et stratégie de retour à un état sûr.
+**Statut : à cadrer pour une future version majeure.**
+
+### Plus tard — Écosystème multi-agents
+
+- identité stable des Agents et des sites ;
+- contrats compatibles avec une vue consolidée dans Vision ;
+- prévention des conflits d'identifiants ;
+- enrichissement du SDK et de la documentation des capacités des plugins.
+
+**Statut : exploration.**
 
 ---
 
-# Principes durables
+## Principes durables
 
-Les évolutions futures doivent préserver les règles suivantes :
+Les évolutions d'Agent doivent préserver les règles suivantes :
 
 1. une seule source de vérité pour l'infrastructure ;
 2. les capacités avant les implémentations ;
@@ -189,47 +194,5 @@ Les évolutions futures doivent préserver les règles suivantes :
 4. aucun détail de rendu dans la configuration métier ;
 5. des plugins indépendants du cœur ;
 6. des contrats publics versionnés ;
-7. un comportement testable et reproductible.
-
-
-# v1.8.0 — Téléinformation Linky
-
-**Statut : terminé.**
-
-Principaux acquis :
-
-- plugin `teleinformation` intégré au PluginManager ;
-- contrôle de fraîcheur des entités Home Assistant SINSTS et NTARF ;
-- interprétation des six périodes Tempo ;
-- lecture des index EASF01 à EASF06 ;
-- service rattaché au nœud RPI-Linky ;
-- administration, reconfiguration et test immédiat ;
-- planification et publication des observations vers Ohana-Vision.
-
-# v1.8.1 — Fraîcheur Tempo contextuelle
-
-**Statut : terminé.**
-
-Principaux acquis :
-
-- fraîcheur permanente de `SINSTS` ;
-- validation de `NTARF` sans exiger une modification continue ;
-- fraîcheur exigée uniquement pour l’index Tempo actif ;
-- index inactifs conservés comme données informatives ;
-- grâce de 30 secondes lors des bascules tarifaires.
-
-
-
-# v1.11.0 — Lot C : administration réseau sécurisée
-
-- [x] Lecture NetworkManager de l’hôte Agent.
-- [x] Helper privilégié limité et API versionnée.
-- [x] Application avec sauvegarde, confirmation et rollback automatique.
-- [x] Protection contre les transactions concurrentes.
-
-# v1.11.1 — Application fiable des réservations DHCP
-
-- [x] Détecter les baux incompatibles avec une réservation nouvelle ou modifiée.
-- [x] Purger uniquement les baux concernés avec un helper root restreint.
-- [x] Redémarrer dnsmasq en conservant tous les autres baux.
-- [x] Normaliser les listes DNS retournées par NetworkManager.
+7. aucune action sensible sans autorisation, audit et retour à un état sûr ;
+8. un comportement testable et reproductible.

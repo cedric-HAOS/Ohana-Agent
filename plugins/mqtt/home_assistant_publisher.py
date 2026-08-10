@@ -30,6 +30,18 @@ _STATUS_PRIORITY = {
 
 
 @dataclass(frozen=True, slots=True)
+class MQTTHomeAssistantAlert:
+    """Stable Home Assistant description of one active anomaly."""
+
+    equipment: str
+    node: str
+    service: str
+    service_name: str
+    capability: str
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
 class MQTTHomeAssistantHealthSummary:
     """Compact infrastructure summary published to Home Assistant."""
 
@@ -46,6 +58,9 @@ class MQTTHomeAssistantHealthSummary:
     critical_equipment: str | None = None
     critical_capability: str | None = None
     critical_message: str | None = None
+    affected_equipment: tuple[str, ...] = ()
+    affected_capabilities: tuple[str, ...] = ()
+    alerts: tuple[MQTTHomeAssistantAlert, ...] = ()
 
     def to_json(self) -> str:
         """Serialize the summary using stable compact JSON."""
@@ -249,7 +264,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             if config == self.config:
                 if infrastructure is not None:
                     self.infrastructure = infrastructure
-                    self._last_summary_payload = None
+                    self._last_summary_state = None
 
                 if self.enabled and not self._started:
                     self.start()
@@ -262,7 +277,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             self.config = config
             if infrastructure is not None:
                 self.infrastructure = infrastructure
-            self._last_summary_payload = None
+            self._last_summary_state = None
             if self.enabled:
                 self.start()
 
@@ -270,7 +285,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         """Replace the topology and service policies used by the summary."""
         with self._lock:
             self.infrastructure = infrastructure
-            self._last_summary_payload = None
+            self._last_summary_state = None
             if self._connected:
                 self._publish_summary(force=True)
 
@@ -330,6 +345,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             observations,
             critical_services,
         )
+        alerts = self._active_alert_details(observations)
         critical_equipment = None
         if critical_observation is not None:
             critical_equipment = self._device_label_for_node(critical_observation.node)
@@ -360,6 +376,13 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 if critical_observation is not None
                 else None
             ),
+            affected_equipment=tuple(
+                sorted({alert.equipment for alert in alerts}, key=str.casefold)
+            ),
+            affected_capabilities=tuple(
+                sorted({alert.capability for alert in alerts}, key=str.casefold)
+            ),
+            alerts=alerts,
         )
 
     def _on_connect(
@@ -413,6 +436,18 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 retain=True,
             )
 
+        for component, object_id in self._obsolete_discovery_entities():
+            topic = (
+                f"{self.config.home_assistant.discovery_prefix}/"
+                f"{component}/{object_id}/config"
+            )
+            self._safe_publish(topic, "", retain=True)
+
+    @staticmethod
+    def _obsolete_discovery_entities() -> tuple[tuple[str, str], ...]:
+        """Return entities that must be removed from Home Assistant."""
+        return (("sensor", "ohana_last_evaluation"),)
+
     def _publish_summary(self, *, force: bool) -> None:
         summary = self.build_summary()
         payload = summary.to_json()
@@ -441,6 +476,9 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             summary.critical_service,
             summary.critical_equipment,
             summary.critical_capability,
+            summary.affected_equipment,
+            summary.affected_capabilities,
+            summary.alerts,
         )
 
     def _safe_publish(self, topic: str, payload: str, *, retain: bool) -> bool:
@@ -525,8 +563,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                     "{{ {"
                     "'critical_service': value_json.critical_service, "
                     "'critical_equipment': value_json.critical_equipment, "
-                    "'critical_capability': value_json.critical_capability, "
-                    "'critical_message': value_json.critical_message"
+                    "'critical_capability': value_json.critical_capability"
                     "} | tojson }}"
                 ),
             ),
@@ -553,6 +590,14 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 "active_alerts",
                 state_class="measurement",
                 icon="mdi:alert-circle-outline",
+                json_attributes_topic=state_topic,
+                json_attributes_template=(
+                    "{{ {"
+                    "'affected_equipment': value_json.affected_equipment, "
+                    "'affected_capabilities': value_json.affected_capabilities, "
+                    "'alerts': value_json.alerts"
+                    "} | tojson }}"
+                ),
             ),
             sensor(
                 "ohana_degraded_services",
@@ -574,13 +619,6 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 "stale_capabilities",
                 state_class="measurement",
                 icon="mdi:clock-alert-outline",
-            ),
-            sensor(
-                "ohana_last_evaluation",
-                "Dernière évaluation",
-                "updated_at",
-                device_class="timestamp",
-                entity_category="diagnostic",
             ),
         )
 
@@ -651,6 +689,51 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         if not candidates:
             return None
         return max(candidates, key=lambda observation: observation.timestamp)
+
+    def _active_alert_details(
+        self,
+        observations: tuple[Observation, ...],
+    ) -> tuple[MQTTHomeAssistantAlert, ...]:
+        """Describe every active degraded or unhealthy capability."""
+        services = {
+            (service.node, service.id): service
+            for service in self.infrastructure.services
+        }
+        alerts: list[MQTTHomeAssistantAlert] = []
+
+        for observation in observations:
+            status = self._normalize_status(observation.status)
+            if status not in {"degraded", "unhealthy"}:
+                continue
+
+            service = services.get((observation.node, observation.service))
+            alerts.append(
+                MQTTHomeAssistantAlert(
+                    equipment=(
+                        self._device_label_for_node(observation.node)
+                        or observation.node
+                    ),
+                    node=observation.node,
+                    service=observation.service,
+                    service_name=(
+                        service.name if service is not None else observation.service
+                    ),
+                    capability=observation.capability,
+                    status=status,
+                )
+            )
+
+        return tuple(
+            sorted(
+                alerts,
+                key=lambda alert: (
+                    -_STATUS_PRIORITY[alert.status],
+                    alert.equipment.casefold(),
+                    alert.service.casefold(),
+                    alert.capability.casefold(),
+                ),
+            )
+        )
 
     def _device_label_for_node(self, node_id: str) -> str | None:
         topology = self.infrastructure.topology

@@ -141,6 +141,7 @@ def observation(
     status: ObservationStatus,
     timestamp: datetime | None = None,
     metadata: dict[str, Any] | None = None,
+    message: str | None = None,
 ) -> Observation:
     return Observation(
         node=node,
@@ -148,7 +149,7 @@ def observation(
         capability=capability,
         status=status,
         success=status is ObservationStatus.HEALTHY,
-        message=f"{capability}: {status.value}",
+        message=message or f"{capability}: {status.value}",
         source=capability,
         timestamp=timestamp or datetime(2026, 7, 28, 14, 0, tzinfo=UTC),
         metadata=metadata or {},
@@ -218,6 +219,18 @@ def test_health_summary_matches_vision_device_health_rules() -> None:
     assert summary.critical_service == "zwave-primary"
     assert summary.critical_equipment == "ZWAVE-01"
     assert summary.critical_capability == "zwave.status"
+    assert summary.affected_equipment == ("ZWAVE-01",)
+    assert summary.affected_capabilities == ("zwave.status",)
+    assert json.loads(summary.to_json())["alerts"] == [
+        {
+            "equipment": "ZWAVE-01",
+            "node": "zwave-01",
+            "service": "zwave-primary",
+            "service_name": "Z-Wave JS",
+            "capability": "zwave.status",
+            "status": "unhealthy",
+        }
+    ]
 
 
 def test_health_summary_counts_stale_capabilities() -> None:
@@ -280,6 +293,7 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     topics = [topic for topic, *_ in fake_client.published]
     assert "homeassistant/sensor/ohana_health_score/config" in topics
     assert "homeassistant/binary_sensor/ohana_critical_incident/config" in topics
+    assert "homeassistant/sensor/ohana_last_evaluation/config" in topics
     assert "ohana/status" in topics
     assert "ohana/health/summary" in topics
     summary_publications = [
@@ -298,11 +312,223 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     assert discovery_payload["device"]["sw_version"] == "1.8.1"
     assert discovery_payload["state_topic"] == "ohana/health/summary"
 
+    obsolete_discovery = next(
+        publication
+        for publication in fake_client.published
+        if publication[0] == "homeassistant/sensor/ohana_last_evaluation/config"
+    )
+    assert obsolete_discovery[1:] == ("", 1, True)
+
+    health_state_discovery = next(
+        json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic == "homeassistant/sensor/ohana_health_state/config"
+    )
+    assert "critical_message" not in health_state_discovery["json_attributes_template"]
+
+    active_alerts_discovery = next(
+        json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic == "homeassistant/sensor/ohana_active_alerts/config"
+    )
+    attributes_template = active_alerts_discovery["json_attributes_template"]
+    assert "affected_equipment" in attributes_template
+    assert "affected_capabilities" in attributes_template
+    assert "alerts" in attributes_template
+
     publisher.stop()
 
     assert fake_client.disconnected is True
     assert fake_client.loop_stopped is True
     assert fake_client.published[-1][:2] == ("ohana/status", "offline")
+
+
+def test_publisher_ignores_timestamp_and_message_only_changes() -> None:
+    now = datetime(2026, 7, 28, 14, 0, tzinfo=UTC)
+    fake_client = FakePahoClient()
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            brokers=[
+                MQTTBrokerConfig(
+                    name="mqtt-primary",
+                    address="192.168.1.247",
+                )
+            ],
+            home_assistant=MQTTHomeAssistantConfig(enabled=True),
+        ),
+        infrastructure=make_infrastructure(),
+        client_factory=lambda client_id: fake_client,
+        utc_now=lambda: now,
+        agent_version="1.11.10",
+    )
+    publisher.start()
+    publisher.export(
+        observation(
+            node="infra-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.UNHEALTHY,
+            timestamp=now,
+            message="First DNS error.",
+        )
+    )
+    publications_after_state_change = len(
+        [
+            publication
+            for publication in fake_client.published
+            if publication[0] == "ohana/health/summary"
+        ]
+    )
+
+    publisher.export(
+        observation(
+            node="infra-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.UNHEALTHY,
+            timestamp=now + timedelta(seconds=1),
+            message="A newer DNS error detail.",
+        )
+    )
+
+    summary_publications = [
+        publication
+        for publication in fake_client.published
+        if publication[0] == "ohana/health/summary"
+    ]
+    assert len(summary_publications) == publications_after_state_change
+
+
+def test_publisher_republishes_a_meaningful_health_change() -> None:
+    now = datetime(2026, 7, 28, 14, 0, tzinfo=UTC)
+    fake_client = FakePahoClient()
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            brokers=[
+                MQTTBrokerConfig(
+                    name="mqtt-primary",
+                    address="192.168.1.247",
+                )
+            ],
+            home_assistant=MQTTHomeAssistantConfig(enabled=True),
+        ),
+        infrastructure=make_infrastructure(),
+        client_factory=lambda client_id: fake_client,
+        utc_now=lambda: now,
+        agent_version="1.11.10",
+    )
+    publisher.start()
+    publisher.export(
+        observation(
+            node="infra-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.HEALTHY,
+            timestamp=now,
+        )
+    )
+    publications_before_incident = len(
+        [
+            publication
+            for publication in fake_client.published
+            if publication[0] == "ohana/health/summary"
+        ]
+    )
+
+    publisher.export(
+        observation(
+            node="infra-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.UNHEALTHY,
+            timestamp=now + timedelta(seconds=1),
+        )
+    )
+
+    summary_publications = [
+        publication
+        for publication in fake_client.published
+        if publication[0] == "ohana/health/summary"
+    ]
+    assert len(summary_publications) == publications_before_incident + 1
+    assert json.loads(summary_publications[-1][1])["state"] == "critical"
+
+
+def test_publisher_republishes_when_alert_identity_changes_at_same_count() -> None:
+    now = datetime(2026, 7, 28, 14, 0, tzinfo=UTC)
+    fake_client = FakePahoClient()
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            brokers=[
+                MQTTBrokerConfig(
+                    name="mqtt-primary",
+                    address="192.168.1.247",
+                )
+            ],
+            home_assistant=MQTTHomeAssistantConfig(enabled=True),
+        ),
+        infrastructure=make_infrastructure(),
+        client_factory=lambda client_id: fake_client,
+        utc_now=lambda: now,
+        agent_version="1.11.10",
+    )
+    publisher.start()
+    publisher.export(
+        observation(
+            node="infra-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.DEGRADED,
+            timestamp=now,
+        )
+    )
+    publications_before_identity_change = len(
+        [
+            publication
+            for publication in fake_client.published
+            if publication[0] == "ohana/health/summary"
+        ]
+    )
+
+    publisher.export(
+        observation(
+            node="infra-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.HEALTHY,
+            timestamp=now + timedelta(seconds=1),
+        )
+    )
+    publisher.export(
+        observation(
+            node="zwave-01",
+            service="zwave-primary",
+            capability="zwave.status",
+            status=ObservationStatus.DEGRADED,
+            timestamp=now + timedelta(seconds=1),
+        )
+    )
+
+    summary_publications = [
+        publication
+        for publication in fake_client.published
+        if publication[0] == "ohana/health/summary"
+    ]
+    assert len(summary_publications) == publications_before_identity_change + 2
+    summary = json.loads(summary_publications[-1][1])
+    assert summary["active_alerts"] == 1
+    assert summary["affected_equipment"] == ["ZWAVE-01"]
+    assert summary["affected_capabilities"] == ["zwave.status"]
+    assert summary["alerts"] == [
+        {
+            "equipment": "ZWAVE-01",
+            "node": "zwave-01",
+            "service": "zwave-primary",
+            "service_name": "Z-Wave JS",
+            "capability": "zwave.status",
+            "status": "degraded",
+        }
+    ]
 
 
 def test_infrastructure_reconfiguration_keeps_mqtt_availability_online() -> None:

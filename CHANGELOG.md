@@ -6,6 +6,49 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.11.11] — Alertes Home Assistant contextualisées — 2026-08-10
+
+## Modifié
+
+- Le capteur Home Assistant « Alertes actives » expose les équipements et les
+  capacités affectés, ainsi qu'un détail stable de chaque anomalie, sans ajouter
+  une entité par équipement ou par capacité.
+- Le capteur MQTT Discovery « Dernière évaluation » est supprimé de
+  Home Assistant afin de ne plus encombrer le journal avec un horodatage à
+  chaque nouvelle synthèse. L'horodatage reste présent dans la synthèse MQTT.
+- Le message critique détaillé reste disponible dans la synthèse MQTT brute,
+  mais n'est plus exposé comme attribut Home Assistant susceptible de devenir
+  périmé entre deux changements d'état significatifs.
+- Les changements d'infrastructure réinitialisent correctement l'état de
+  déduplication des synthèses Home Assistant.
+
+## Qualité
+
+- Le test MQTT Discovery vérifie la suppression automatique de l'ancienne
+  entité déjà enregistrée.
+- Des tests garantissent qu'un changement d'horodatage ou de message seul ne
+  republie rien, tandis qu'un changement de santé est publié immédiatement.
+
+---
+
+# [1.11.10] — Synthèse Home Assistant stable — 2026-08-07
+
+## Corrigé
+
+- La synthèse MQTT Home Assistant n'est plus republiée lorsque seul son
+  horodatage change ; seuls les changements de santé significatifs créent un
+  nouvel état.
+- Le battement périodique ne provoque plus de nouvelle évaluation visible dans
+  Home Assistant lorsque la santé reste inchangée.
+- Les entités Discovery ne deviennent plus faussement indisponibles entre deux
+  synthèses stables.
+
+## Qualité
+
+- Version du paquet alignée sur `1.11.10`.
+
+---
+
 # [1.11.9] — Correction test ping — 2026-08-05
 
 ## Modifié

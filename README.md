@@ -80,6 +80,10 @@ service logique : toutes disponibles signifie sain, toutes indisponibles
 signifie indisponible, et tout état intermédiaire signifie dégradé. Les alertes
 actives restent détaillées par instance.
 
+Pour assurer la compatibilité avec les installations antérieures, plusieurs
+services DNS activés sans groupe explicite sont automatiquement rattachés au
+groupe `dns`. Un groupe déclaré reste prioritaire.
+
 ```yaml
 metadata:
   availability_group: dns

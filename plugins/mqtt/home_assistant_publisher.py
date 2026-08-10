@@ -297,7 +297,11 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         observations = tuple(self._latest_observations.values())
         service_statuses = self._service_statuses(observations)
         logical_service_statuses = self._logical_service_statuses(service_statuses)
-        device_statuses = self._device_statuses(observations, service_statuses)
+        device_statuses = self._device_statuses(
+            observations,
+            service_statuses,
+            logical_service_statuses,
+        )
 
         known_device_statuses = tuple(
             status for status in device_statuses.values() if status != "unknown"
@@ -336,17 +340,26 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             status == "unhealthy" for status in logical_service_statuses.values()
         )
 
-        critical_services = {
-            (service.node, service.id): service
+        critical_logical_services = {
+            self._logical_service_key(service)
             for service in self.infrastructure.services
             if service.enabled and service.critical
         }
         critical_incidents = sum(
-            service_statuses.get(key) == "unhealthy" for key in critical_services
+            logical_service_statuses.get(key) == "unhealthy"
+            for key in critical_logical_services
         )
+        critical_service_instances = {
+            (service.node, service.id): service
+            for service in self.infrastructure.services
+            if service.enabled
+            and service.critical
+            and logical_service_statuses.get(self._logical_service_key(service))
+            == "unhealthy"
+        }
         critical_observation = self._first_critical_observation(
             observations,
-            critical_services,
+            critical_service_instances,
         )
         alerts = self._active_alert_details(observations)
         critical_equipment = None
@@ -820,11 +833,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             if status is None:
                 continue
 
-            availability_group = service.metadata.get("availability_group")
-            if isinstance(availability_group, str) and availability_group.strip():
-                key = ("availability_group", availability_group.strip())
-            else:
-                key = ("service", service.node, service.id)
+            key = self._logical_service_key(service)
             grouped.setdefault(key, []).append(status)
 
         return {
@@ -840,6 +849,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self,
         observations: tuple[Observation, ...],
         service_statuses: dict[tuple[str, str], str],
+        logical_service_statuses: dict[tuple[str, ...], str],
     ) -> dict[str, str]:
         del observations
         topology = self.infrastructure.topology
@@ -859,6 +869,10 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             impact = self._service_parent_impact(
                 status,
                 critical=service.critical,
+                logical_status=logical_service_statuses.get(
+                    self._logical_service_key(service),
+                    status,
+                ),
             )
             services_by_node.setdefault(service.node, []).append(impact)
 
@@ -960,9 +974,36 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             return "healthy"
         return "unknown"
 
+    def _logical_service_key(self, service: Any) -> tuple[str, ...]:
+        availability_group = service.metadata.get("availability_group")
+        if isinstance(availability_group, str) and availability_group.strip():
+            return ("availability_group", availability_group.strip())
+
+        # Existing installations predate availability_group. Two enabled DNS
+        # instances are redundant by default so an upgrade immediately keeps
+        # DNS available when only one resolver fails.
+        if (
+            service.type == "dns"
+            and sum(
+                candidate.enabled and candidate.type == "dns"
+                for candidate in self.infrastructure.services
+            )
+            > 1
+        ):
+            return ("availability_group", "dns")
+
+        return ("service", service.node, service.id)
+
     @staticmethod
-    def _service_parent_impact(status: str, *, critical: bool) -> str:
+    def _service_parent_impact(
+        status: str,
+        *,
+        critical: bool,
+        logical_status: str,
+    ) -> str:
         if status == "unhealthy":
+            if logical_status == "degraded":
+                return "degraded"
             return "unhealthy" if critical else "degraded"
         if status == "degraded":
             return "degraded"

@@ -14,6 +14,13 @@ Le projet suit les principes de **Semantic Versioning**.
   publiée à l'identique vers Home Assistant et Vision.
 - Les uptimes de l'hôte et d'Agent sont affichés sous forme compacte en jours,
   heures et minutes, tout en conservant les secondes brutes dans le snapshot.
+- Les services redondants déterminent désormais aussi l'état global, les
+  incidents critiques et l'impact sur leur équipement. La perte d'un seul DNS
+  produit un service et un état global dégradés ; le DNS n'est indisponible que
+  si toutes ses instances le sont.
+- Les installations existantes possédant plusieurs DNS activés bénéficient
+  automatiquement du groupe logique `dns`, même si leur ancien fichier de
+  configuration ne contient pas encore `availability_group`.
 
 ## Ajouté
 
@@ -22,8 +29,8 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ## Qualité
 
-- Tests du formatage des durées, du mapping d'observation et du reporter
-  partagé entre ses deux destinations.
+- Tests du formatage des durées, du mapping d'observation, du reporter partagé
+  et des scénarios DNS partiellement ou totalement indisponible avec Z-Wave.
 
 ---
 

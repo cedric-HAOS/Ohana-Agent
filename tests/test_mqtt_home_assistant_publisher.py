@@ -195,6 +195,13 @@ def make_redundant_infrastructure() -> InfrastructureConfig:
     return InfrastructureConfig.model_validate(payload)
 
 
+def make_legacy_redundant_infrastructure() -> InfrastructureConfig:
+    payload = make_redundant_infrastructure().model_dump(mode="json")
+    for service in payload["services"]:
+        service["metadata"].pop("availability_group", None)
+    return InfrastructureConfig.model_validate(payload)
+
+
 def observation(
     *,
     node: str,
@@ -301,7 +308,7 @@ def test_health_summary_aggregates_redundant_service_instances() -> None:
         config=MQTTConfig(
             home_assistant=MQTTHomeAssistantConfig(enabled=False),
         ),
-        infrastructure=make_redundant_infrastructure(),
+        infrastructure=make_legacy_redundant_infrastructure(),
         utc_now=lambda: now,
         agent_version="1.12.0",
     )
@@ -340,7 +347,49 @@ def test_health_summary_aggregates_redundant_service_instances() -> None:
     assert summary.degraded_services == 1
     assert summary.unavailable_services == 1
     assert summary.state == "critical"
+    assert summary.critical_incidents == 1
     assert summary.critical_capability == "zwave.status"
+
+
+def test_partial_critical_dns_failure_only_degrades_logical_service() -> None:
+    now = datetime(2026, 8, 10, 14, 0, tzinfo=UTC)
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            home_assistant=MQTTHomeAssistantConfig(enabled=False),
+        ),
+        infrastructure=make_legacy_redundant_infrastructure(),
+        utc_now=lambda: now,
+        agent_version="1.12.3",
+    )
+    publisher.export(
+        observation(
+            node="zwave-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.UNHEALTHY,
+            timestamp=now,
+        )
+    )
+    publisher.export(
+        observation(
+            node="linky-01",
+            service="dns-secondary",
+            capability="dns.resolve",
+            status=ObservationStatus.HEALTHY,
+            timestamp=now,
+        )
+    )
+
+    summary = publisher.build_summary()
+
+    assert summary.active_alerts == 1
+    assert summary.state == "degraded"
+    assert summary.critical_incidents == 0
+    assert summary.degraded_services == 1
+    assert summary.unavailable_services == 0
+    assert summary.critical_service is None
+    assert summary.critical_equipment is None
+    assert summary.critical_capability is None
 
 
 def test_redundant_service_is_unavailable_when_all_instances_fail() -> None:

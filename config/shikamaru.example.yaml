@@ -36,6 +36,8 @@ vision:
   timeout_seconds: 5.0
   infrastructure_retry_seconds: 10.0
   infrastructure_refresh_seconds: 300.0
+  outbox_path: /var/lib/ohana-agent/vision-outbox.db
+  outbox_retry_seconds: 10.0
 
 administration:
   enabled: true

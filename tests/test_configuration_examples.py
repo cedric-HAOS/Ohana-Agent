@@ -1,5 +1,7 @@
 """Tests for the example configuration files."""
 
+from pathlib import Path
+
 from configuration.loader import ConfigurationLoader
 from loader.dhcp_config_loader import DHCPConfigLoader
 from loader.dns_config_loader import DNSConfigLoader
@@ -25,6 +27,10 @@ def test_shikamaru_example_configuration_is_valid() -> None:
     assert configuration.agent.name == "Shikamaru"
     assert configuration.mqtt.host == "localhost"
     assert configuration.vision.enabled is True
+    assert configuration.vision.outbox_path == Path(
+        "/var/lib/ohana-agent/vision-outbox.db"
+    )
+    assert configuration.vision.outbox_retry_seconds == 10.0
 
 
 def test_shikamaru_development_configuration_is_valid() -> None:

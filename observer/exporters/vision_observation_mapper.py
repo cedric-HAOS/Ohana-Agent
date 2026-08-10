@@ -35,11 +35,13 @@ class VisionObservationMapper:
         }
 
         return {
+            "observation_id": str(observation.id),
             "capability_id": observation.capability,
             "service_id": observation.service,
             "node_id": observation.node,
             "status": self._STATUS_MAPPING[observation.status],
             "observed_at": observation.timestamp.isoformat(),
+            "message": observation.message,
             "latency_ms": observation.latency_ms,
             "metadata": metadata,
         }

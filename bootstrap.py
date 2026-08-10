@@ -29,6 +29,7 @@ from builder import (
 )
 from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
+from configuration.enums import Environment
 from configuration.home_assistant_telemetry import (
     HomeAssistantTelemetryPluginConfig,
 )
@@ -72,11 +73,13 @@ from observer import (
     PluginObservationExecutor,
 )
 from observer.exporters import (
+    DurableVisionClient,
     HttpVisionClient,
     VisionClient,
     VisionInfrastructureMapper,
     VisionObservationExporter,
     VisionObservationMapper,
+    VisionObservationOutbox,
 )
 from plugin.plugin_context import PluginContext
 from plugin.plugin_manager import PluginManager
@@ -129,6 +132,8 @@ from scheduler import (
     Task,
 )
 from scheduler.clock import Clock, SystemClock
+
+DEFAULT_PRODUCTION_OUTBOX_PATH = Path("/var/lib/ohana-agent/vision-outbox.db")
 
 
 def _build_dhcp_tasks(
@@ -648,6 +653,7 @@ def build_production_agent(
     event_bus = EventBus()
 
     resolved_vision_client = vision_client
+    vision_export_runtime: DurableVisionClient | None = None
 
     if resolved_vision_client is None:
         if not configuration.vision.enabled:
@@ -655,11 +661,27 @@ def build_production_agent(
                 "Ohana-Vision export must be enabled for the production bootstrap."
             )
 
-        resolved_vision_client = HttpVisionClient(
+        http_vision_client = HttpVisionClient(
             observation_url=str(configuration.vision.observation_url),
             infrastructure_url=str(configuration.vision.infrastructure_url),
             timeout_seconds=(configuration.vision.timeout_seconds),
         )
+        outbox_path = configuration.vision.outbox_path
+        if (
+            outbox_path is None
+            and configuration.agent.environment is Environment.PRODUCTION
+        ):
+            outbox_path = DEFAULT_PRODUCTION_OUTBOX_PATH
+
+        if outbox_path is None:
+            resolved_vision_client = http_vision_client
+        else:
+            vision_export_runtime = DurableVisionClient(
+                http_vision_client,
+                VisionObservationOutbox(outbox_path),
+                retry_seconds=configuration.vision.outbox_retry_seconds,
+            )
+            resolved_vision_client = vision_export_runtime
 
     mqtt_home_assistant_publisher = MQTTHomeAssistantPublisher(
         config=mqtt_config,
@@ -1481,6 +1503,7 @@ def build_production_agent(
         infrastructure_reconfigure=reconfigure_infrastructure,
         teleinformation_ingestion_runtime=teleinformation_ingestion_runtime,
         home_assistant_publisher=mqtt_home_assistant_publisher,
+        vision_export_runtime=vision_export_runtime,
     )
 
     zwave_discovery_handler = ZWaveDiscoveryHandler(

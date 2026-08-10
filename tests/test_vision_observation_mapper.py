@@ -44,11 +44,13 @@ def test_mapper_builds_vision_observation_payload() -> None:
     payload = mapper.to_payload(build_observation())
 
     assert payload == {
+        "observation_id": "31ccf5d8-5af0-49c7-ae67-b74391c50173",
         "capability_id": "dns.resolve",
         "service_id": "dns-primary",
         "node_id": "infra-01",
         "status": "healthy",
         "observed_at": "2026-07-15T12:30:00+00:00",
+        "message": "DNS resolution succeeded.",
         "latency_ms": 12.5,
         "metadata": {
             "hostname": "example.com",
@@ -112,11 +114,13 @@ def test_mapper_only_emits_fields_accepted_by_vision() -> None:
     payload = mapper.to_payload(build_observation())
 
     assert set(payload) == {
+        "observation_id",
         "capability_id",
         "service_id",
         "node_id",
         "status",
         "observed_at",
+        "message",
         "latency_ms",
         "metadata",
     }

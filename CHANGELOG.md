@@ -6,6 +6,34 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.0] — Livraison durable vers Vision — 2026-08-10
+
+## Ajouté
+
+- Les observations destinées à Ohana-Vision sont enregistrées dans une outbox
+  SQLite avant leur première tentative d'envoi.
+- Un worker rejoue automatiquement le backlog dans son ordre d'origine après
+  une indisponibilité ou un redémarrage, sans dupliquer les observations déjà
+  acceptées par Vision.
+- Les réglages `vision.outbox_path` et `vision.outbox_retry_seconds` permettent
+  d'adapter le stockage et la cadence de reprise ; la production utilise par
+  défaut `/var/lib/ohana-agent/vision-outbox.db`.
+
+## Modifié
+
+- Le contrat Agent vers Vision expose désormais l'identifiant immuable et le
+  message de l'observation au premier niveau du document JSON.
+- Une panne de Vision après la synchronisation initiale ne suspend plus les
+  contrôles : les observations continuent et restent garanties sur disque.
+
+## Qualité
+
+- Tests de redémarrage, déduplication, ordre de rejeu et reprise automatique.
+- Suite complète, lint, formatage et installation isolée validés avant
+  publication.
+
+---
+
 # [1.11.11] — Alertes Home Assistant contextualisées — 2026-08-10
 
 ## Modifié

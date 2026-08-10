@@ -52,6 +52,16 @@ class HomeAssistantPublisherRuntime(Protocol):
         """Publish the offline state and disconnect."""
 
 
+class VisionExportRuntime(Protocol):
+    """Lifecycle exposed by the durable Vision observation client."""
+
+    def start(self) -> None:
+        """Start retrying queued observations."""
+
+    def stop(self) -> None:
+        """Stop retrying and close durable storage."""
+
+
 @dataclass(slots=True)
 class ProductionAgent:
     """Run the configured Ohana-Agent scheduler continuously."""
@@ -65,6 +75,7 @@ class ProductionAgent:
     administration_runtime: AdministrationRuntime | None = None
     teleinformation_ingestion_runtime: TeleinformationIngestionRuntime | None = None
     home_assistant_publisher: HomeAssistantPublisherRuntime | None = None
+    vision_export_runtime: VisionExportRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     monotonic_clock: Callable[[], float] = field(
         default=monotonic,
@@ -135,6 +146,7 @@ class ProductionAgent:
         self._start_administration()
         self._start_teleinformation_ingestion()
         self._start_home_assistant_publisher()
+        self._start_vision_export()
 
         if not self._synchronize_infrastructure():
             return
@@ -167,6 +179,7 @@ class ProductionAgent:
         self._start_administration()
         self._start_teleinformation_ingestion()
         self._start_home_assistant_publisher()
+        self._start_vision_export()
 
         try:
             while not self._stop_event.is_set():
@@ -214,6 +227,9 @@ class ProductionAgent:
 
         if self.home_assistant_publisher is not None:
             self.home_assistant_publisher.stop()
+
+        if self.vision_export_runtime is not None:
+            self.vision_export_runtime.stop()
 
         self._infrastructure_synchronized = False
         self._next_infrastructure_refresh_at = None
@@ -287,6 +303,10 @@ class ProductionAgent:
     def _start_home_assistant_publisher(self) -> None:
         if self.home_assistant_publisher is not None:
             self.home_assistant_publisher.start()
+
+    def _start_vision_export(self) -> None:
+        if self.vision_export_runtime is not None:
+            self.vision_export_runtime.start()
 
     def _tick_home_assistant_publisher(self) -> None:
         if self.home_assistant_publisher is not None:

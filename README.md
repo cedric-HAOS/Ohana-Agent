@@ -302,7 +302,9 @@ Le comportement est le suivant :
 3. une nouvelle tentative est effectuée toutes les 10 secondes ;
 4. après acceptation du snapshot, les observations démarrent ;
 5. le snapshot est renvoyé toutes les 5 minutes ;
-6. si Vision devient indisponible, les observations sont suspendues jusqu'à la resynchronisation.
+6. si Vision devient indisponible après le démarrage, chaque observation est
+   conservée dans une outbox SQLite et rejouée dans l'ordre dès son retour ;
+7. le scheduler continue ses contrôles pendant cette indisponibilité.
 
 Configuration :
 
@@ -314,7 +316,12 @@ vision:
   timeout_seconds: 5.0
   infrastructure_retry_seconds: 10.0
   infrastructure_refresh_seconds: 300.0
+  outbox_path: /var/lib/ohana-agent/vision-outbox.db
+  outbox_retry_seconds: 10.0
 ```
+
+L'identifiant immuable de chaque observation rend le rejeu idempotent côté
+Vision. L'outbox n'est supprimée qu'après un accusé de réception HTTP valide.
 
 ---
 

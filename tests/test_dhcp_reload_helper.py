@@ -4,11 +4,36 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from administration import dhcp_reload_helper
+
+
+def test_production_entrypoint_does_not_import_pydantic() -> None:
+    script = """
+import builtins
+original_import = builtins.__import__
+
+def guarded_import(name, *args, **kwargs):
+    if name == "pydantic" or name.startswith("pydantic."):
+        raise AssertionError("the DHCP reload entry point imported Pydantic")
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+import dhcp_reload_entrypoint
+assert callable(dhcp_reload_entrypoint.main)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def write_request(path: Path, stale_macs: list[str]) -> None:

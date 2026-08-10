@@ -6,6 +6,25 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.2] — Correctif santé hôte et helper DHCP — 2026-08-10
+
+## Corrigé
+
+- Les modèles MQTT Discovery des métriques hôte optionnelles produisent
+  désormais un template Jinja valide. CPU, charge normalisée, mémoire, swap,
+  disque et uptime hôte ne restent plus à `Inconnu` lorsque la valeur est
+  disponible.
+- Le point d'entrée privilégié du helper DHCP ne charge plus les modèles
+  Pydantic de l'API d'administration. Il reste exécutable lorsqu'une demande
+  DHCP arrive pendant le remplacement de l'environnement Python d'Agent.
+
+## Qualité
+
+- Tests de non-régression sur le modèle MQTT exact et sur l'absence
+  d'importation de Pydantic par le point d'entrée DHCP.
+
+---
+
 # [1.12.1] — Santé hôte et services redondants — 2026-08-10
 
 ## Ajouté

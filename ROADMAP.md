@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version publiée : 1.12.1 — Santé hôte et services redondants.**
+**Version préparée : 1.12.2 — Correctif santé hôte et helper DHCP.**
 
 Le socle actuel couvre notamment :
 

@@ -483,6 +483,15 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     )
     assert host_health_discovery["device"]["name"] == "Ohana Host"
     assert host_health_discovery["state_topic"] == "ohana/host/health"
+    host_cpu_discovery = next(
+        json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic == "homeassistant/sensor/ohana_host_cpu_usage/config"
+    )
+    assert host_cpu_discovery["value_template"] == (
+        "{{ value_json.cpu_percent if value_json.cpu_percent is not none "
+        "else 'unknown' }}"
+    )
     host_payload = next(
         json.loads(payload)
         for topic, payload, _qos, _retain in fake_client.published

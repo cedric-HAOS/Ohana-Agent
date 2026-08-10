@@ -592,7 +592,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             if nullable:
                 value_template = (
                     f"{{{{ value_json.{field} if value_json.{field} is not none "
-                    "else 'unknown' }}}}"
+                    f"else 'unknown' }}}}"
                 )
             return (
                 "sensor",

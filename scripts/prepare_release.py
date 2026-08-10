@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -13,6 +14,20 @@ ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 DIST_DIRECTORY = ROOT / "dist"
 CHECKSUMS_PATH = DIST_DIRECTORY / "SHA256SUMS"
+CONFIGURATION_ASSETS = (
+    Path("config/infrastructure.example.yaml"),
+    Path("config/shikamaru.example.yaml"),
+    Path("config/plugins/dhcp.example.yaml"),
+    Path("config/plugins/dns.example.yaml"),
+    Path("config/plugins/home-assistant-telemetry.example.yaml"),
+    Path("config/plugins/mqtt.example.yaml"),
+    Path("config/plugins/network.example.yaml"),
+    Path("config/plugins/ntp.example.yaml"),
+    Path("config/plugins/shelly-telemetry.example.yaml"),
+    Path("config/plugins/teleinformation.example.yaml"),
+    Path("config/plugins/wireguard.example.yaml"),
+    Path("config/plugins/zwave.example.yaml"),
+)
 
 
 def run_command(command: list[str | Path]) -> None:
@@ -90,6 +105,25 @@ def validate_wheel_version(
             "The wheel metadata does not contain the expected "
             f"version {expected_version!r}."
         )
+
+
+def copy_configuration_assets() -> tuple[Path, ...]:
+    """Copy every deployable example configuration into the release directory."""
+    assets: list[Path] = []
+    seen_names: set[str] = set()
+
+    for relative_path in CONFIGURATION_ASSETS:
+        source = ROOT / relative_path
+        if not source.is_file():
+            raise RuntimeError(f"Missing configuration asset: {relative_path}")
+        if source.name in seen_names:
+            raise RuntimeError(f"Duplicate configuration asset name: {source.name}")
+        seen_names.add(source.name)
+        destination = DIST_DIRECTORY / source.name
+        shutil.copy2(source, destination)
+        assets.append(destination)
+
+    return tuple(assets)
 
 
 def calculate_sha256(path: Path) -> str:
@@ -212,6 +246,7 @@ def main() -> int:
 
     wheel, sdist = find_distribution_artifacts(version)
     validate_wheel_version(wheel, version)
+    configuration_assets = copy_configuration_assets()
 
     print()
     print("Validating clean installation...")
@@ -224,7 +259,8 @@ def main() -> int:
 
     print()
     print("Generating SHA-256 checksums...")
-    write_checksums((wheel, sdist))
+    release_assets = (*configuration_assets, wheel, sdist)
+    write_checksums(release_assets)
 
     print()
     print("Release preparation succeeded.")
@@ -232,7 +268,7 @@ def main() -> int:
     print(f"Tag     : {tag}")
     print("Artifacts:")
 
-    for artifact in (wheel, sdist, CHECKSUMS_PATH):
+    for artifact in (*release_assets, CHECKSUMS_PATH):
         print(f" - {artifact.relative_to(ROOT)}")
 
     print()

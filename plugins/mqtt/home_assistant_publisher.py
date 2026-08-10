@@ -17,6 +17,7 @@ from configuration.infrastructure import InfrastructureConfig
 from observer.observation import Observation
 from observer.observation_exporter import ObservationExporter
 from observer.observation_status import ObservationStatus
+from plugins.mqtt.host_health import HostHealthMonitor, SystemHostProbe
 from plugins.mqtt.mqtt_config import MQTTConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         utc_now: Callable[[], datetime] | None = None,
         monotonic_clock: Callable[[], float] = monotonic,
         agent_version: str | None = None,
+        host_health_monitor: HostHealthMonitor | None = None,
     ) -> None:
         self.config = config
         self.infrastructure = infrastructure
@@ -90,6 +92,10 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._utc_now = utc_now or (lambda: datetime.now(UTC))
         self._monotonic_clock = monotonic_clock
         self._agent_version = agent_version or self._resolve_agent_version()
+        self._host_health_monitor = host_health_monitor or HostHealthMonitor(
+            SystemHostProbe(monotonic_clock=monotonic_clock),
+            utc_now=self._utc_now,
+        )
         self._client: Any | None = None
         self._connected = False
         self._started = False
@@ -229,6 +235,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 return
 
             self._publish_summary(force=False)
+            self._publish_host_health()
             self._next_heartbeat_at = now + self.config.home_assistant.heartbeat_seconds
 
     def export(self, observation: Observation) -> None:
@@ -294,6 +301,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         now = self._utc_now()
         observations = tuple(self._latest_observations.values())
         service_statuses = self._service_statuses(observations)
+        logical_service_statuses = self._logical_service_statuses(service_statuses)
         device_statuses = self._device_statuses(observations, service_statuses)
 
         known_device_statuses = tuple(
@@ -324,13 +332,13 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         )
 
         healthy_services = sum(
-            status == "healthy" for status in service_statuses.values()
+            status == "healthy" for status in logical_service_statuses.values()
         )
         degraded_services = sum(
-            status == "degraded" for status in service_statuses.values()
+            status == "degraded" for status in logical_service_statuses.values()
         )
         unavailable_services = sum(
-            status == "unhealthy" for status in service_statuses.values()
+            status == "unhealthy" for status in logical_service_statuses.values()
         )
 
         critical_services = {
@@ -409,6 +417,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._publish_discovery()
         self._safe_publish(self._status_topic(), "online", retain=True)
         self._publish_summary(force=True)
+        self._publish_host_health()
 
     def _on_disconnect(
         self,
@@ -458,6 +467,18 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
 
         if self._safe_publish(self._summary_topic(), payload, retain=True):
             self._last_summary_state = state
+
+    def _publish_host_health(self) -> None:
+        try:
+            snapshot = self._host_health_monitor.collect()
+        except Exception as error:
+            LOGGER.warning("Unable to collect host health: %s", error)
+            return
+        self._safe_publish(
+            self._host_health_topic(),
+            snapshot.to_json(),
+            retain=True,
+        )
 
     @staticmethod
     def _summary_state(
@@ -524,6 +545,21 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             "device": device,
             "origin": origin,
         }
+        host_state_topic = self._host_health_topic()
+        host_common = {
+            "state_topic": host_state_topic,
+            "availability_topic": availability_topic,
+            "payload_available": "online",
+            "payload_not_available": "offline",
+            "device": {
+                "identifiers": ["ohana-host"],
+                "name": "Ohana Host",
+                "manufacturer": "Ohana",
+                "model": "Agent Host",
+                "sw_version": self._agent_version,
+            },
+            "origin": origin,
+        }
 
         def sensor(
             object_id: str,
@@ -540,6 +576,33 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                     "unique_id": object_id,
                     "object_id": object_id,
                     "value_template": f"{{{{ value_json.{field} }}}}",
+                    **extra,
+                },
+            )
+
+        def host_sensor(
+            object_id: str,
+            name: str,
+            field: str,
+            *,
+            nullable: bool = False,
+            **extra: Any,
+        ) -> tuple[str, str, dict[str, Any]]:
+            value_template = f"{{{{ value_json.{field} }}}}"
+            if nullable:
+                value_template = (
+                    f"{{{{ value_json.{field} if value_json.{field} is not none "
+                    "else 'unknown' }}}}"
+                )
+            return (
+                "sensor",
+                object_id,
+                {
+                    **host_common,
+                    "name": name,
+                    "unique_id": object_id,
+                    "object_id": object_id,
+                    "value_template": value_template,
                     **extra,
                 },
             )
@@ -620,6 +683,114 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 state_class="measurement",
                 icon="mdi:clock-alert-outline",
             ),
+            host_sensor(
+                "ohana_host_health_state",
+                "État de santé",
+                "state",
+                icon="mdi:server-heart",
+                json_attributes_topic=host_state_topic,
+                json_attributes_template=(
+                    "{{ {"
+                    "'reasons': value_json.reasons, "
+                    "'hostname': value_json.hostname, "
+                    "'operating_system': value_json.operating_system, "
+                    "'kernel': value_json.kernel, "
+                    "'cpu_count': value_json.cpu_count, "
+                    "'memory_available_bytes': value_json.memory_available_bytes, "
+                    "'disk_free_bytes': value_json.disk_free_bytes, "
+                    "'agent_restarts': value_json.agent_restarts, "
+                    "'failed_systemd_units': value_json.failed_systemd_units"
+                    "} | tojson }}"
+                ),
+            ),
+            (
+                "binary_sensor",
+                "ohana_host_critical_incident",
+                {
+                    **host_common,
+                    "name": "Incident critique",
+                    "unique_id": "ohana_host_critical_incident",
+                    "object_id": "ohana_host_critical_incident",
+                    "value_template": (
+                        "{{ 'ON' if value_json.state == 'critical' else 'OFF' }}"
+                    ),
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "problem",
+                },
+            ),
+            host_sensor(
+                "ohana_host_cpu_usage",
+                "Utilisation CPU",
+                "cpu_percent",
+                nullable=True,
+                unit_of_measurement="%",
+                state_class="measurement",
+                icon="mdi:cpu-64-bit",
+            ),
+            host_sensor(
+                "ohana_host_load",
+                "Charge normalisée",
+                "load_1m_per_cpu",
+                nullable=True,
+                state_class="measurement",
+                icon="mdi:gauge",
+            ),
+            host_sensor(
+                "ohana_host_memory_usage",
+                "Utilisation mémoire",
+                "memory_percent",
+                nullable=True,
+                unit_of_measurement="%",
+                state_class="measurement",
+                icon="mdi:memory",
+            ),
+            host_sensor(
+                "ohana_host_swap_usage",
+                "Utilisation swap",
+                "swap_percent",
+                nullable=True,
+                unit_of_measurement="%",
+                state_class="measurement",
+                icon="mdi:swap-horizontal",
+            ),
+            host_sensor(
+                "ohana_host_disk_usage",
+                "Utilisation disque racine",
+                "disk_percent",
+                nullable=True,
+                unit_of_measurement="%",
+                state_class="measurement",
+                icon="mdi:harddisk",
+            ),
+            host_sensor(
+                "ohana_host_temperature",
+                "Température CPU",
+                "temperature_c",
+                nullable=True,
+                unit_of_measurement="°C",
+                device_class="temperature",
+                state_class="measurement",
+            ),
+            host_sensor(
+                "ohana_host_uptime",
+                "Uptime hôte",
+                "host_uptime_seconds",
+                nullable=True,
+                unit_of_measurement="s",
+                device_class="duration",
+                state_class="total_increasing",
+                icon="mdi:timer-outline",
+            ),
+            host_sensor(
+                "ohana_agent_uptime",
+                "Uptime Agent",
+                "agent_uptime_seconds",
+                unit_of_measurement="s",
+                device_class="duration",
+                state_class="total_increasing",
+                icon="mdi:timer-cog-outline",
+            ),
         )
 
     def _service_statuses(
@@ -642,6 +813,37 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             )
 
         return {key: self._most_severe(statuses) for key, statuses in grouped.items()}
+
+    def _logical_service_statuses(
+        self,
+        service_statuses: dict[tuple[str, str], str],
+    ) -> dict[tuple[str, ...], str]:
+        """Aggregate redundant instances into Home Assistant logical services."""
+        grouped: dict[tuple[str, ...], list[str]] = {}
+
+        for service in self.infrastructure.services:
+            if not service.enabled:
+                continue
+
+            status = service_statuses.get((service.node, service.id))
+            if status is None:
+                continue
+
+            availability_group = service.metadata.get("availability_group")
+            if isinstance(availability_group, str) and availability_group.strip():
+                key = ("availability_group", availability_group.strip())
+            else:
+                key = ("service", service.node, service.id)
+            grouped.setdefault(key, []).append(status)
+
+        return {
+            key: (
+                self._redundant_service_status(statuses)
+                if key[0] == "availability_group"
+                else self._most_severe(statuses)
+            )
+            for key, statuses in grouped.items()
+        }
 
     def _device_statuses(
         self,
@@ -785,11 +987,22 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             default="unknown",
         )
 
+    @staticmethod
+    def _redundant_service_status(statuses: list[str]) -> str:
+        """Return the availability of an at-least-one redundant service."""
+        unique_statuses = set(statuses)
+        if len(unique_statuses) == 1:
+            return statuses[0]
+        return "degraded"
+
     def _summary_topic(self) -> str:
         return f"{self.config.home_assistant.topic_prefix}/health/summary"
 
     def _status_topic(self) -> str:
         return f"{self.config.home_assistant.topic_prefix}/status"
+
+    def _host_health_topic(self) -> str:
+        return f"{self.config.home_assistant.topic_prefix}/host/health"
 
     def _cleanup_client(self) -> None:
         client = self._client

@@ -11,6 +11,7 @@ from configuration.infrastructure import InfrastructureConfig
 from observer.observation import Observation
 from observer.observation_status import ObservationStatus
 from plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
+from plugins.mqtt.host_health import HostHealthSnapshot
 from plugins.mqtt.mqtt_config import (
     MQTTBrokerConfig,
     MQTTConfig,
@@ -78,6 +79,35 @@ class FakePahoClient:
         self.loop_stopped = True
 
 
+class FakeHostHealthMonitor:
+    def __init__(self) -> None:
+        self.collections = 0
+
+    def collect(self) -> HostHealthSnapshot:
+        self.collections += 1
+        return HostHealthSnapshot(
+            state="degraded",
+            reasons=("memory_degraded",),
+            updated_at="2026-08-10T15:00:00+00:00",
+            hostname="infra-01",
+            operating_system="Linux",
+            kernel="6.12",
+            cpu_count=4,
+            cpu_percent=42.0,
+            load_1m_per_cpu=0.5,
+            memory_percent=86.0,
+            memory_available_bytes=1_000_000,
+            swap_percent=2.0,
+            disk_percent=30.0,
+            disk_free_bytes=10_000_000,
+            temperature_c=55.0,
+            host_uptime_seconds=3600,
+            agent_uptime_seconds=600,
+            agent_restarts=0,
+            failed_systemd_units=(),
+        )
+
+
 def make_infrastructure() -> InfrastructureConfig:
     return InfrastructureConfig.model_validate(
         {
@@ -131,6 +161,38 @@ def make_infrastructure() -> InfrastructureConfig:
             },
         }
     )
+
+
+def make_redundant_infrastructure() -> InfrastructureConfig:
+    payload = make_infrastructure().model_dump(mode="json")
+    payload["nodes"].append(
+        {
+            "id": "linky-01",
+            "name": "LINKY-01",
+            "endpoint": {"type": "ip", "address": "192.168.1.12"},
+        }
+    )
+    payload["services"][0]["node"] = "zwave-01"
+    payload["services"][0]["metadata"] = {"availability_group": "dns"}
+    payload["services"].append(
+        {
+            "id": "dns-secondary",
+            "name": "DNS secondaire",
+            "type": "dns",
+            "node": "linky-01",
+            "critical": True,
+            "metadata": {"availability_group": "dns"},
+        }
+    )
+    payload["topology"]["devices"].append(
+        {
+            "id": "linky-01-device",
+            "label": "LINKY-01",
+            "kind": "raspberry_pi",
+            "node": "linky-01",
+        }
+    )
+    return InfrastructureConfig.model_validate(payload)
 
 
 def observation(
@@ -233,6 +295,82 @@ def test_health_summary_matches_vision_device_health_rules() -> None:
     ]
 
 
+def test_health_summary_aggregates_redundant_service_instances() -> None:
+    now = datetime(2026, 8, 10, 14, 0, tzinfo=UTC)
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            home_assistant=MQTTHomeAssistantConfig(enabled=False),
+        ),
+        infrastructure=make_redundant_infrastructure(),
+        utc_now=lambda: now,
+        agent_version="1.12.0",
+    )
+    publisher.export(
+        observation(
+            node="zwave-01",
+            service="dns-primary",
+            capability="dns.resolve",
+            status=ObservationStatus.UNHEALTHY,
+            timestamp=now,
+        )
+    )
+    publisher.export(
+        observation(
+            node="linky-01",
+            service="dns-secondary",
+            capability="dns.resolve",
+            status=ObservationStatus.HEALTHY,
+            timestamp=now,
+        )
+    )
+    publisher.export(
+        observation(
+            node="zwave-01",
+            service="zwave-primary",
+            capability="zwave.status",
+            status=ObservationStatus.UNHEALTHY,
+            timestamp=now + timedelta(seconds=1),
+        )
+    )
+
+    summary = publisher.build_summary()
+
+    assert summary.active_alerts == 2
+    assert summary.healthy_services == 0
+    assert summary.degraded_services == 1
+    assert summary.unavailable_services == 1
+    assert summary.state == "critical"
+    assert summary.critical_capability == "zwave.status"
+
+
+def test_redundant_service_is_unavailable_when_all_instances_fail() -> None:
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            home_assistant=MQTTHomeAssistantConfig(enabled=False),
+        ),
+        infrastructure=make_redundant_infrastructure(),
+        agent_version="1.12.0",
+    )
+    for node, service in (
+        ("zwave-01", "dns-primary"),
+        ("linky-01", "dns-secondary"),
+    ):
+        publisher.export(
+            observation(
+                node=node,
+                service=service,
+                capability="dns.resolve",
+                status=ObservationStatus.UNHEALTHY,
+            )
+        )
+
+    summary = publisher.build_summary()
+
+    assert summary.active_alerts == 2
+    assert summary.degraded_services == 0
+    assert summary.unavailable_services == 1
+
+
 def test_health_summary_counts_stale_capabilities() -> None:
     now = datetime(2026, 7, 28, 14, 10, tzinfo=UTC)
     publisher = MQTTHomeAssistantPublisher(
@@ -282,6 +420,7 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
         utc_now=lambda: datetime(2026, 7, 28, 14, 0, tzinfo=UTC),
         monotonic_clock=lambda: 10.0,
         agent_version="1.8.1",
+        host_health_monitor=FakeHostHealthMonitor(),
     )
 
     publisher.start()
@@ -296,6 +435,7 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     assert "homeassistant/sensor/ohana_last_evaluation/config" in topics
     assert "ohana/status" in topics
     assert "ohana/health/summary" in topics
+    assert "ohana/host/health" in topics
     summary_publications = [
         publication
         for publication in fake_client.published
@@ -336,11 +476,64 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
     assert "affected_capabilities" in attributes_template
     assert "alerts" in attributes_template
 
+    host_health_discovery = next(
+        json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic == "homeassistant/sensor/ohana_host_health_state/config"
+    )
+    assert host_health_discovery["device"]["name"] == "Ohana Host"
+    assert host_health_discovery["state_topic"] == "ohana/host/health"
+    host_payload = next(
+        json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic == "ohana/host/health"
+    )
+    assert host_payload["state"] == "degraded"
+    assert host_payload["reasons"] == ["memory_degraded"]
+
     publisher.stop()
 
     assert fake_client.disconnected is True
     assert fake_client.loop_stopped is True
     assert fake_client.published[-1][:2] == ("ohana/status", "offline")
+
+
+def test_publisher_refreshes_host_health_on_heartbeat() -> None:
+    fake_client = FakePahoClient()
+    host_health_monitor = FakeHostHealthMonitor()
+    clock = [10.0]
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            brokers=[
+                MQTTBrokerConfig(
+                    name="mqtt-primary",
+                    address="192.168.1.247",
+                )
+            ],
+            home_assistant=MQTTHomeAssistantConfig(
+                enabled=True,
+                heartbeat_seconds=60,
+            ),
+        ),
+        infrastructure=make_infrastructure(),
+        client_factory=lambda _client_id: fake_client,
+        monotonic_clock=lambda: clock[0],
+        host_health_monitor=host_health_monitor,
+    )
+    publisher.start()
+
+    publisher.tick()
+    clock[0] = 70.0
+    publisher.tick()
+
+    host_publications = [
+        publication
+        for publication in fake_client.published
+        if publication[0] == "ohana/host/health"
+    ]
+    assert host_health_monitor.collections == 2
+    assert len(host_publications) == 2
+    assert all(publication[3] is True for publication in host_publications)
 
 
 def test_publisher_ignores_timestamp_and_message_only_changes() -> None:

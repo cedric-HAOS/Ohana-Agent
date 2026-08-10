@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version publiée : 1.12.0 — Livraison durable vers Vision.**
+**Version publiée : 1.12.1 — Santé hôte et services redondants.**
 
 Le socle actuel couvre notamment :
 
@@ -25,6 +25,8 @@ Le socle actuel couvre notamment :
   Téléinformation et télémétrie Home Assistant ;
 - les plages de surveillance et l'état suspendu neutre ;
 - la publication MQTT Discovery vers Home Assistant ;
+- la santé de la machine hôte et l'agrégation des services redondants dans
+  Home Assistant ;
 - la livraison durable et ordonnée des observations vers Vision.
 
 Le détail exhaustif des versions et correctifs publiés est conservé dans le

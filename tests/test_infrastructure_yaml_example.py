@@ -58,6 +58,8 @@ def test_infrastructure_example_yaml_declares_services() -> None:
     services_by_id = {service["id"]: service for service in services}
     assert services_by_id["dhcp-primary"]["type"] == "dhcp"
     assert services_by_id["dhcp-primary"]["node"] == "infra-01"
+    assert services_by_id["dns-primary"]["metadata"]["availability_group"] == "dns"
+    assert services_by_id["dns-secondary"]["metadata"]["availability_group"] == "dns"
     assert services_by_id["wireguard-freebox"]["type"] == "wireguard"
     assert services_by_id["wireguard-freebox"]["node"] == "box-01"
     assert (

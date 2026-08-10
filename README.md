@@ -74,6 +74,25 @@ Ohana-Installer le copie vers ce chemin de production. Dans le dépôt,
 tests de démarrage. Les commandes locales complètes utilisent le fichier
 `.example`, sans jamais dupliquer la configuration dans Vision.
 
+Les instances redondantes d'un même service peuvent partager la métadonnée
+`availability_group`. Le résumé Home Assistant les compte alors comme un seul
+service logique : toutes disponibles signifie sain, toutes indisponibles
+signifie indisponible, et tout état intermédiaire signifie dégradé. Les alertes
+actives restent détaillées par instance.
+
+```yaml
+metadata:
+  availability_group: dns
+```
+
+Agent publie également un appareil MQTT Discovery séparé, **Ohana Host**. Il
+expose l'état synthétique de la machine hôte, CPU, charge par cœur, mémoire,
+swap, disque racine, température disponible, uptime hôte et uptime Agent. Les
+attributs indiquent les raisons actives, l'espace libre, les redémarrages
+systemd d'Agent et les éventuelles unités `ohana-*` en échec. Les métriques de
+ressources doivent dépasser leur seuil pendant trois mesures consécutives ; le
+disque presque plein et les incidents systemd sont immédiats.
+
 Le document d'infrastructure définit notamment :
 
 - l'identité de l'infrastructure ;

@@ -6,6 +6,37 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.1] — Santé hôte et services redondants — 2026-08-10
+
+## Ajouté
+
+- Agent publie dans Home Assistant un appareil « Ohana Host » distinct avec
+  l'état synthétique de la machine, le CPU, la charge normalisée, la mémoire,
+  le swap, le disque racine, la température lorsqu'elle est disponible et les
+  uptimes de l'hôte et d'Agent.
+- Les redémarrages automatiques d'Agent et les unités systemd Ohana en échec
+  sont exposés avec les raisons de dégradation ou d'incident critique.
+- Les pressions CPU, charge, mémoire, swap et température doivent persister
+  pendant trois mesures avant d'affecter la santé ; un disque presque plein,
+  une boucle de redémarrage ou une unité Ohana en échec sont signalés
+  immédiatement.
+
+## Modifié
+
+- Les instances partageant `metadata.availability_group` sont comptées comme
+  un service logique dans la synthèse Home Assistant. Une panne partielle du
+  DNS redondant produit ainsi un service dégradé, sans masquer les alertes
+  techniques propres à chaque instance.
+
+## Qualité
+
+- Tests déterministes de collecte procfs/sysfs, seuils persistants,
+  récupération, incidents immédiats, MQTT Discovery et agrégation DNS.
+- Suite complète, lint, formatage, paquets et installation isolée validés avant
+  publication.
+
+---
+
 # [1.12.0] — Livraison durable vers Vision — 2026-08-10
 
 ## Ajouté

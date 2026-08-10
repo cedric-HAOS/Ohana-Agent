@@ -79,6 +79,8 @@ services:
     implementation: AdGuard Home
     enabled: true
     critical: true
+    metadata:
+      availability_group: dns
 
   - id: zwave-primary
     name: Z-Wave JS
@@ -97,6 +99,8 @@ services:
     implementation: AdGuard Home
     enabled: true
     critical: true
+    metadata:
+      availability_group: dns
 
   - id: teleinformation
     name: Téléinformation Linky

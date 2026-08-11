@@ -100,6 +100,11 @@ validate_environment() {
             "Configuration file not found: " \
             "${CONFIG_ROOT}/plugins/teleinformation.yaml"
 
+    [[ -f "${CONFIG_ROOT}/plugins/backup.yaml" ]] \
+        || fail \
+            "Configuration file not found: " \
+            "${CONFIG_ROOT}/plugins/backup.yaml"
+
     [[ -e "${PACKAGE_SOURCE}" ]] \
         || fail "Package source not found: ${PACKAGE_SOURCE}"
 

@@ -1,3 +1,4 @@
+from builder.backup_configuration_builder import BackupConfigurationBuilder
 from builder.dhcp_configuration_builder import DHCPConfigurationBuilder
 from builder.dns_configuration_builder import DNSConfigurationBuilder
 from builder.home_assistant_telemetry_configuration_builder import (
@@ -17,6 +18,7 @@ from builder.wireguard_configuration_builder import WireGuardConfigurationBuilde
 from builder.zwave_configuration_builder import ZWaveConfigurationBuilder
 
 __all__ = [
+    "BackupConfigurationBuilder",
     "DHCPConfigurationBuilder",
     "DNSConfigurationBuilder",
     "HomeAssistantTelemetryConfigurationBuilder",

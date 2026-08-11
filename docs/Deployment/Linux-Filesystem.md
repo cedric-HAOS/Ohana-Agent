@@ -355,6 +355,7 @@ avec les chemins de configuration explicites :
 --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml
 --home-assistant-telemetry-config /etc/ohana-agent/plugins/home-assistant-telemetry.yaml
 --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml
+--backup-config /etc/ohana-agent/plugins/backup.yaml
 ```
 
 Le service ne doit pas dépendre du répertoire courant pour retrouver ses fichiers.
@@ -475,6 +476,7 @@ Le service Linux utilise les arguments déjà fournis par Ohana-Agent :
 | `--wireguard-config` | `/etc/ohana-agent/plugins/wireguard.yaml` |
 | `--home-assistant-telemetry-config` | `/etc/ohana-agent/plugins/home-assistant-telemetry.yaml` |
 | `--teleinformation-config` | `/etc/ohana-agent/plugins/teleinformation.yaml` |
+| `--backup-config` | `/etc/ohana-agent/plugins/backup.yaml` |
 | `--log-level`      | niveau choisi par le service            |
 
 Commande de référence :
@@ -492,6 +494,7 @@ Commande de référence :
   --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
   --home-assistant-telemetry-config /etc/ohana-agent/plugins/home-assistant-telemetry.yaml \
   --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml \
+  --backup-config /etc/ohana-agent/plugins/backup.yaml \
   --log-level INFO
 ```
 
@@ -515,6 +518,7 @@ config/plugins/zwave.yaml
 config/plugins/wireguard.yaml
 config/plugins/home-assistant-telemetry.yaml
 config/plugins/teleinformation.yaml
+config/plugins/backup.yaml
 ```
 
 Ils permettent de lancer localement :

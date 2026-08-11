@@ -43,3 +43,13 @@ def test_cron_trigger_supports_steps() -> None:
     assert trigger.is_due(datetime(2026, 1, 1, 12, 0, tzinfo=UTC)) is True
     assert trigger.is_due(datetime(2026, 1, 1, 12, 15, tzinfo=UTC)) is True
     assert trigger.is_due(datetime(2026, 1, 1, 12, 10, tzinfo=UTC)) is False
+
+
+def test_cron_trigger_fires_only_once_during_matching_minute() -> None:
+    trigger = CronTrigger("30 2 * * *")
+    first_tick = datetime(2026, 1, 1, 2, 30, 1, tzinfo=UTC)
+
+    assert trigger.is_due(first_tick) is True
+    trigger.mark_executed(first_tick)
+
+    assert trigger.is_due(datetime(2026, 1, 1, 2, 30, 59, tzinfo=UTC)) is False

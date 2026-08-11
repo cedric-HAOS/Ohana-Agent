@@ -41,7 +41,12 @@ class CronTrigger(BaseTrigger):
 
     def is_due(self, now: datetime) -> bool:
         normalized = now.replace(second=0, microsecond=0)
-        return self._matches(normalized)
+        last_execution = self.last_executed_at
+        already_executed = (
+            last_execution is not None
+            and last_execution.replace(second=0, microsecond=0) == normalized
+        )
+        return self._matches(normalized) and not already_executed
 
     def _mark_executed(self, executed_at: datetime) -> None:
         pass

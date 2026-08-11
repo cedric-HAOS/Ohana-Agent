@@ -1,0 +1,10 @@
+# HAOS-to-iCloud backup plugin. Activation requires HAOS tokens and rclone.
+enabled: false
+rclone_binary: /usr/bin/rclone
+rclone_config_path: /etc/ohana-agent/rclone.conf
+rclone_remote: icloud:Ohana/Backups
+environment_file: /etc/ohana-agent/backup.env
+temporary_directory: /run/ohana-agent/backup
+require_tmpfs: true
+chunk_size_bytes: 1048576
+targets: []

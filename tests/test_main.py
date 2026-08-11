@@ -54,6 +54,7 @@ def test_parse_arguments_uses_default_configuration_paths(
     assert arguments.teleinformation_config == Path(
         "config/plugins/teleinformation.yaml"
     )
+    assert arguments.backup_config == Path("config/plugins/backup.yaml")
     assert arguments.log_level == "INFO"
 
 
@@ -87,6 +88,8 @@ def test_parse_arguments_accepts_custom_paths(
             "custom/shelly-telemetry.yaml",
             "--teleinformation-config",
             "custom/teleinformation.yaml",
+            "--backup-config",
+            "custom/backup.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -105,6 +108,7 @@ def test_parse_arguments_accepts_custom_paths(
     assert arguments.wireguard_config == Path("custom/wireguard.yaml")
     assert arguments.shelly_telemetry_config == Path("custom/shelly-telemetry.yaml")
     assert arguments.teleinformation_config == Path("custom/teleinformation.yaml")
+    assert arguments.backup_config == Path("custom/backup.yaml")
     assert arguments.log_level == "DEBUG"
 
 
@@ -265,6 +269,8 @@ def test_main_builds_and_runs_production_agent(
             "custom/shelly-telemetry.yaml",
             "--teleinformation-config",
             "custom/teleinformation.yaml",
+            "--backup-config",
+            "custom/backup.yaml",
             "--log-level",
             "DEBUG",
         ],
@@ -291,6 +297,7 @@ def test_main_builds_and_runs_production_agent(
         wireguard_config_path: Path,
         home_assistant_telemetry_config_path: Path,
         teleinformation_config_path: Path,
+        backup_config_path: Path,
     ) -> FakeAgent:
         calls.append(
             (
@@ -306,6 +313,7 @@ def test_main_builds_and_runs_production_agent(
                 wireguard_config_path,
                 home_assistant_telemetry_config_path,
                 teleinformation_config_path,
+                backup_config_path,
             )
         )
         return fake_agent
@@ -356,6 +364,7 @@ def test_main_builds_and_runs_production_agent(
             Path("custom/wireguard.yaml"),
             Path("custom/shelly-telemetry.yaml"),
             Path("custom/teleinformation.yaml"),
+            Path("custom/backup.yaml"),
         ),
         (
             "install_signal_handlers",

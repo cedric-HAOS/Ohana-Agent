@@ -6,6 +6,38 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.4] — Sauvegardes HAOS chiffrées vers iCloud — 2026-08-11
+
+## Ajouté
+
+- Le plugin `backup` crée des sauvegardes complètes et chiffrées de HA-01,
+  LINKY-01 et ZWAVE-01, puis les transmet directement à iCloud avec `rclone`
+  sans écrire l'archive sur la carte microSD d'INFRA-01.
+- Chaque cible dispose de sa propre activation, adresse HAOS, heure
+  quotidienne, délai, politique TLS et action préparatoire optionnelle. La
+  cible ZWAVE-01 peut ainsi attendre un export NVM avant la sauvegarde HAOS.
+- L'administration Agent expose la configuration du plugin à Vision et
+  l'applique immédiatement avec replanification atomique des tâches.
+
+## Sécurité
+
+- Les jetons HAOS et mots de passe de chiffrement sont lus depuis le fichier
+  protégé `/etc/ohana-agent/backup.env` ou depuis l'environnement du processus,
+  sans être renvoyés à Vision.
+- Une ancienne sauvegarde Ohana n'est supprimée du HAOS qu'après envoi de
+  l'archive, validation de sa taille distante et publication de son SHA-256.
+- Les fichiers temporaires rclone sont refusés hors `tmpfs` par défaut.
+- Le diagnostic immédiat vérifie les accès HAOS et rclone sans créer, envoyer
+  ni supprimer de sauvegarde.
+
+## Qualité
+
+- Tests de configuration, planification cron, API HAOS, chiffrement, streaming,
+  validation distante, rotation locale, lecture sécurisée des secrets et
+  administration depuis Vision.
+
+---
+
 # [1.12.3] — Santé hôte partagée et uptimes lisibles — 2026-08-10
 
 ## Modifié

@@ -11,6 +11,7 @@ def test_configuration_assets_match_deployable_examples() -> None:
     assert {path.as_posix() for path in prepare_release.CONFIGURATION_ASSETS} == {
         "config/infrastructure.example.yaml",
         "config/shikamaru.example.yaml",
+        "config/plugins/backup.example.yaml",
         "config/plugins/dhcp.example.yaml",
         "config/plugins/dns.example.yaml",
         "config/plugins/home-assistant-telemetry.example.yaml",

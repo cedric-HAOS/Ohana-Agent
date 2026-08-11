@@ -1,3 +1,4 @@
+from loader.backup_config_loader import BackupConfigLoader
 from loader.dhcp_config_loader import DHCPConfigLoader
 from loader.dns_config_loader import DNSConfigLoader
 from loader.home_assistant_telemetry_config_loader import (
@@ -13,6 +14,7 @@ from loader.wireguard_config_loader import WireGuardConfigLoader
 from loader.zwave_config_loader import ZWaveConfigLoader
 
 __all__ = [
+    "BackupConfigLoader",
     "DHCPConfigLoader",
     "DNSConfigLoader",
     "HomeAssistantTelemetryConfigLoader",

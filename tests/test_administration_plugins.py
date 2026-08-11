@@ -10,11 +10,13 @@ from administration import (
     PluginAdministrationBinding,
     PluginAdministrationRepository,
 )
+from configuration.backup import BackupPluginConfig
 from configuration.dns import DNSPluginConfig
 from configuration.mqtt_plugin import MQTTPluginConfig
 from observer import ObserverResult
 from plugin.plugin_context import PluginContext
 from plugin.plugin_manager import PluginManager
+from plugins.backup.backup_plugin import BackupPlugin
 from plugins.dns.dns_plugin import DNSPlugin
 from plugins.mqtt.mqtt_plugin import MQTTPlugin
 from scheduler import IntervalTrigger, Scheduler, Task
@@ -324,3 +326,73 @@ tls:
     persisted = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
     assert persisted["authentication"]["password"] == "super-secret"
     assert persisted["interval_seconds"] == 120
+
+
+def test_backup_environment_secrets_are_reported_without_being_exposed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuration_path = tmp_path / "backup.yaml"
+    configuration_path.write_text(
+        """\
+enabled: false
+rclone_remote: icloud:Ohana/Backups
+targets:
+  - id: ha-01
+    label: HA-01
+    enabled: true
+    url: http://ha-01.ohana.lan:8123
+    token_environment_variable: HA_TOKEN
+    password_environment_variable: HA_PASSWORD
+    schedule: 0 2 * * *
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HA_TOKEN", "secret-token")
+    context = PluginContext(
+        event_bus=FakeEventBus(),
+        scheduler=None,
+        dispatcher=None,
+        memory=None,
+        capability_manager=None,
+        configuration=object(),
+        runtime=object(),
+    )
+    manager = PluginManager(context=context)
+    manager.register(BackupPlugin())
+    applied: list[BackupPluginConfig] = []
+    repository = PluginAdministrationRepository(
+        plugin_manager=manager,
+        scheduler=Scheduler(),
+        bindings=(
+            PluginAdministrationBinding(
+                identifier="backup",
+                display_name="Sauvegardes HAOS",
+                capabilities=("backup.run",),
+                configuration_path=configuration_path,
+                configuration_model=BackupPluginConfig,
+                apply_configuration=applied.append,
+                test_plugin=lambda: ObserverResult(success=True),
+            ),
+        ),
+    )
+
+    current = repository.read("backup")
+    target = current.configuration["targets"][0]
+    assert target["token_configured"] is True
+    assert target["password_configured"] is False
+    assert "secret-token" not in str(current.configuration)
+
+    updated = repository.write(
+        "backup",
+        {
+            "enabled": True,
+            "configuration": current.configuration,
+        },
+    )
+
+    assert updated.enabled is True
+    assert applied[-1].targets[0].url == "http://ha-01.ohana.lan:8123"
+    persisted = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
+    assert "token_configured" not in persisted["targets"][0]
+    assert "password_configured" not in persisted["targets"][0]

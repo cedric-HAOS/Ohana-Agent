@@ -640,6 +640,17 @@ considérés comme périmés. La capacité publiée reste
 Le mode `home_assistant` et les anciens identifiants d’entités restent acceptés
 pendant la migration des installations 1.8.x et 1.9.x.
 
+## Plugin de sauvegarde HAOS
+
+Le plugin `backup` demande une sauvegarde complète chiffrée à chaque instance
+Home Assistant OS, la transmet directement à iCloud avec rclone et conserve une
+seule sauvegarde Ohana locale après validation distante. L'archive ne transite
+jamais par le stockage persistant d'INFRA-01 ; les éventuels fichiers temporaires
+sont limités à un `tmpfs` vérifié.
+
+La configuration et la procédure de sécurité sont détaillées dans
+[`docs/Backup.md`](docs/Backup.md).
+
 ---
 
 # Installation de développement
@@ -689,7 +700,8 @@ ohana-agent \
   --zwave-config config/plugins/zwave.yaml \
   --wireguard-config config/plugins/wireguard.yaml \
   --home-assistant-telemetry-config config/plugins/home-assistant-telemetry.yaml \
-  --teleinformation-config config/plugins/teleinformation.yaml
+  --teleinformation-config config/plugins/teleinformation.yaml \
+  --backup-config config/plugins/backup.yaml
 ```
 
 Version :

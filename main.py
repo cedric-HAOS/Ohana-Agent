@@ -102,6 +102,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Linky teleinformation observation plugin configuration file.",
     )
     parser.add_argument(
+        "--backup-config",
+        type=Path,
+        default=Path("config/plugins/backup.yaml"),
+        help="HAOS streaming backup plugin configuration file.",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=[
@@ -185,6 +191,7 @@ def main() -> int:
             arguments.home_assistant_telemetry_config
         ),
         teleinformation_config_path=arguments.teleinformation_config,
+        backup_config_path=arguments.backup_config,
     )
 
     install_signal_handlers(agent)

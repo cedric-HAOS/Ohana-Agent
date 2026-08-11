@@ -211,6 +211,7 @@ def test_sdist_contains_configuration_examples_only(
     required_examples = {
         "config/shikamaru.example.yaml",
         "config/infrastructure.example.yaml",
+        "config/plugins/backup.example.yaml",
         "config/plugins/dhcp.example.yaml",
         "config/plugins/dns.example.yaml",
         "config/plugins/ntp.example.yaml",
@@ -226,6 +227,7 @@ def test_sdist_contains_configuration_examples_only(
     forbidden_active_configuration = {
         "config/shikamaru.yaml",
         "config/infrastructure.yaml",
+        "config/plugins/backup.yaml",
         "config/plugins/dhcp.yaml",
         "config/plugins/dns.yaml",
         "config/plugins/ntp.yaml",

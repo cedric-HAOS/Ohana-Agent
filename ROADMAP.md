@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.12.3 — Santé hôte partagée et uptimes lisibles.**
+**Version préparée : 1.12.4 — Sauvegardes HAOS chiffrées vers iCloud.**
 
 Le socle actuel couvre notamment :
 
@@ -28,6 +28,8 @@ Le socle actuel couvre notamment :
 - la santé de la machine hôte, partagée avec Home Assistant et Vision, et
   l'agrégation des services redondants dans Home Assistant ;
 - la livraison durable et ordonnée des observations vers Vision.
+- les sauvegardes HAOS chiffrées vers iCloud, sans archive persistante sur la
+  carte microSD d'INFRA-01 et avec rotation uniquement après validation distante.
 
 Le détail exhaustif des versions et correctifs publiés est conservé dans le
 [CHANGELOG](CHANGELOG.md).

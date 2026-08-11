@@ -22,6 +22,7 @@ from administration.models import (
 from observer.observer_result import ObserverResult
 from plugin.plugin_manager import PluginManager
 from plugin.plugin_state import PluginState
+from plugins.backup.backup_secrets import resolve_backup_secret
 from scheduler import Scheduler, Task
 
 LOGGER = logging.getLogger(__name__)
@@ -119,7 +120,9 @@ class PluginAdministrationRepository:
         configuration_payload = dict(update.configuration)
         configuration_payload["enabled"] = update.enabled
 
-        if identifier == "mqtt":
+        if identifier == "backup":
+            self._strip_backup_runtime_status(configuration_payload)
+        elif identifier == "mqtt":
             self._preserve_mqtt_password(
                 configuration_payload,
                 current_configuration,
@@ -147,7 +150,6 @@ class PluginAdministrationRepository:
                 current_configuration,
                 field_name="ingestion_token",
             )
-
         configuration = binding.configuration_model.model_validate(
             configuration_payload
         )
@@ -381,8 +383,39 @@ class PluginAdministrationRepository:
                 payload,
                 field_name="ingestion_token",
             )
+        elif identifier == "backup":
+            targets = payload.get("targets", [])
+            environment_file = str(getattr(configuration, "environment_file", ""))
+            if isinstance(targets, list):
+                for target in targets:
+                    if not isinstance(target, dict):
+                        continue
+                    token_name = target.get("token_environment_variable")
+                    password_name = target.get("password_environment_variable")
+                    try:
+                        target["token_configured"] = bool(
+                            isinstance(token_name, str)
+                            and resolve_backup_secret(environment_file, token_name)
+                        )
+                        target["password_configured"] = bool(
+                            isinstance(password_name, str)
+                            and resolve_backup_secret(environment_file, password_name)
+                        )
+                    except OSError:
+                        target["token_configured"] = False
+                        target["password_configured"] = False
 
         return payload
+
+    @staticmethod
+    def _strip_backup_runtime_status(payload: dict[str, Any]) -> None:
+        targets = payload.get("targets", [])
+        if not isinstance(targets, list):
+            return
+        for target in targets:
+            if isinstance(target, dict):
+                target.pop("token_configured", None)
+                target.pop("password_configured", None)
 
     @staticmethod
     def _mask_secret(

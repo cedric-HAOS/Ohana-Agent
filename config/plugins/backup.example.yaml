@@ -1,0 +1,48 @@
+# Stream encrypted Home Assistant OS backups directly to iCloud Drive.
+# No archive is written to INFRA-01. /run must remain a RAM-backed filesystem.
+enabled: false
+
+rclone_binary: /usr/bin/rclone
+rclone_config_path: /etc/ohana-agent/rclone.conf
+rclone_remote: icloud:Ohana/Backups
+environment_file: /etc/ohana-agent/backup.env
+temporary_directory: /run/ohana-agent/backup
+require_tmpfs: true
+chunk_size_bytes: 1048576
+
+targets:
+  - id: ha-01
+    label: HA-01
+    enabled: true
+    url: http://ha-01.ohana.lan:8123
+    token_environment_variable: OHANA_BACKUP_HA_01_TOKEN
+    password_environment_variable: OHANA_BACKUP_HA_01_PASSWORD
+    schedule: "0 2 * * *"
+    verify_tls: true
+    timeout: 900
+
+  - id: linky-01
+    label: LINKY-01
+    enabled: true
+    url: http://linky-01.ohana.lan:8123
+    token_environment_variable: OHANA_BACKUP_LINKY_01_TOKEN
+    password_environment_variable: OHANA_BACKUP_LINKY_01_PASSWORD
+    schedule: "0 3 * * *"
+    verify_tls: true
+    timeout: 600
+
+  - id: zwave-01
+    label: ZWAVE-01
+    enabled: true
+    url: http://zwave-01.ohana.lan:8123
+    token_environment_variable: OHANA_BACKUP_ZWAVE_01_TOKEN
+    password_environment_variable: OHANA_BACKUP_ZWAVE_01_PASSWORD
+    schedule: "0 4 * * *"
+    verify_tls: true
+    timeout: 600
+    # This action must block until Z-Wave JS UI has written a fresh NVM export
+    # into its persistent store. The following script is deployment-specific.
+    pre_backup_action:
+      domain: script
+      service: ohana_backup_zwave_nvm
+      data: {}

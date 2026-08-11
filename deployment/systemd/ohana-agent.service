@@ -22,7 +22,12 @@ ExecStart=/opt/ohana-agent/venv/bin/ohana-agent \
     --wireguard-config /etc/ohana-agent/plugins/wireguard.yaml \
     --home-assistant-telemetry-config /etc/ohana-agent/plugins/home-assistant-telemetry.yaml \
     --teleinformation-config /etc/ohana-agent/plugins/teleinformation.yaml \
+    --backup-config /etc/ohana-agent/plugins/backup.yaml \
     --log-level INFO
+
+EnvironmentFile=-/etc/ohana-agent/backup.env
+RuntimeDirectory=ohana-agent
+RuntimeDirectoryMode=0750
 
 Restart=on-failure
 RestartSec=5s

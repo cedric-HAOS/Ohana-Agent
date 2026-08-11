@@ -16,6 +16,7 @@ from administration import (
     PluginAdministrationRepository,
 )
 from builder import (
+    BackupConfigurationBuilder,
     DHCPConfigurationBuilder,
     DNSConfigurationBuilder,
     HomeAssistantTelemetryConfigurationBuilder,
@@ -27,6 +28,7 @@ from builder import (
     WireGuardConfigurationBuilder,
     ZWaveConfigurationBuilder,
 )
+from configuration.backup import BackupPluginConfig
 from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
 from configuration.enums import Environment
@@ -48,6 +50,7 @@ from infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
 from loader import (
+    BackupConfigLoader,
     DHCPConfigLoader,
     DNSConfigLoader,
     HomeAssistantTelemetryConfigLoader,
@@ -83,6 +86,9 @@ from observer.exporters import (
 )
 from plugin.plugin_context import PluginContext
 from plugin.plugin_manager import PluginManager
+from plugins.backup.backup_config import BackupConfig
+from plugins.backup.backup_coordinator import BackupCoordinator
+from plugins.backup.backup_plugin import BackupPlugin
 from plugins.dhcp.dhcp_check import DHCPCheck
 from plugins.dhcp.dhcp_config import DHCPConfig
 from plugins.dhcp.dhcp_plugin import DHCPPlugin
@@ -132,6 +138,7 @@ from plugins.zwave.zwave_discovery import ZWaveDiscoveryHandler
 from plugins.zwave.zwave_plugin import ZWavePlugin
 from production_agent import ProductionAgent
 from scheduler import (
+    CronTrigger,
     DispatcherTaskExecutor,
     IntervalTrigger,
     Scheduler,
@@ -478,6 +485,31 @@ def _build_teleinformation_tasks(
     ]
 
 
+def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
+    """Build one independent daily HAOS backup task per configured target."""
+    return [
+        Task(
+            id=f"backup.run:{target.id}",
+            name=f"Back up {target.label}",
+            command="backup.run",
+            trigger=CronTrigger(target.schedule),
+            arguments={
+                "target_id": target.id,
+                "device_id": target.id,
+                "node_id": target.id,
+            },
+            metadata={
+                "managed_by": "backup",
+                "target_id": target.id,
+                "device_id": target.id,
+                "schedule": target.schedule,
+            },
+        )
+        for target in backup_config.targets
+        if target.enabled
+    ]
+
+
 def _replace_plugin_tasks(
     scheduler: Scheduler,
     tasks: list[Task],
@@ -545,6 +577,7 @@ def build_production_agent(
     home_assistant_telemetry_config_path: Path | None = None,
     shelly_telemetry_config_path: Path | None = None,
     teleinformation_config_path: Path = Path("config/plugins/teleinformation.yaml"),
+    backup_config_path: Path = Path("config/plugins/backup.yaml"),
     vision_client: VisionClient | None = None,
     clock: Clock | None = None,
     network_check: NetworkCheck | None = None,
@@ -554,6 +587,7 @@ def build_production_agent(
     home_assistant_telemetry_check: HomeAssistantTelemetryCheck | None = None,
     shelly_telemetry_check: HomeAssistantTelemetryCheck | None = None,
     teleinformation_check: TeleinformationCheck | None = None,
+    backup_coordinator: BackupCoordinator | None = None,
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
     configuration = ConfigurationLoader.load(application_config_path)
@@ -645,6 +679,8 @@ def build_production_agent(
         infrastructure,
         teleinformation_plugin_config,
     )
+    backup_plugin_config = BackupConfigLoader().load(backup_config_path)
+    backup_config = BackupConfigurationBuilder().build(backup_plugin_config)
     resolved_teleinformation_check = teleinformation_check or TeleinformationCheck()
     teleinformation_frame_store = getattr(
         resolved_teleinformation_check,
@@ -806,6 +842,12 @@ def build_production_agent(
     )
     plugin_manager.register(teleinformation_plugin)
 
+    backup_plugin = BackupPlugin(
+        config=backup_config,
+        coordinator=backup_coordinator,
+    )
+    plugin_manager.register(backup_plugin)
+
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
         observation_engine=observation_engine,
@@ -943,6 +985,13 @@ def build_production_agent(
             else []
         ),
         plugin_name="teleinformation",
+    )
+    _replace_plugin_tasks(
+        scheduler,
+        _build_backup_tasks(backup_config=backup_config)
+        if backup_plugin_config.enabled
+        else [],
+        plugin_name="backup",
     )
 
     def reconfigure_infrastructure(
@@ -1363,6 +1412,23 @@ def build_production_agent(
         )
         teleinformation_plugin_config = configuration
 
+    def apply_backup_configuration(configuration: BackupPluginConfig) -> None:
+        nonlocal backup_plugin_config, backup_config
+
+        updated_config = BackupConfigurationBuilder().build(configuration)
+        backup_plugin.reconfigure(updated_config)
+        _replace_plugin_tasks(
+            scheduler,
+            (
+                _build_backup_tasks(backup_config=updated_config)
+                if configuration.enabled
+                else []
+            ),
+            plugin_name="backup",
+        )
+        backup_plugin_config = configuration
+        backup_config = updated_config
+
     def test_dhcp_plugin() -> ObserverResult:
         servers = [server for server in dhcp_plugin.config.servers if server.enabled]
 
@@ -1374,6 +1440,9 @@ def build_production_agent(
             port=servers[0].port,
             service_id=servers[0].name,
         )
+
+    def test_backup_plugin() -> ObserverResult:
+        return backup_plugin.test()
 
     def test_network_plugin() -> ObserverResult:
         devices = [device for device in network_plugin.config.devices if device.enabled]
@@ -1583,6 +1652,17 @@ def build_production_agent(
             plugin_manager=plugin_manager,
             scheduler=scheduler,
             bindings=(
+                PluginAdministrationBinding(
+                    identifier="backup",
+                    display_name="Sauvegardes HAOS",
+                    capabilities=("backup.run",),
+                    configuration_path=backup_config_path,
+                    configuration_model=BackupPluginConfig,
+                    apply_configuration=lambda config: agent.apply_plugin_configuration(
+                        lambda: apply_backup_configuration(config)
+                    ),
+                    test_plugin=test_backup_plugin,
+                ),
                 PluginAdministrationBinding(
                     identifier="dhcp",
                     display_name="DHCP",

@@ -1651,6 +1651,10 @@ def build_production_agent(
         plugin_repository = PluginAdministrationRepository(
             plugin_manager=plugin_manager,
             scheduler=scheduler,
+            backup_runner=lambda arguments: dispatcher.execute(
+                "backup.run",
+                arguments,
+            ),
             bindings=(
                 PluginAdministrationBinding(
                     identifier="backup",

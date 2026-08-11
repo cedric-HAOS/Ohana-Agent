@@ -6,6 +6,19 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.6] — Sauvegardes HAOS immédiates — 2026-08-11
+
+## Ajouté
+
+- L'administration peut déclencher immédiatement la sauvegarde d'une cible
+  HAOS précise. L'appel répond sans attendre la création et l'envoi de
+  l'archive, tandis que l'exécution continue en arrière-plan dans Agent.
+- Le déclenchement vérifie l'identifiant exact de la cible, son activation et
+  celle du plugin, et refuse une seconde exécution simultanée pour la même
+  cible.
+- L'état d'exécution de chaque cible est exposé à Vision jusqu'à la fin réelle
+  de la tâche afin d'empêcher un nouveau déclenchement depuis l'interface.
+
 # [1.12.5] — Configuration sécurisée dans Vision — 2026-08-11
 
 ## Modifié

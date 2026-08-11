@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.12.5 — Configuration sécurisée des sauvegardes.**
+**Version préparée : 1.12.6 — Sauvegardes HAOS immédiates.**
 
 Le socle actuel couvre notamment :
 

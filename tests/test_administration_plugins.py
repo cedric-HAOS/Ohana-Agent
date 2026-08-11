@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event
+from time import sleep
 
 import pytest
 import yaml
@@ -407,3 +409,100 @@ targets:
     assert persisted["targets"][0]["password"] == "new-encryption-password"
     assert "token_configured" not in persisted["targets"][0]
     assert "password_configured" not in persisted["targets"][0]
+
+
+def test_manual_backup_runs_only_the_exact_enabled_target_in_background(
+    tmp_path: Path,
+) -> None:
+    configuration_path = tmp_path / "backup.yaml"
+    configuration_path.write_text(
+        """\
+enabled: true
+rclone_remote: icloud:Ohana/Backups
+targets:
+  - id: ha-01
+    label: HA-01
+    enabled: true
+    url: http://ha-01.ohana.lan:8123
+    token: ha-token
+    password: encryption-password
+    schedule: 0 2 * * *
+  - id: linky-01
+    label: LINKY-01
+    enabled: false
+    url: http://linky-01.ohana.lan:8123
+    schedule: 0 3 * * *
+""",
+        encoding="utf-8",
+    )
+    context = PluginContext(
+        event_bus=FakeEventBus(),
+        scheduler=None,
+        dispatcher=None,
+        memory=None,
+        capability_manager=None,
+        configuration=object(),
+        runtime=object(),
+    )
+    manager = PluginManager(context=context)
+    manager.register(BackupPlugin())
+    started = Event()
+    release = Event()
+    completed = Event()
+    calls: list[dict[str, object]] = []
+
+    def run_backup(arguments: dict[str, object]) -> None:
+        calls.append(arguments)
+        started.set()
+        release.wait(timeout=2)
+        completed.set()
+
+    repository = PluginAdministrationRepository(
+        plugin_manager=manager,
+        scheduler=Scheduler(),
+        backup_runner=run_backup,
+        bindings=(
+            PluginAdministrationBinding(
+                identifier="backup",
+                display_name="Sauvegardes HAOS",
+                capabilities=("backup.run",),
+                configuration_path=configuration_path,
+                configuration_model=BackupPluginConfig,
+                apply_configuration=lambda _configuration: None,
+                test_plugin=lambda: ObserverResult(success=True),
+            ),
+        ),
+    )
+
+    accepted = repository.run_backup("ha-01")
+
+    assert accepted["status"] == "accepted"
+    assert accepted["target_id"] == "ha-01"
+    assert started.wait(timeout=1)
+    assert calls == [
+        {
+            "target_id": "ha-01",
+            "device_id": "ha-01",
+            "node_id": "ha-01",
+        }
+    ]
+    running_state = repository.read("backup")
+    running_target = running_state.configuration["targets"][0]
+    assert running_target["backup_in_progress"] is True
+    with pytest.raises(ValueError, match="already running"):
+        repository.run_backup("ha-01")
+    with pytest.raises(ValueError, match="disabled"):
+        repository.run_backup("linky-01")
+    with pytest.raises(LookupError, match="Unknown backup target"):
+        repository.run_backup("zwave-01")
+
+    release.set()
+    assert completed.wait(timeout=1)
+    completed_target = {"backup_in_progress": True}
+    for _attempt in range(100):
+        completed_state = repository.read("backup")
+        completed_target = completed_state.configuration["targets"][0]
+        if completed_target["backup_in_progress"] is False:
+            break
+        sleep(0.01)
+    assert completed_target["backup_in_progress"] is False

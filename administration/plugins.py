@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from threading import Lock, Thread
 from typing import Any
 
 import yaml
@@ -56,11 +57,15 @@ class PluginAdministrationRepository:
         scheduler: Scheduler,
         bindings: tuple[PluginAdministrationBinding, ...],
         icloud_configurator: RcloneICloudConfigurator | None = None,
+        backup_runner: Callable[[dict[str, object]], object] | None = None,
     ) -> None:
         self.plugin_manager = plugin_manager
         self.scheduler = scheduler
         self.bindings = {binding.identifier: binding for binding in bindings}
         self._icloud_configurator = icloud_configurator
+        self._backup_runner = backup_runner
+        self._running_backup_targets: set[str] = set()
+        self._backup_run_lock = Lock()
 
     def list(self) -> PluginAdministrationCollection:
         """Return all administrable plugins ordered by display name."""
@@ -224,6 +229,72 @@ class PluginAdministrationRepository:
             password=payload.get("password"),
             two_factor_code=payload.get("two_factor_code"),
         )
+
+    def run_backup(self, target_id: str) -> dict[str, object]:
+        """Start one enabled HAOS backup without blocking administration."""
+        normalized_target_id = target_id.strip()
+        if not normalized_target_id:
+            raise ValueError("Backup target id cannot be empty.")
+        if self._backup_runner is None:
+            raise LookupError("Manual HAOS backup is unavailable")
+
+        binding = self._binding("backup")
+        self._plugin("backup")
+        configuration = self._read_configuration(binding)
+        if not bool(getattr(configuration, "enabled", False)):
+            raise ValueError("The HAOS backup plugin is disabled.")
+
+        target = next(
+            (
+                item
+                for item in getattr(configuration, "targets", [])
+                if item.id == normalized_target_id
+            ),
+            None,
+        )
+        if target is None:
+            raise LookupError(f"Unknown backup target: {normalized_target_id}")
+        if not target.enabled:
+            raise ValueError(f"Backup target is disabled: {normalized_target_id}")
+
+        with self._backup_run_lock:
+            if normalized_target_id in self._running_backup_targets:
+                raise ValueError(
+                    f"A backup is already running for {normalized_target_id}."
+                )
+            self._running_backup_targets.add(normalized_target_id)
+
+        arguments: dict[str, object] = {
+            "target_id": normalized_target_id,
+            "device_id": normalized_target_id,
+            "node_id": normalized_target_id,
+        }
+        Thread(
+            target=self._run_backup_in_background,
+            args=(normalized_target_id, arguments),
+            name=f"ohana-backup-{normalized_target_id}",
+            daemon=True,
+        ).start()
+        return {
+            "schema_version": 1,
+            "target_id": normalized_target_id,
+            "status": "accepted",
+            "message": f"Backup started for {target.label}.",
+        }
+
+    def _run_backup_in_background(
+        self,
+        target_id: str,
+        arguments: dict[str, object],
+    ) -> None:
+        try:
+            assert self._backup_runner is not None
+            self._backup_runner(arguments)
+        except Exception:
+            LOGGER.exception("Manual HAOS backup failed for %s", target_id)
+        finally:
+            with self._backup_run_lock:
+                self._running_backup_targets.discard(target_id)
 
     def _backup_icloud_configurator(self) -> RcloneICloudConfigurator:
         if self._icloud_configurator is not None:
@@ -419,10 +490,15 @@ class PluginAdministrationRepository:
         elif identifier == "backup":
             targets = payload.get("targets", [])
             environment_file = str(getattr(configuration, "environment_file", ""))
+            with self._backup_run_lock:
+                running_target_ids = set(self._running_backup_targets)
             if isinstance(targets, list):
                 for target in targets:
                     if not isinstance(target, dict):
                         continue
+                    target["backup_in_progress"] = (
+                        target.get("id") in running_target_ids
+                    )
                     token_name = target.get("token_environment_variable")
                     password_name = target.get("password_environment_variable")
                     try:
@@ -461,6 +537,7 @@ class PluginAdministrationRepository:
             if isinstance(target, dict):
                 target.pop("token_configured", None)
                 target.pop("password_configured", None)
+                target.pop("backup_in_progress", None)
 
     @staticmethod
     def _preserve_backup_secrets(

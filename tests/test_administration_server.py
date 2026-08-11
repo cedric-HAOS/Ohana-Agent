@@ -220,6 +220,13 @@ class FakePluginAdministrationRepository:
             "success": True,
         }
 
+    def run_backup(self, target_id: str) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "target_id": target_id,
+            "status": "accepted",
+        }
+
 
 def test_administration_server_exposes_plugin_routes(
     tmp_path: Path,
@@ -258,16 +265,24 @@ def test_administration_server_exposes_plugin_routes(
             "/v1/plugins/dns/test",
             method="POST",
         )
+        backup_started = request_json(
+            server,
+            "/v1/plugins/backup/targets/ha-01/run",
+            method="POST",
+        )
     finally:
         server.stop()
 
     assert "plugins.read" in capabilities["operations"]
     assert "plugins.write" in capabilities["operations"]
     assert "plugins.test" in capabilities["operations"]
+    assert "plugins.backup.run" in capabilities["operations"]
     assert plugins["plugins"][0]["id"] == "dns"  # type: ignore[index]
     assert plugin["id"] == "dns"
     assert updated["enabled"] is False
     assert tested["success"] is True
+    assert backup_started["target_id"] == "ha-01"
+    assert backup_started["status"] == "accepted"
 
 
 class FakeNetworkRepository:

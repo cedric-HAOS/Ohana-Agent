@@ -93,6 +93,7 @@ class AdministrationService:
                     "plugins.write",
                     "plugins.test",
                     "plugins.backup.icloud.connect",
+                    "plugins.backup.run",
                 ]
             )
 
@@ -205,6 +206,12 @@ class AdministrationService:
         if self.plugin_repository is None:
             raise LookupError("Plugin administration is unavailable")
         return self.plugin_repository.connect_backup_icloud(payload)
+
+    def run_backup(self, target_id: str) -> object:
+        """Start one configured HAOS backup in the background."""
+        if self.plugin_repository is None:
+            raise LookupError("Plugin administration is unavailable")
+        return self.plugin_repository.run_backup(target_id)
 
 
 class AdministrationHTTPServer:
@@ -381,6 +388,16 @@ class AdministrationHTTPServer:
                     if payload is not None:
                         self._execute(lambda: service.connect_backup_icloud(payload))
                     return
+
+                backup_run_prefix = "/v1/plugins/backup/targets/"
+                backup_run_suffix = "/run"
+                if path.startswith(backup_run_prefix) and path.endswith(
+                    backup_run_suffix
+                ):
+                    target_id = path[len(backup_run_prefix) : -len(backup_run_suffix)]
+                    if target_id and "/" not in target_id:
+                        self._execute(partial(service.run_backup, target_id))
+                        return
 
                 network_prefix = "/v1/system/network/"
                 for action, operation in (

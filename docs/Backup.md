@@ -75,6 +75,14 @@ ne sont jamais renvoyées par l'API d'administration. Le bouton de test
 vérifie l'accès aux trois HAOS activés et au remote rclone sans créer de
 sauvegarde, sans envoyer d'archive et sans supprimer de sauvegarde locale.
 
+Une cible activée peut aussi être lancée immédiatement depuis la fiche de
+l'équipement dans la vue d'ensemble de Vision. Le bouton n'est affiché que si
+l'identifiant technique de l'équipement correspond exactement à l'identifiant
+d'une cible activée : `ha-01` lance uniquement la cible `ha-01`, `linky-01`
+uniquement `linky-01`, etc. Agent accepte la demande rapidement puis poursuit
+la création, l'envoi, la validation et la rotation en arrière-plan. Une seconde
+demande simultanée pour la même cible est refusée.
+
 ## iCloud et rclone
 
 Ohana-Installer installe une version vérifiée de rclone comprenant le backend

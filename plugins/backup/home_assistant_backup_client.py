@@ -29,6 +29,7 @@ class HomeAssistantBackup:
     slug: str
     name: str | None = None
     agent_id: str = "hassio.local"
+    size_bytes: int | None = None
 
 
 @dataclass(slots=True)
@@ -78,6 +79,7 @@ class HomeAssistantBackupClient:
                     slug=backup_id.strip(),
                     name=name if isinstance(name, str) else None,
                     agent_id=agent_id,
+                    size_bytes=self._backup_size(agents, agent_id),
                 )
             )
         return tuple(parsed)
@@ -87,8 +89,8 @@ class HomeAssistantBackupClient:
 
     @contextmanager
     def download(self, slug: str) -> Iterator[BackupDownload]:
-        agent_id = self._backup_agent_id(slug)
-        query = urlencode({"agent_id": agent_id})
+        backup = self._backup(slug)
+        query = urlencode({"agent_id": backup.agent_id})
         response = self._open(
             "GET",
             f"/api/backup/download/{quote(slug, safe='')}?{query}",
@@ -96,7 +98,9 @@ class HomeAssistantBackupClient:
         try:
             content_length = response.headers.get("Content-Length")
             try:
-                size_bytes = int(content_length) if content_length else 0
+                size_bytes = (
+                    int(content_length) if content_length else backup.size_bytes or 0
+                )
             except ValueError as error:
                 raise HomeAssistantBackupError(
                     "Home Assistant returned an invalid backup Content-Length."
@@ -259,10 +263,22 @@ class HomeAssistantBackupClient:
             return "hassio.local"
         return next((key for key in agents if key.startswith("hassio.")), None)
 
-    def _backup_agent_id(self, slug: str) -> str:
+    @staticmethod
+    def _backup_size(agents: Any, agent_id: str) -> int | None:
+        if not isinstance(agents, dict):
+            return None
+        agent = agents.get(agent_id)
+        if not isinstance(agent, dict):
+            return None
+        size = agent.get("size")
+        if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+            return None
+        return size
+
+    def _backup(self, slug: str) -> HomeAssistantBackup:
         for backup in self.list_backups():
             if backup.slug == slug:
-                return backup.agent_id
+                return backup
         raise HomeAssistantBackupError(f"Home Assistant backup {slug!r} was not found.")
 
     def _websocket_url(self) -> str:

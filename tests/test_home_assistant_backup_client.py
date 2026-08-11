@@ -7,6 +7,7 @@ import pytest
 
 from plugins.backup.backup_config import BackupAction, BackupTarget
 from plugins.backup.home_assistant_backup_client import (
+    HomeAssistantBackup,
     HomeAssistantBackupClient,
     HomeAssistantBackupError,
 )
@@ -122,7 +123,7 @@ def test_home_assistant_client_uses_public_websocket_api_for_full_backup(
     assert generate["include_all_addons"] is True
 
 
-def test_home_assistant_client_requires_content_length_for_streaming(
+def test_home_assistant_client_requires_a_known_size_for_streaming(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -130,7 +131,11 @@ def test_home_assistant_client_requires_content_length_for_streaming(
         lambda *args, **kwargs: FakeResponse(b"archive"),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
-    monkeypatch.setattr(client, "_backup_agent_id", lambda slug: "hassio.local")
+    monkeypatch.setattr(
+        client,
+        "_backup",
+        lambda slug: HomeAssistantBackup(slug=slug),
+    )
 
     with pytest.raises(HomeAssistantBackupError, match="unbounded upload"):
         with client.download("slug"):
@@ -145,11 +150,67 @@ def test_home_assistant_client_exposes_exact_download_size(
         lambda *args, **kwargs: FakeResponse(b"archive", content_length=7),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
-    monkeypatch.setattr(client, "_backup_agent_id", lambda slug: "hassio.local")
+    monkeypatch.setattr(
+        client,
+        "_backup",
+        lambda slug: HomeAssistantBackup(slug=slug),
+    )
 
     with client.download("slug") as download:
         assert download.size_bytes == 7
         assert download.stream.read() == b"archive"
+
+
+def test_home_assistant_client_uses_inventory_size_for_chunked_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "plugins.backup.home_assistant_backup_client.urlopen",
+        lambda *args, **kwargs: FakeResponse(b"archive"),
+    )
+    client = HomeAssistantBackupClient(make_target(), "secret")
+    monkeypatch.setattr(
+        client,
+        "_backup",
+        lambda slug: HomeAssistantBackup(slug=slug, size_bytes=7),
+    )
+
+    with client.download("slug") as download:
+        assert download.size_bytes == 7
+        assert download.stream.read() == b"archive"
+
+
+def test_home_assistant_client_reads_exact_size_from_backup_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = {
+        "backups": [
+            {
+                "backup_id": "slug",
+                "name": "Ohana-linky-01-date",
+                "agents": {
+                    "hassio.local": {
+                        "protected": True,
+                        "size": 7,
+                    }
+                },
+            }
+        ]
+    }
+    client = HomeAssistantBackupClient(make_target(), "secret")
+    monkeypatch.setattr(client, "_command", lambda *args, **kwargs: object())
+    monkeypatch.setattr(client, "_run", lambda _awaitable: inventory)
+
+    backups = client.list_backups()
+
+    assert backups == (
+        HomeAssistantBackup(
+            slug="slug",
+            name="Ohana-linky-01-date",
+            agent_id="hassio.local",
+            size_bytes=7,
+        ),
+    )
 
 
 def test_home_assistant_client_accepts_state_list_from_pre_backup_action(

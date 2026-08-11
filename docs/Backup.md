@@ -83,6 +83,12 @@ uniquement `linky-01`, etc. Agent accepte la demande rapidement puis poursuit
 la création, l'envoi, la validation et la rotation en arrière-plan. Une seconde
 demande simultanée pour la même cible est refusée.
 
+Home Assistant peut diffuser l'archive locale en HTTP segmenté, sans en-tête
+`Content-Length`. Agent récupère alors la taille exacte dans les métadonnées
+`backup/info` avant de démarrer rclone. Si aucune taille positive n'est
+disponible dans les métadonnées ou la réponse HTTP, le flux reste refusé :
+l'archive n'est jamais mise en tampon sur la carte microSD d'INFRA-01.
+
 ## iCloud et rclone
 
 Ohana-Installer installe une version vérifiée de rclone comprenant le backend

@@ -6,6 +6,18 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.7] — Streaming HAOS sans Content-Length — 2026-08-11
+
+## Corrigé
+
+- Le téléchargement d'une sauvegarde HAOS utilise désormais la taille exacte
+  publiée par `backup/info` lorsque Home Assistant diffuse l'archive sans
+  en-tête HTTP `Content-Length`.
+- Le flux reste strictement borné : Agent refuse encore l'envoi si ni les
+  métadonnées HAOS ni la réponse HTTP ne fournissent une taille positive.
+- La protection de la carte microSD d'INFRA-01, le streaming vers rclone et la
+  validation de la taille distante restent inchangés.
+
 # [1.12.6] — Sauvegardes HAOS immédiates — 2026-08-11
 
 ## Ajouté

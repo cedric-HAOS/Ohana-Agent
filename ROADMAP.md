@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.12.6 — Sauvegardes HAOS immédiates.**
+**Version préparée : 1.12.7 — Streaming HAOS sans Content-Length.**
 
 Le socle actuel couvre notamment :
 

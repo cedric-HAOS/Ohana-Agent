@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.12.4 — Sauvegardes HAOS chiffrées vers iCloud.**
+**Version préparée : 1.12.5 — Configuration sécurisée des sauvegardes.**
 
 Le socle actuel couvre notamment :
 

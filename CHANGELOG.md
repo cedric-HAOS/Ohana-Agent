@@ -6,6 +6,26 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.12.5] — Configuration sécurisée dans Vision — 2026-08-11
+
+## Modifié
+
+- Les jetons Home Assistant et les mots de passe de chiffrement peuvent être
+  enregistrés directement depuis les champs masqués de Vision. Une valeur
+  laissée vide conserve le secret déjà enregistré.
+- Le client de sauvegarde utilise les commandes WebSocket publiques
+  `backup/info`, `backup/generate` et `backup/delete`, ainsi que la route
+  publique de téléchargement de Home Assistant.
+- Agent pilote la création ou la reconnexion du remote iCloud avec le protocole
+  non interactif de rclone et une seconde étape 2FA.
+
+## Sécurité
+
+- Les secrets directs et la configuration rclone sont protégés en mode `0600`
+  et ne sont jamais renvoyés par l'API d'administration.
+- L'ancien fichier `backup.env` reste accepté uniquement comme mécanisme de
+  migration.
+
 # [1.12.4] — Sauvegardes HAOS chiffrées vers iCloud — 2026-08-11
 
 ## Ajouté

@@ -92,6 +92,7 @@ class AdministrationService:
                     "plugins.read",
                     "plugins.write",
                     "plugins.test",
+                    "plugins.backup.icloud.connect",
                 ]
             )
 
@@ -198,6 +199,12 @@ class AdministrationService:
             raise LookupError("Plugin administration is unavailable")
 
         return self.plugin_repository.test(identifier)
+
+    def connect_backup_icloud(self, payload: dict[str, Any]) -> object:
+        """Start or complete the iCloud authentication flow."""
+        if self.plugin_repository is None:
+            raise LookupError("Plugin administration is unavailable")
+        return self.plugin_repository.connect_backup_icloud(payload)
 
 
 class AdministrationHTTPServer:
@@ -368,6 +375,12 @@ class AdministrationHTTPServer:
                     if identifier and "/" not in identifier:
                         self._execute(lambda: service.test_plugin(identifier))
                         return
+
+                if path == "/v1/plugins/backup/icloud/connect":
+                    payload = self._read_json()
+                    if payload is not None:
+                        self._execute(lambda: service.connect_backup_icloud(payload))
+                    return
 
                 network_prefix = "/v1/system/network/"
                 for action, operation in (

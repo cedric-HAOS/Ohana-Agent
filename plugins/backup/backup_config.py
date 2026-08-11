@@ -22,9 +22,11 @@ class BackupTarget:
     id: str
     label: str
     url: str
-    token_environment_variable: str
-    password_environment_variable: str
     schedule: str
+    token: str | None = None
+    password: str | None = None
+    token_environment_variable: str | None = None
+    password_environment_variable: str | None = None
     enabled: bool = True
     verify_tls: bool = True
     timeout: float = 300.0

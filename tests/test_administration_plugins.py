@@ -383,6 +383,9 @@ targets:
     assert target["password_configured"] is False
     assert "secret-token" not in str(current.configuration)
 
+    current.configuration["targets"][0]["token"] = "new-home-assistant-token"
+    current.configuration["targets"][0]["password"] = "new-encryption-password"
+
     updated = repository.write(
         "backup",
         {
@@ -393,6 +396,14 @@ targets:
 
     assert updated.enabled is True
     assert applied[-1].targets[0].url == "http://ha-01.ohana.lan:8123"
+    assert applied[-1].targets[0].token == "new-home-assistant-token"
+    assert applied[-1].targets[0].password == "new-encryption-password"
+    assert updated.configuration["targets"][0]["token"] is None
+    assert updated.configuration["targets"][0]["password"] is None
+    assert updated.configuration["targets"][0]["token_configured"] is True
+    assert updated.configuration["targets"][0]["password_configured"] is True
     persisted = yaml.safe_load(configuration_path.read_text(encoding="utf-8"))
+    assert persisted["targets"][0]["token"] == "new-home-assistant-token"
+    assert persisted["targets"][0]["password"] == "new-encryption-password"
     assert "token_configured" not in persisted["targets"][0]
     assert "password_configured" not in persisted["targets"][0]

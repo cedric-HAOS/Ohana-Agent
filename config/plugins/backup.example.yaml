@@ -15,8 +15,8 @@ targets:
     label: HA-01
     enabled: true
     url: http://ha-01.ohana.lan:8123
-    token_environment_variable: OHANA_BACKUP_HA_01_TOKEN
-    password_environment_variable: OHANA_BACKUP_HA_01_PASSWORD
+    token: null
+    password: null
     schedule: "0 2 * * *"
     verify_tls: true
     timeout: 900
@@ -25,8 +25,8 @@ targets:
     label: LINKY-01
     enabled: true
     url: http://linky-01.ohana.lan:8123
-    token_environment_variable: OHANA_BACKUP_LINKY_01_TOKEN
-    password_environment_variable: OHANA_BACKUP_LINKY_01_PASSWORD
+    token: null
+    password: null
     schedule: "0 3 * * *"
     verify_tls: true
     timeout: 600
@@ -35,8 +35,8 @@ targets:
     label: ZWAVE-01
     enabled: true
     url: http://zwave-01.ohana.lan:8123
-    token_environment_variable: OHANA_BACKUP_ZWAVE_01_TOKEN
-    password_environment_variable: OHANA_BACKUP_ZWAVE_01_PASSWORD
+    token: null
+    password: null
     schedule: "0 4 * * *"
     verify_tls: true
     timeout: 600

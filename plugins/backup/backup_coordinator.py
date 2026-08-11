@@ -68,17 +68,27 @@ class BackupCoordinator:
         now: datetime | None = None,
     ) -> BackupExecutionResult:
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
-        token = self._secret(target.token_environment_variable)
+        token = target.token or self._secret(target.token_environment_variable)
         if not token:
+            source = (
+                f" in {target.token_environment_variable}"
+                if target.token_environment_variable
+                else ""
+            )
             raise BackupExecutionError(
                 "authentication",
-                f"Missing Home Assistant token in {target.token_environment_variable}.",
+                f"Missing Home Assistant token{source} for {target.label}.",
             )
-        password = self._secret(target.password_environment_variable)
+        password = target.password or self._secret(target.password_environment_variable)
         if not password:
+            source = (
+                f" in {target.password_environment_variable}"
+                if target.password_environment_variable
+                else ""
+            )
             raise BackupExecutionError(
                 "encryption",
-                f"Missing backup password in {target.password_environment_variable}.",
+                f"Missing backup encryption password{source} for {target.label}.",
             )
         client = self._client_factory(target, token)
         managed_prefix = f"Ohana-{target.id}-"
@@ -152,16 +162,26 @@ class BackupCoordinator:
 
     def preflight(self, target: BackupTarget) -> int:
         """Check credentials, HAOS access and rclone without creating a backup."""
-        token = self._secret(target.token_environment_variable)
+        token = target.token or self._secret(target.token_environment_variable)
         if not token:
+            source = (
+                f" in {target.token_environment_variable}"
+                if target.token_environment_variable
+                else ""
+            )
             raise BackupExecutionError(
                 "authentication",
-                f"Missing Home Assistant token in {target.token_environment_variable}.",
+                f"Missing Home Assistant token{source} for {target.label}.",
             )
-        if not self._secret(target.password_environment_variable):
+        if not (target.password or self._secret(target.password_environment_variable)):
+            source = (
+                f" in {target.password_environment_variable}"
+                if target.password_environment_variable
+                else ""
+            )
             raise BackupExecutionError(
                 "encryption",
-                f"Missing backup password in {target.password_environment_variable}.",
+                f"Missing backup encryption password{source} for {target.label}.",
             )
         try:
             backups = self._client_factory(target, token).list_backups()
@@ -173,7 +193,9 @@ class BackupCoordinator:
             raise BackupExecutionError("remote", str(error)) from error
         return len(backups)
 
-    def _secret(self, name: str) -> str | None:
+    def _secret(self, name: str | None) -> str | None:
+        if not name:
+            return None
         try:
             return resolve_backup_secret(self._config.environment_file, name)
         except OSError as error:

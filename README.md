@@ -648,6 +648,12 @@ seule sauvegarde Ohana locale après validation distante. L'archive ne transite
 jamais par le stockage persistant d'INFRA-01 ; les éventuels fichiers temporaires
 sont limités à un `tmpfs` vérifié.
 
+Vision permet de saisir les jetons Home Assistant et les mots de passe de
+chiffrement dans des champs masqués, ainsi que d'établir ou renouveler la
+connexion iCloud avec le code 2FA Apple. Agent conserve ces secrets dans sa
+configuration protégée en mode `0600` et ne renvoie à Vision que leur état de
+présence.
+
 La configuration et la procédure de sécurité sont détaillées dans
 [`docs/Backup.md`](docs/Backup.md).
 

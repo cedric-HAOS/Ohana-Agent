@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 from email.message import Message
 
 import pytest
@@ -32,23 +31,81 @@ def make_target() -> BackupTarget:
     )
 
 
-def test_home_assistant_client_uses_supervisor_proxy_for_full_backup(
+class FakeWebSocket:
+    def __init__(self, messages: list[dict]) -> None:
+        self.messages = iter(messages)
+        self.sent: list[dict] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def receive_json(self):
+        return next(self.messages)
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
+
+
+class FakeSession:
+    def __init__(self, websocket: FakeWebSocket) -> None:
+        self.websocket = websocket
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    def ws_connect(self, *args, **kwargs):
+        return self.websocket
+
+
+def test_home_assistant_client_uses_public_websocket_api_for_full_backup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    requests = []
-
-    def fake_urlopen(request, **kwargs):
-        del kwargs
-        requests.append(request)
-        return FakeResponse(
-            json.dumps({"result": "ok", "data": {"slug": "abc123"}}).encode()
-        )
-
-    monkeypatch.setattr(
-        "plugins.backup.home_assistant_backup_client.urlopen",
-        fake_urlopen,
+    websocket = FakeWebSocket(
+        [
+            {"type": "auth_required"},
+            {"type": "auth_ok"},
+            {"id": 1, "type": "result", "success": True, "result": None},
+            {
+                "id": 2,
+                "type": "result",
+                "success": True,
+                "result": {"agents": [{"agent_id": "hassio.local"}]},
+            },
+            {
+                "id": 3,
+                "type": "result",
+                "success": True,
+                "result": {"backup_job_id": "job"},
+            },
+            {
+                "id": 1,
+                "type": "event",
+                "event": {"manager_state": "create_backup", "state": "completed"},
+            },
+            {
+                "id": 4,
+                "type": "result",
+                "success": True,
+                "result": {
+                    "backups": [
+                        {
+                            "backup_id": "abc123",
+                            "name": "Ohana-ha-01-date",
+                            "agents": {"hassio.local": {}},
+                        }
+                    ]
+                },
+            },
+        ]
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
+    monkeypatch.setattr(client, "_session", lambda: FakeSession(websocket))
 
     backup = client.create_full_backup(
         "Ohana-ha-01-date",
@@ -56,13 +113,13 @@ def test_home_assistant_client_uses_supervisor_proxy_for_full_backup(
     )
 
     assert backup.slug == "abc123"
-    assert requests[0].full_url == ("http://ha-01:8123/api/hassio/backups/new/full")
-    assert requests[0].headers["Authorization"] == "Bearer secret"
-    assert json.loads(requests[0].data) == {
-        "name": "Ohana-ha-01-date",
-        "password": "backup-password",
-        "background": False,
-    }
+    assert backup.agent_id == "hassio.local"
+    assert websocket.sent[1] == {"id": 1, "type": "backup/subscribe_events"}
+    generate = websocket.sent[3]
+    assert generate["type"] == "backup/generate"
+    assert generate["agent_ids"] == ["hassio.local"]
+    assert generate["password"] == "backup-password"
+    assert generate["include_all_addons"] is True
 
 
 def test_home_assistant_client_requires_content_length_for_streaming(
@@ -73,6 +130,7 @@ def test_home_assistant_client_requires_content_length_for_streaming(
         lambda *args, **kwargs: FakeResponse(b"archive"),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
+    monkeypatch.setattr(client, "_backup_agent_id", lambda slug: "hassio.local")
 
     with pytest.raises(HomeAssistantBackupError, match="unbounded upload"):
         with client.download("slug"):
@@ -87,6 +145,7 @@ def test_home_assistant_client_exposes_exact_download_size(
         lambda *args, **kwargs: FakeResponse(b"archive", content_length=7),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
+    monkeypatch.setattr(client, "_backup_agent_id", lambda slug: "hassio.local")
 
     with client.download("slug") as download:
         assert download.size_bytes == 7

@@ -33,8 +33,10 @@ class BackupTargetPluginConfig(Config):
     label: str
     enabled: bool = True
     url: str
-    token_environment_variable: str
-    password_environment_variable: str
+    token: str | None = None
+    password: str | None = None
+    token_environment_variable: str | None = None
+    password_environment_variable: str | None = None
     schedule: str
     verify_tls: bool = True
     timeout: PositiveFloat = 300.0
@@ -42,8 +44,6 @@ class BackupTargetPluginConfig(Config):
 
     @field_validator(
         "label",
-        "token_environment_variable",
-        "password_environment_variable",
         "schedule",
     )
     @classmethod
@@ -52,6 +52,18 @@ class BackupTargetPluginConfig(Config):
         if not normalized:
             raise ValueError("Backup target fields must not be empty.")
         return normalized
+
+    @field_validator(
+        "token",
+        "password",
+        "token_environment_variable",
+        "password_environment_variable",
+    )
+    @classmethod
+    def normalize_optional_secret(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value if value.strip() else None
 
     @field_validator("id")
     @classmethod
@@ -119,4 +131,18 @@ class BackupPluginConfig(Config):
             raise ValueError(
                 "The enabled backup plugin requires at least one target enabled."
             )
+        if self.enabled:
+            for target in self.targets:
+                if not target.enabled:
+                    continue
+                if not (target.token or target.token_environment_variable):
+                    raise ValueError(
+                        f"Enabled backup target {target.id} requires a "
+                        "Home Assistant token."
+                    )
+                if not (target.password or target.password_environment_variable):
+                    raise ValueError(
+                        f"Enabled backup target {target.id} requires an "
+                        "encryption password."
+                    )
         return self

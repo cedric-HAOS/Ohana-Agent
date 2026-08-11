@@ -23,6 +23,7 @@ from observer.observer_result import ObserverResult
 from plugin.plugin_manager import PluginManager
 from plugin.plugin_state import PluginState
 from plugins.backup.backup_secrets import resolve_backup_secret
+from plugins.backup.rclone_icloud import RcloneICloudConfigurator
 from scheduler import Scheduler, Task
 
 LOGGER = logging.getLogger(__name__)
@@ -54,10 +55,12 @@ class PluginAdministrationRepository:
         plugin_manager: PluginManager,
         scheduler: Scheduler,
         bindings: tuple[PluginAdministrationBinding, ...],
+        icloud_configurator: RcloneICloudConfigurator | None = None,
     ) -> None:
         self.plugin_manager = plugin_manager
         self.scheduler = scheduler
         self.bindings = {binding.identifier: binding for binding in bindings}
+        self._icloud_configurator = icloud_configurator
 
     def list(self) -> PluginAdministrationCollection:
         """Return all administrable plugins ordered by display name."""
@@ -122,6 +125,10 @@ class PluginAdministrationRepository:
 
         if identifier == "backup":
             self._strip_backup_runtime_status(configuration_payload)
+            self._preserve_backup_secrets(
+                configuration_payload,
+                current_configuration,
+            )
         elif identifier == "mqtt":
             self._preserve_mqtt_password(
                 configuration_payload,
@@ -166,6 +173,8 @@ class PluginAdministrationRepository:
             binding.configuration_path,
             configuration,
         )
+        if identifier == "backup":
+            binding.configuration_path.chmod(0o600)
 
         try:
             binding.apply_configuration(configuration)
@@ -176,6 +185,8 @@ class PluginAdministrationRepository:
                 identifier,
             )
             self._write_text(binding.configuration_path, original_content)
+            if identifier == "backup":
+                binding.configuration_path.chmod(0o600)
 
             try:
                 binding.apply_configuration(current_configuration)
@@ -204,6 +215,28 @@ class PluginAdministrationRepository:
             tested_at=result.timestamp,
             metadata=result.metadata,
         )
+
+    def connect_backup_icloud(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Start or complete the rclone iCloud authentication flow."""
+        configurator = self._backup_icloud_configurator()
+        return configurator.connect(
+            apple_id=payload.get("apple_id"),
+            password=payload.get("password"),
+            two_factor_code=payload.get("two_factor_code"),
+        )
+
+    def _backup_icloud_configurator(self) -> RcloneICloudConfigurator:
+        if self._icloud_configurator is not None:
+            return self._icloud_configurator
+        binding = self._binding("backup")
+        configuration = self._read_configuration(binding)
+        remote_name = str(configuration.rclone_remote).partition(":")[0]
+        self._icloud_configurator = RcloneICloudConfigurator(
+            binary=str(configuration.rclone_binary),
+            config_path=str(configuration.rclone_config_path),
+            remote_name=remote_name,
+        )
+        return self._icloud_configurator
 
     @staticmethod
     def _canonical_identifier(identifier: str) -> str:
@@ -346,8 +379,8 @@ class PluginAdministrationRepository:
 
         return "active"
 
-    @staticmethod
     def _public_configuration(
+        self,
         identifier: str,
         configuration: BaseModel,
     ) -> dict[str, Any]:
@@ -394,21 +427,33 @@ class PluginAdministrationRepository:
                     password_name = target.get("password_environment_variable")
                     try:
                         target["token_configured"] = bool(
-                            isinstance(token_name, str)
-                            and resolve_backup_secret(environment_file, token_name)
+                            target.get("token")
+                            or (
+                                isinstance(token_name, str)
+                                and resolve_backup_secret(environment_file, token_name)
+                            )
                         )
                         target["password_configured"] = bool(
-                            isinstance(password_name, str)
-                            and resolve_backup_secret(environment_file, password_name)
+                            target.get("password")
+                            or (
+                                isinstance(password_name, str)
+                                and resolve_backup_secret(
+                                    environment_file, password_name
+                                )
+                            )
                         )
                     except OSError:
                         target["token_configured"] = False
                         target["password_configured"] = False
+                    target["token"] = None
+                    target["password"] = None
+            payload["icloud"] = self._backup_icloud_configurator().status()
 
         return payload
 
     @staticmethod
     def _strip_backup_runtime_status(payload: dict[str, Any]) -> None:
+        payload.pop("icloud", None)
         targets = payload.get("targets", [])
         if not isinstance(targets, list):
             return
@@ -416,6 +461,27 @@ class PluginAdministrationRepository:
             if isinstance(target, dict):
                 target.pop("token_configured", None)
                 target.pop("password_configured", None)
+
+    @staticmethod
+    def _preserve_backup_secrets(
+        payload: dict[str, Any],
+        current_configuration: BaseModel,
+    ) -> None:
+        targets = payload.get("targets", [])
+        current_targets = {
+            target.id: target
+            for target in getattr(current_configuration, "targets", [])
+        }
+        if not isinstance(targets, list):
+            return
+        for target in targets:
+            if not isinstance(target, dict):
+                continue
+            current = current_targets.get(target.get("id"))
+            for field_name in ("token", "password"):
+                if target.get(field_name) not in (None, ""):
+                    continue
+                target[field_name] = getattr(current, field_name, None)
 
     @staticmethod
     def _mask_secret(

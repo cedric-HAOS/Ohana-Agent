@@ -15,6 +15,8 @@ class BackupConfigurationBuilder:
                     label=target.label,
                     enabled=target.enabled,
                     url=target.url,
+                    token=target.token,
+                    password=target.password,
                     token_environment_variable=target.token_environment_variable,
                     password_environment_variable=(
                         target.password_environment_variable

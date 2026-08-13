@@ -10,6 +10,16 @@ temporary_directory: /run/ohana-agent/backup
 require_tmpfs: true
 chunk_size_bytes: 1048576
 
+# Logical backup of the INFRA-01 role. The age recipient is a public key;
+# keep the matching private identity off INFRA-01 (password manager or USB key).
+infra_01:
+  enabled: false
+  schedule: "0 1 * * *"
+  age_binary: /usr/bin/age
+  age_recipient: null
+  # 0 keeps every complete iCloud backup. A positive value enables rotation.
+  remote_retention_count: 0
+
 targets:
   - id: ha-01
     label: HA-01

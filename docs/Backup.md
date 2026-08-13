@@ -1,7 +1,45 @@
-# Sauvegardes HAOS vers iCloud
+# Sauvegardes HAOS et INFRA-01 vers iCloud
 
 Le plugin `backup` orchestre les sauvegardes de HA-01, LINKY-01 et ZWAVE-01
 sans enregistrer les archives sur la carte microSD d'INFRA-01.
+
+Il peut aussi sauvegarder INFRA-01 lui-même. Cette cible produit un instantané
+cohérent de la base SQLite de Vision, archive les configurations nécessaires à
+la reconstruction, chiffre le flux avec `age`, puis le transmet à iCloud sans
+écrire l'archive en clair ou chiffrée sur la microSD.
+
+## Sauvegarde d'INFRA-01
+
+Créer la paire de clés `age` sur une autre machine et conserver la clé privée
+hors d'INFRA-01 :
+
+```bash
+age-keygen -o ohana-infra-01.agekey
+```
+
+Seule la clé publique `age1...` est enregistrée dans la configuration du plugin.
+La sauvegarde contient :
+
+- `/etc/ohana-agent` ;
+- `/etc/ohana-vision` ;
+- `/etc/dnsmasq.d` ;
+- `/etc/chrony/chrony.conf` ;
+- un instantané cohérent de `/var/lib/ohana-vision/vision.db`.
+
+Agent crée le tar et le chiffrement dans un `tmpfs`, envoie d'abord l'archive
+`.tar.age`, puis publie le manifeste JSON en dernier. Ce manifeste permet à
+Ohana-Installer de sélectionner uniquement une sauvegarde complètement publiée
+et de réinstaller la composition Agent/Vision correspondante. Un second
+descripteur placé à l'intérieur de l'archive chiffrée reprend l'identité et les
+versions de la sauvegarde ; Installer exige sa correspondance exacte avec le
+manifeste public avant d'appliquer le moindre fichier.
+
+La rétention iCloud est indépendante de la sauvegarde locale des HAOS. La valeur
+`remote_retention_count: 0` conserve toutes les sauvegardes INFRA-01. Une valeur
+positive active la rotation : elle n'intervient qu'après la validation et la
+publication du nouveau manifeste, et ne supprime que les plus anciens dossiers
+horodatés qui possèdent eux-mêmes un manifeste. Un dossier incomplet n'est jamais
+pris comme preuve d'une sauvegarde valide et n'est pas supprimé automatiquement.
 
 ## Garanties
 
@@ -69,6 +107,9 @@ HAOS** de Vision permet de modifier sans redémarrage :
 - la connexion ou reconnexion iCloud avec identifiant Apple, mot de passe et
   code 2FA ponctuel ;
 - le script de préparation NVM de ZWAVE-01.
+- l'activation, l'horaire et le destinataire public `age` d'INFRA-01.
+- le nombre de sauvegardes INFRA-01 complètes à conserver dans iCloud (`0` pour
+  une conservation illimitée).
 
 Vision affiche uniquement si les secrets sont présents sur Agent. Leurs valeurs
 ne sont jamais renvoyées par l'API d'administration. Le bouton de test

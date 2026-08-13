@@ -1,9 +1,10 @@
-from plugins.backup.backup_config import BackupConfig, BackupTarget
+from plugins.backup.backup_config import BackupConfig, BackupTarget, InfraBackupConfig
 from plugins.backup.backup_coordinator import (
     BackupExecutionError,
     BackupExecutionResult,
 )
 from plugins.backup.backup_plugin import BackupPlugin
+from plugins.backup.infra_backup_coordinator import InfraBackupResult
 
 
 class SuccessfulCoordinator:
@@ -23,6 +24,16 @@ class FailingCoordinator:
     def run(self, target: BackupTarget) -> BackupExecutionResult:
         del target
         raise BackupExecutionError("upload", "rclone failed")
+
+
+class SuccessfulInfraCoordinator:
+    def run(self) -> InfraBackupResult:
+        return InfraBackupResult(
+            backup_id="20260813T120000Z",
+            remote_directory="icloud:Ohana/Backups/infra-01/20260813T120000Z",
+            size_bytes=84,
+            sha256="def",
+        )
 
 
 def make_config() -> BackupConfig:
@@ -67,3 +78,22 @@ def test_backup_plugin_turns_coordinator_failure_into_observation() -> None:
     assert result.success is False
     assert result.metadata["stage"] == "upload"
     assert result.metadata["error"] == "rclone failed"
+
+
+def test_backup_plugin_runs_enabled_infra_01_target() -> None:
+    config = BackupConfig(
+        infra_01=InfraBackupConfig(
+            enabled=True,
+            age_recipient="age1recipient",
+        )
+    )
+    plugin = BackupPlugin(
+        config=config,
+        infra_coordinator=SuccessfulInfraCoordinator(),
+    )
+
+    result = plugin.execute(target_id="infra-01")
+
+    assert result.success is True
+    assert result.metadata["device_id"] == "infra-01"
+    assert result.metadata["backup_id"] == "20260813T120000Z"

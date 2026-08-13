@@ -15,6 +15,7 @@ from plugins.backup.backup_coordinator import (
     BackupCoordinator,
     BackupExecutionError,
 )
+from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
 
 
 class BackupPlugin(Plugin):
@@ -25,9 +26,13 @@ class BackupPlugin(Plugin):
         *,
         config: BackupConfig | None = None,
         coordinator: BackupCoordinator | None = None,
+        infra_coordinator: InfraBackupCoordinator | None = None,
     ) -> None:
         self.config = config or BackupConfig()
         self._coordinator = coordinator or BackupCoordinator(self.config)
+        self._infra_coordinator = infra_coordinator or InfraBackupCoordinator(
+            self.config
+        )
         self._state = PluginState.LOADED
 
     @property
@@ -56,8 +61,11 @@ class BackupPlugin(Plugin):
             raise ValueError(
                 "BackupPlugin.execute() requires a non-empty 'target_id' argument."
             )
+        normalized_target_id = target_id.strip()
+        if normalized_target_id == "infra-01":
+            return self._execute_infra_backup()
         target = next(
-            (item for item in self.config.targets if item.id == target_id.strip()),
+            (item for item in self.config.targets if item.id == normalized_target_id),
             None,
         )
         if target is None:
@@ -107,12 +115,55 @@ class BackupPlugin(Plugin):
             ),
         )
 
+    def _execute_infra_backup(self) -> ObserverResult:
+        if not self.config.infra_01.enabled:
+            raise ValueError("Backup target is disabled: 'infra-01'.")
+        started_at = perf_counter()
+        try:
+            result = self._infra_coordinator.run()
+        except BackupExecutionError as error:
+            return ObserverResult(
+                success=False,
+                latency=(perf_counter() - started_at) * 1000,
+                message=f"Backup of INFRA-01 failed during {error.stage}: {error}",
+                check="backup.run",
+                description="Create and upload one encrypted INFRA-01 backup.",
+                metadata=self._metadata(
+                    "infra-01",
+                    "INFRA-01",
+                    stage=error.stage,
+                    error=str(error),
+                ),
+            )
+        return ObserverResult(
+            success=True,
+            latency=(perf_counter() - started_at) * 1000,
+            message="Backup of INFRA-01 uploaded and validated.",
+            check="backup.run",
+            description="Create and upload one encrypted INFRA-01 backup.",
+            metadata=self._metadata(
+                "infra-01",
+                "INFRA-01",
+                stage="completed",
+                backup_id=result.backup_id,
+                remote_path=result.remote_directory,
+                size_bytes=result.size_bytes,
+                sha256=result.sha256,
+                deleted_remote_backups=result.deleted_remote_backups,
+            ),
+        )
+
     def test(self, **kwargs: Any) -> ObserverResult:
         target_id = kwargs.get("target_id")
         targets = [target for target in self.config.targets if target.enabled]
         if isinstance(target_id, str) and target_id.strip():
             targets = [target for target in targets if target.id == target_id.strip()]
-        if not targets:
+        check_infra = self.config.infra_01.enabled and (
+            not isinstance(target_id, str)
+            or not target_id.strip()
+            or target_id == "infra-01"
+        )
+        if not targets and not check_infra:
             raise ValueError("The backup plugin has no enabled HAOS target.")
 
         started_at = perf_counter()
@@ -121,6 +172,9 @@ class BackupPlugin(Plugin):
         try:
             for target in targets:
                 backup_count += self._coordinator.preflight(target)
+                checked += 1
+            if check_infra:
+                self._infra_coordinator.preflight()
                 checked += 1
         except BackupExecutionError as error:
             return ObserverResult(
@@ -140,7 +194,7 @@ class BackupPlugin(Plugin):
             success=True,
             latency=(perf_counter() - started_at) * 1000,
             message=(
-                f"Backup configuration validated for {checked} HAOS target(s); "
+                f"Backup configuration validated for {checked} target(s); "
                 "no backup was created."
             ),
             check="backup.preflight",
@@ -156,6 +210,7 @@ class BackupPlugin(Plugin):
         """Apply an updated policy without restarting Agent."""
         self.config = config
         self._coordinator = BackupCoordinator(config)
+        self._infra_coordinator = InfraBackupCoordinator(config)
 
     @staticmethod
     def _metadata(

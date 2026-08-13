@@ -1,7 +1,12 @@
 """Build runtime HAOS backup configuration."""
 
 from configuration.backup import BackupPluginConfig
-from plugins.backup.backup_config import BackupAction, BackupConfig, BackupTarget
+from plugins.backup.backup_config import (
+    BackupAction,
+    BackupConfig,
+    BackupTarget,
+    InfraBackupConfig,
+)
 
 
 class BackupConfigurationBuilder:
@@ -43,4 +48,11 @@ class BackupConfigurationBuilder:
             temporary_directory=config.temporary_directory,
             require_tmpfs=config.require_tmpfs,
             chunk_size_bytes=config.chunk_size_bytes,
+            infra_01=InfraBackupConfig(
+                enabled=config.infra_01.enabled,
+                schedule=config.infra_01.schedule,
+                age_binary=config.infra_01.age_binary,
+                age_recipient=config.infra_01.age_recipient,
+                remote_retention_count=config.infra_01.remote_retention_count,
+            ),
         )

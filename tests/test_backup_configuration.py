@@ -22,6 +22,7 @@ def test_backup_example_configuration_builds_three_targets() -> None:
     ]
     assert runtime.temporary_directory == "/run/ohana-agent/backup"
     assert runtime.require_tmpfs is True
+    assert runtime.infra_01.remote_retention_count == 0
     assert runtime.targets[2].pre_backup_action is not None
     assert runtime.targets[2].pre_backup_action.service == ("ohana_backup_zwave_nvm")
 
@@ -47,3 +48,8 @@ def test_backup_configuration_rejects_duplicate_target_ids() -> None:
 def test_backup_configuration_rejects_local_rclone_destination() -> None:
     with pytest.raises(ValueError, match="named remote"):
         BackupPluginConfig.model_validate({"rclone_remote": "/var/lib/backups"})
+
+
+def test_backup_configuration_rejects_invalid_infra_remote_retention() -> None:
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        BackupPluginConfig.model_validate({"infra_01": {"remote_retention_count": -1}})

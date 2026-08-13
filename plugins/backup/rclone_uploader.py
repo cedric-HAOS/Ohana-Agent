@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +114,74 @@ class RcloneStreamUploader:
             raise RcloneUploadError(
                 f"rclone could not access the configured remote: {result.stderr[:1000]}"
             )
+
+    def prune_complete_backup_directories(
+        self,
+        remote_root: str,
+        *,
+        keep_count: int,
+        protected_directory: str | None = None,
+    ) -> int:
+        """Delete only old timestamped directories containing a manifest."""
+
+        if keep_count <= 0:
+            return 0
+        result = subprocess.run(
+            self._base_command("lsf", remote_root)
+            + ["--dirs-only", "--log-level", "ERROR"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RcloneUploadError(
+                f"rclone could not list backup directories: {result.stderr[:1000]}"
+            )
+        backup_pattern = re.compile(r"[0-9]{8}T[0-9]{6}Z")
+        candidates = sorted(
+            line.strip().rstrip("/")
+            for line in result.stdout.splitlines()
+            if backup_pattern.fullmatch(line.strip().rstrip("/"))
+        )
+        complete = tuple(
+            backup_id
+            for backup_id in candidates
+            if self._remote_object_exists(f"{remote_root}/{backup_id}/manifest.json")
+        )
+        deleted = 0
+        retained = set(complete[-keep_count:])
+        if protected_directory is not None:
+            retained.add(protected_directory)
+        for backup_id in (item for item in complete if item not in retained):
+            delete = subprocess.run(
+                self._base_command("purge", f"{remote_root}/{backup_id}")
+                + ["--log-level", "ERROR"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if delete.returncode != 0:
+                raise RcloneUploadError(
+                    f"rclone could not delete old backup {backup_id}: "
+                    f"{delete.stderr[:1000]}"
+                )
+            deleted += 1
+        return deleted
+
+    def _remote_object_exists(self, remote_path: str) -> bool:
+        result = subprocess.run(
+            self._base_command("lsjson", remote_path) + ["--stat"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        return isinstance(payload, dict) and payload.get("IsDir") is False
 
     def _validate_remote_size(self, remote_path: str, expected_size: int) -> None:
         result = subprocess.run(

@@ -13,7 +13,7 @@ pour revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.12.7 — Streaming HAOS sans Content-Length.**
+**Version préparée : 1.13.0 — Sauvegarde logique d'INFRA-01.**
 
 Le socle actuel couvre notamment :
 
@@ -30,6 +30,8 @@ Le socle actuel couvre notamment :
 - la livraison durable et ordonnée des observations vers Vision.
 - les sauvegardes HAOS chiffrées vers iCloud, sans archive persistante sur la
   carte microSD d'INFRA-01 et avec rotation uniquement après validation distante.
+- la sauvegarde logique chiffrée d'INFRA-01 et son contrat de reconstruction
+  vérifié par Ohana-Installer.
 
 Le détail exhaustif des versions et correctifs publiés est conservé dans le
 [CHANGELOG](CHANGELOG.md).

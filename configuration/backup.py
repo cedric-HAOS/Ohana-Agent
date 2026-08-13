@@ -84,6 +84,37 @@ class BackupTargetPluginConfig(Config):
         return normalized
 
 
+class InfraBackupPluginConfig(Config):
+    """Sauvegarde logique chiffrée de la machine INFRA-01."""
+
+    enabled: bool = False
+    schedule: str = "0 1 * * *"
+    age_binary: str = "/usr/bin/age"
+    age_recipient: str | None = None
+    remote_retention_count: int = Field(default=0, ge=0, le=365)
+
+    @field_validator("schedule", "age_binary")
+    @classmethod
+    def validate_infra_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("INFRA-01 backup fields must not be empty.")
+        return normalized
+
+    @field_validator("age_recipient")
+    @classmethod
+    def normalize_age_recipient(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def validate_encryption(self) -> InfraBackupPluginConfig:
+        if self.enabled and not self.age_recipient:
+            raise ValueError("Enabled INFRA-01 backup requires an age recipient.")
+        return self
+
+
 class BackupPluginConfig(Config):
     """Global HAOS-to-iCloud streaming backup policy."""
 
@@ -96,6 +127,7 @@ class BackupPluginConfig(Config):
     require_tmpfs: bool = True
     chunk_size_bytes: int = Field(default=1024 * 1024, ge=64 * 1024, le=8 * 1024 * 1024)
     targets: list[BackupTargetPluginConfig] = Field(default_factory=list)
+    infra_01: InfraBackupPluginConfig = Field(default_factory=InfraBackupPluginConfig)
 
     @field_validator(
         "rclone_binary",
@@ -127,7 +159,9 @@ class BackupPluginConfig(Config):
         target_ids = [target.id for target in self.targets]
         if len(target_ids) != len(set(target_ids)):
             raise ValueError("Backup target ids must be unique.")
-        if self.enabled and not any(target.enabled for target in self.targets):
+        if self.enabled and not (
+            any(target.enabled for target in self.targets) or self.infra_01.enabled
+        ):
             raise ValueError(
                 "The enabled backup plugin requires at least one target enabled."
             )

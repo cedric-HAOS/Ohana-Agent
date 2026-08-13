@@ -111,3 +111,45 @@ def test_rclone_remote_check_uses_remote_root(
     uploader.check_remote()
 
     assert commands[0][0:3] == ["/usr/bin/rclone", "lsd", "icloud:"]
+
+
+def test_remote_rotation_deletes_only_old_complete_backups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    ids = ("20260810T010000Z", "20260811T010000Z", "20260812T010000Z")
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        commands.append(command)
+        operation = command[1]
+        if operation == "lsf":
+            return SimpleNamespace(
+                returncode=0,
+                stdout="\n".join(f"{backup_id}/" for backup_id in ids),
+                stderr="",
+            )
+        if operation == "lsjson":
+            backup_id = command[2].split("/")[-2]
+            if backup_id == ids[1]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="missing")
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"IsDir": False, "Size": 500}),
+                stderr="",
+            )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("plugins.backup.rclone_uploader.subprocess.run", fake_run)
+    uploader = RcloneStreamUploader(BackupConfig())
+
+    deleted = uploader.prune_complete_backup_directories(
+        "icloud:Ohana/Backups/infra-01",
+        keep_count=1,
+    )
+
+    assert deleted == 1
+    purge_commands = [command for command in commands if command[1] == "purge"]
+    assert len(purge_commands) == 1
+    assert ids[0] in purge_commands[0][2]
+    assert all(ids[1] not in command[2] for command in purge_commands)

@@ -34,6 +34,17 @@ class BackupTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class InfraBackupConfig:
+    """Politique de sauvegarde logique locale d'INFRA-01."""
+
+    enabled: bool = False
+    schedule: str = "0 1 * * *"
+    age_binary: str = "/usr/bin/age"
+    age_recipient: str | None = None
+    remote_retention_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class BackupConfig:
     """Complete runtime backup policy."""
 
@@ -45,3 +56,4 @@ class BackupConfig:
     temporary_directory: str = "/run/ohana-agent/backup"
     require_tmpfs: bool = True
     chunk_size_bytes: int = 1024 * 1024
+    infra_01: InfraBackupConfig = field(default_factory=InfraBackupConfig)

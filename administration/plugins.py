@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock, Thread
+from types import SimpleNamespace
 from typing import Any
 
 import yaml
@@ -252,6 +253,10 @@ class PluginAdministrationRepository:
             ),
             None,
         )
+        if target is None and normalized_target_id == "infra-01":
+            infra = getattr(configuration, "infra_01", None)
+            if infra is not None and infra.enabled:
+                target = SimpleNamespace(id="infra-01", label="INFRA-01", enabled=True)
         if target is None:
             raise LookupError(f"Unknown backup target: {normalized_target_id}")
         if not target.enabled:
@@ -524,12 +529,18 @@ class PluginAdministrationRepository:
                     target["token"] = None
                     target["password"] = None
             payload["icloud"] = self._backup_icloud_configurator().status()
+            infra = payload.get("infra_01")
+            if isinstance(infra, dict):
+                infra["backup_in_progress"] = "infra-01" in running_target_ids
 
         return payload
 
     @staticmethod
     def _strip_backup_runtime_status(payload: dict[str, Any]) -> None:
         payload.pop("icloud", None)
+        infra = payload.get("infra_01")
+        if isinstance(infra, dict):
+            infra.pop("backup_in_progress", None)
         targets = payload.get("targets", [])
         if not isinstance(targets, list):
             return

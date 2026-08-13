@@ -6,6 +6,30 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.13.0] — Sauvegarde logique d'INFRA-01 — 2026-08-13
+
+## Ajouté
+
+- Le plugin `backup` archive les configurations Agent, Vision, dnsmasq et
+  Chrony ainsi qu'un instantané SQLite cohérent de Vision.
+- L'archive est produite et chiffrée avec `age` dans un `tmpfs`, puis envoyée
+  directement vers iCloud sans staging sur la carte microSD.
+- Un descripteur placé dans l'archive chiffrée lie son identité, sa date et ses
+  versions au manifeste public utilisé par Ohana-Installer.
+- La sauvegarde peut être planifiée ou lancée immédiatement avec l'identifiant
+  strict `infra-01`.
+
+## Sécurité
+
+- Le manifeste est publié uniquement après validation distante de l'archive.
+- La rétention iCloud est désactivée par défaut. Lorsqu'elle est activée, elle
+  protège la nouvelle sauvegarde et ne supprime que d'anciens dossiers complets.
+- La clé privée `age` n'est jamais enregistrée sur INFRA-01.
+
+## Validation
+
+- 1278 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.12.7] — Streaming HAOS sans Content-Length — 2026-08-11
 
 ## Corrigé

@@ -486,8 +486,8 @@ def _build_teleinformation_tasks(
 
 
 def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
-    """Build one independent daily HAOS backup task per configured target."""
-    return [
+    """Build independent HAOS and INFRA-01 backup tasks."""
+    tasks = [
         Task(
             id=f"backup.run:{target.id}",
             name=f"Back up {target.label}",
@@ -508,6 +508,27 @@ def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
         for target in backup_config.targets
         if target.enabled
     ]
+    if backup_config.infra_01.enabled:
+        tasks.append(
+            Task(
+                id="backup.run:infra-01",
+                name="Back up INFRA-01",
+                command="backup.run",
+                trigger=CronTrigger(backup_config.infra_01.schedule),
+                arguments={
+                    "target_id": "infra-01",
+                    "device_id": "infra-01",
+                    "node_id": "infra-01",
+                },
+                metadata={
+                    "managed_by": "backup",
+                    "target_id": "infra-01",
+                    "device_id": "infra-01",
+                    "schedule": backup_config.infra_01.schedule,
+                },
+            )
+        )
+    return tasks
 
 
 def _replace_plugin_tasks(

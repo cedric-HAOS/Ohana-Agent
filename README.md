@@ -44,6 +44,12 @@ Téléinformation peuvent être activés, reconfigurés et testés sans redémar
 l’Agent.
 Les secrets MQTT, Freebox et Home Assistant restent masqués.
 
+Le plugin de sauvegarde prend également en charge INFRA-01 : il archive ses
+configurations et un instantané cohérent de la base Vision, chiffre le flux avec
+la clé publique `age`, puis l'envoie à iCloud sans le stocker sur la microSD.
+La clé privée de restauration doit rester sur un support externe. La procédure
+complète est décrite dans [`docs/Backup.md`](docs/Backup.md).
+
 - l'API écoute par défaut sur `127.0.0.1:8765` ;
 - chaque requête exige le jeton partagé installé dans
   `/etc/ohana-agent/management.token` ;

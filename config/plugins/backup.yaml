@@ -7,4 +7,10 @@ environment_file: /etc/ohana-agent/backup.env
 temporary_directory: /run/ohana-agent/backup
 require_tmpfs: true
 chunk_size_bytes: 1048576
+infra_01:
+  enabled: false
+  schedule: "0 1 * * *"
+  age_binary: /usr/bin/age
+  age_recipient: null
+  remote_retention_count: 0
 targets: []

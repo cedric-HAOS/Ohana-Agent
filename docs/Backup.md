@@ -28,8 +28,8 @@ La sauvegarde contient :
 - `/etc/chrony/chrony.conf` ;
 - un instantané cohérent de `/var/lib/ohana-vision/vision.db`.
 
-Agent crée le tar et le chiffrement dans un `tmpfs`, envoie d'abord l'archive
-`.tar.age`, puis publie le manifeste JSON en dernier. Ce manifeste permet à
+Agent compresse le tar en flux puis le chiffre dans un `tmpfs`, envoie d'abord
+l'archive `.tar.age`, puis publie le manifeste JSON en dernier. Ce manifeste permet à
 Ohana-Installer de sélectionner uniquement une sauvegarde complètement publiée
 et de réinstaller la composition Agent/Vision correspondante. Un second
 descripteur placé à l'intérieur de l'archive chiffrée reprend l'identité et les

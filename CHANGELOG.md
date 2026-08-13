@@ -6,6 +6,22 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.14.3] — Archive INFRA-01 adaptée au tmpfs — 2026-08-13
+
+## Corrigé
+
+- L'archive tar d'INFRA-01 est désormais compressée en flux avant son
+  chiffrement avec `age`, afin que l'instantané SQLite et l'archive puissent
+  coexister dans le tmpfs sans saturer `/run`.
+- Agent vérifie avant la sauvegarde que le tmpfs peut contenir l'instantané
+  Vision et une réserve minimale pour l'archive.
+- Si `age` interrompt le flux, son diagnostic est désormais remonté à la place
+  du message générique `[Errno 32] Broken pipe`.
+
+## Validation
+
+- 1285 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.14.2] — Inventaire Vision via l'API locale — 2026-08-13
 
 ## Corrigé

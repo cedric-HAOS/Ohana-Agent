@@ -5,6 +5,7 @@ import io
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +24,7 @@ class FakeAgeProcess:
     def __init__(self, command) -> None:
         self.command = tuple(command)
         self.stdin = NonClosingBytesIO()
+        self.input = self.stdin
         self.returncode = 0
 
     def communicate(self):
@@ -32,6 +34,24 @@ class FakeAgeProcess:
 
     def kill(self) -> None:
         self.returncode = -9
+
+    def poll(self):
+        return self.returncode
+
+
+class BrokenAgeInput(NonClosingBytesIO):
+    def write(self, _body) -> int:
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+class FailingAgeProcess(FakeAgeProcess):
+    def __init__(self, command) -> None:
+        super().__init__(command)
+        self.stdin = BrokenAgeInput()
+        self.returncode = 1
+
+    def communicate(self):
+        return b"", b"age: failed to close output: no space left on device"
 
 
 class FakeUploader:
@@ -128,6 +148,13 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
     identity.write_bytes(b"AGE-SECRET-KEY-1TEST\n")
     uploader = FakeUploader()
     monkeypatch.setattr(RcloneStreamUploader, "_require_tmpfs", lambda _path: None)
+    age_processes: list[FakeAgeProcess] = []
+
+    def create_age_process(command, **_kwargs):
+        process = FakeAgeProcess(command)
+        age_processes.append(process)
+        return process
+
     coordinator = InfraBackupCoordinator(
         BackupConfig(
             rclone_remote="icloud:Ohana/Backups",
@@ -147,7 +174,7 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
             "ohana-agent": "1.12.7",
             "ohana-vision": "1.11.8",
         }[distribution],
-        popen_factory=lambda command, **_kwargs: FakeAgeProcess(command),
+        popen_factory=create_age_process,
     )
 
     result = coordinator.run(now=datetime(2026, 8, 13, 12, tzinfo=UTC))
@@ -168,3 +195,52 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
     assert manifest["agent_version"] == "1.12.7"
     assert manifest["archive"]["sha256"] == hashlib.sha256(archive_body).hexdigest()
     assert uploader.prunes == [("icloud:Ohana/Backups/infra-01", 3, "20260813T120000Z")]
+    assert age_processes[0].input.getvalue().startswith(b"\x1f\x8b")
+
+
+def test_infra_backup_reports_age_error_instead_of_broken_pipe(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "etc" / "ohana-agent"
+    source.mkdir(parents=True)
+    (source / "config.yaml").write_text("enabled: true\n", encoding="utf-8")
+    destination = tmp_path / "backup.tar.age"
+    descriptor = tmp_path / "descriptor.json"
+    descriptor.write_text("{}\n", encoding="utf-8")
+    coordinator = InfraBackupCoordinator(
+        BackupConfig(
+            infra_01=InfraBackupConfig(
+                enabled=True,
+                age_binary=str(tmp_path / "age"),
+            )
+        ),
+        sources=(source,),
+        popen_factory=lambda command, **_kwargs: FailingAgeProcess(command),
+    )
+
+    with pytest.raises(BackupExecutionError, match="no space left on device"):
+        coordinator._create_encrypted_archive(
+            destination,
+            snapshot=tmp_path / "missing.db",
+            descriptor=descriptor,
+            recipient="age1recipient",
+        )
+
+
+def test_infra_backup_rejects_tmpfs_too_small_for_vision_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "vision.db"
+    database.write_bytes(b"database")
+    coordinator = InfraBackupCoordinator(
+        BackupConfig(),
+        vision_database=database,
+    )
+    monkeypatch.setattr(
+        "plugins.backup.infra_backup_coordinator.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=database.stat().st_size),
+    )
+
+    with pytest.raises(BackupExecutionError, match="Insufficient tmpfs space"):
+        coordinator._ensure_temporary_capacity(tmp_path)

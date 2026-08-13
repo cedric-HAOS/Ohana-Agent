@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import json
+import shutil
 import sqlite3
 import subprocess
 import tarfile
@@ -29,6 +31,7 @@ INFRA_SOURCES = (
 VISION_DATABASE = Path("/var/lib/ohana-vision/vision.db")
 VISION_VERSION_URL = "http://127.0.0.1:8000/api/version"
 VISION_VERSION_TIMEOUT_SECONDS = 5.0
+MINIMUM_ARCHIVE_HEADROOM_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +77,7 @@ class InfraBackupCoordinator:
         temporary_root = Path(self._config.temporary_directory)
         RcloneStreamUploader._require_tmpfs(temporary_root)
         temporary_root.mkdir(parents=True, exist_ok=True)
+        self._ensure_temporary_capacity(temporary_root)
         agent_version = self._installed_version("ohana-agent")
         vision_version = self._installed_version("ohana-vision")
 
@@ -234,7 +238,7 @@ class InfraBackupCoordinator:
             process.kill()
             raise BackupExecutionError("encryption", "age did not expose stdin.")
         try:
-            with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
+            with tarfile.open(fileobj=process.stdin, mode="w|gz") as archive:
                 for source in self._sources:
                     archive.add(
                         source,
@@ -257,13 +261,42 @@ class InfraBackupCoordinator:
                 )
             process.stdin = None
             _stdout, stderr = process.communicate()
-        except Exception:
-            process.kill()
-            process.communicate()
+        except Exception as error:
+            pipe_failed = isinstance(error, BrokenPipeError) or (
+                isinstance(error, OSError) and error.errno == errno.EPIPE
+            )
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+            process.stdin = None
+            if process.poll() is None:
+                process.kill()
+            _stdout, stderr = process.communicate()
+            if pipe_failed and process.returncode != 0:
+                detail = (stderr or b"unknown age error").decode(errors="replace")
+                raise BackupExecutionError("encryption", detail[:500]) from error
             raise
         if process.returncode != 0:
             detail = (stderr or b"unknown age error").decode(errors="replace")
             raise BackupExecutionError("encryption", detail[:500])
+
+    def _ensure_temporary_capacity(self, temporary_root: Path) -> None:
+        """Ensure the tmpfs can hold the SQLite snapshot and archive headroom."""
+
+        database_size = (
+            self._vision_database.stat().st_size
+            if self._vision_database.is_file()
+            else 0
+        )
+        required = database_size + MINIMUM_ARCHIVE_HEADROOM_BYTES
+        available = shutil.disk_usage(temporary_root).free
+        if available < required:
+            raise BackupExecutionError(
+                "storage",
+                "Insufficient tmpfs space for INFRA-01 backup: "
+                f"{available} bytes available, at least {required} required.",
+            )
 
     @staticmethod
     def _regular_member(member: tarfile.TarInfo) -> tarfile.TarInfo | None:

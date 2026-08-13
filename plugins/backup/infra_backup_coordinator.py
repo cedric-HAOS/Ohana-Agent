@@ -11,8 +11,10 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from plugins.backup.backup_config import BackupConfig
 from plugins.backup.backup_coordinator import BackupExecutionError
@@ -25,7 +27,8 @@ INFRA_SOURCES = (
     Path("/etc/chrony/chrony.conf"),
 )
 VISION_DATABASE = Path("/var/lib/ohana-vision/vision.db")
-VISION_EXECUTABLE = PurePosixPath("/opt/ohana-vision/venv/bin/ohana-vision")
+VISION_VERSION_URL = "http://127.0.0.1:8000/api/version"
+VISION_VERSION_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +53,7 @@ class InfraBackupCoordinator:
         sources: tuple[Path, ...] = INFRA_SOURCES,
         vision_database: Path = VISION_DATABASE,
         version_resolver: Any | None = None,
-        version_command_runner: Any = subprocess.run,
+        vision_version_reader: Any = urlopen,
         popen_factory: Any = subprocess.Popen,
     ) -> None:
         self._config = config
@@ -59,7 +62,7 @@ class InfraBackupCoordinator:
         self._sources = sources
         self._vision_database = vision_database
         self._version_resolver = version_resolver
-        self._version_command_runner = version_command_runner
+        self._vision_version_reader = vision_version_reader
         self._popen_factory = popen_factory
 
     def run(self, *, now: datetime | None = None) -> InfraBackupResult:
@@ -342,28 +345,26 @@ class InfraBackupCoordinator:
 
     def _vision_version(self) -> str:
         try:
-            result = self._version_command_runner(
-                (str(VISION_EXECUTABLE), "--version"),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except OSError as error:
+            with self._vision_version_reader(
+                VISION_VERSION_URL,
+                timeout=VISION_VERSION_TIMEOUT_SECONDS,
+            ) as response:
+                payload = json.loads(response.read())
+        except (
+            OSError,
+            URLError,
+            ValueError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as error:
             raise BackupExecutionError(
                 "inventory",
                 "Installed version unavailable for ohana-vision.",
             ) from error
-        prefix = "ohana-vision "
-        output = result.stdout.strip()
-        if result.returncode != 0 or not output.startswith(prefix):
+        installed = payload.get("version") if isinstance(payload, dict) else None
+        if not isinstance(installed, str) or not installed.strip():
             raise BackupExecutionError(
                 "inventory",
                 "Installed version unavailable for ohana-vision.",
             )
-        installed = output.removeprefix(prefix).strip()
-        if not installed:
-            raise BackupExecutionError(
-                "inventory",
-                "Installed version unavailable for ohana-vision.",
-            )
-        return installed
+        return installed.strip()

@@ -6,6 +6,18 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.14.2] — Inventaire Vision via l'API locale — 2026-08-13
+
+## Corrigé
+
+- La sauvegarde INFRA-01 lit la version de Vision depuis son API locale
+  `/api/version`, accessible au compte `ohana-agent`, sans tenter d'exécuter un
+  binaire protégé dans l'environnement privé du compte `ohana-vision`.
+
+## Validation
+
+- 1283 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.14.1] — Inventaire Vision fiable pour les sauvegardes — 2026-08-13
 
 ## Corrigé

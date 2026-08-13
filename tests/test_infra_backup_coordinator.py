@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -64,35 +63,44 @@ class FakeUploader:
         return 2 if keep_count else 0
 
 
-def test_infra_backup_reads_vision_version_from_its_own_environment() -> None:
-    commands: list[tuple[str, ...]] = []
+class FakeVersionResponse(io.BytesIO):
+    def __enter__(self):
+        return self
 
-    def runner(command, **_kwargs):
-        commands.append(tuple(command))
-        return subprocess.CompletedProcess(command, 0, "ohana-vision 1.13.0\n", "")
+    def __exit__(self, *_args) -> None:
+        self.close()
+
+
+def test_infra_backup_reads_vision_version_from_local_api() -> None:
+    requests: list[tuple[str, float]] = []
+
+    def reader(url: str, *, timeout: float):
+        requests.append((url, timeout))
+        return FakeVersionResponse(b'{"name":"Ohana-Vision","version":"1.13.0"}')
 
     coordinator = InfraBackupCoordinator(
         BackupConfig(),
-        version_command_runner=runner,
+        vision_version_reader=reader,
     )
 
     assert coordinator._installed_version("ohana-vision") == "1.13.0"
-    assert commands == [
-        ("/opt/ohana-vision/venv/bin/ohana-vision", "--version"),
+    assert requests == [
+        ("http://127.0.0.1:8000/api/version", 5.0),
     ]
 
 
 @pytest.mark.parametrize(
-    "result",
+    "body",
     (
-        subprocess.CompletedProcess(("ohana-vision", "--version"), 1, "", "error"),
-        subprocess.CompletedProcess(("ohana-vision", "--version"), 0, "invalid", ""),
+        b"invalid",
+        b'{"name":"Ohana-Vision","version":""}',
+        b"[]",
     ),
 )
-def test_infra_backup_rejects_unavailable_vision_version(result) -> None:
+def test_infra_backup_rejects_unavailable_vision_version(body: bytes) -> None:
     coordinator = InfraBackupCoordinator(
         BackupConfig(),
-        version_command_runner=lambda command, **kwargs: result,
+        vision_version_reader=lambda url, **kwargs: FakeVersionResponse(body),
     )
 
     with pytest.raises(

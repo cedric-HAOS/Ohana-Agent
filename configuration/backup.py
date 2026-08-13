@@ -117,6 +117,7 @@ class InfraBackupPluginConfig(Config):
             return None
         return value.strip() or None
 
+
 class BackupPluginConfig(Config):
     """Global HAOS-to-iCloud streaming backup policy."""
 

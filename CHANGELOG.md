@@ -6,6 +6,18 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.14.1] — Inventaire Vision fiable pour les sauvegardes — 2026-08-13
+
+## Corrigé
+
+- La sauvegarde INFRA-01 lit la version de Vision depuis son propre
+  environnement `/opt/ohana-vision/venv`, au lieu de la rechercher à tort dans
+  l'environnement Python séparé d'Agent.
+
+## Validation
+
+- 1282 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.14.0] — Identité age gérée pour INFRA-01 — 2026-08-13
 
 ## Modifié

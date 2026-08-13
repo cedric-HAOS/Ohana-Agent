@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from plugins.backup.backup_config import BackupConfig, InfraBackupConfig
+from plugins.backup.backup_coordinator import BackupExecutionError
 from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
 from plugins.backup.rclone_uploader import RcloneStreamUploader, UploadReceipt
 
@@ -60,6 +62,44 @@ class FakeUploader:
     ) -> int:
         self.prunes.append((remote_root, keep_count, protected_directory))
         return 2 if keep_count else 0
+
+
+def test_infra_backup_reads_vision_version_from_its_own_environment() -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def runner(command, **_kwargs):
+        commands.append(tuple(command))
+        return subprocess.CompletedProcess(command, 0, "ohana-vision 1.13.0\n", "")
+
+    coordinator = InfraBackupCoordinator(
+        BackupConfig(),
+        version_command_runner=runner,
+    )
+
+    assert coordinator._installed_version("ohana-vision") == "1.13.0"
+    assert commands == [
+        ("/opt/ohana-vision/venv/bin/ohana-vision", "--version"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "result",
+    (
+        subprocess.CompletedProcess(("ohana-vision", "--version"), 1, "", "error"),
+        subprocess.CompletedProcess(("ohana-vision", "--version"), 0, "invalid", ""),
+    ),
+)
+def test_infra_backup_rejects_unavailable_vision_version(result) -> None:
+    coordinator = InfraBackupCoordinator(
+        BackupConfig(),
+        version_command_runner=lambda command, **kwargs: result,
+    )
+
+    with pytest.raises(
+        BackupExecutionError,
+        match="Installed version unavailable for ohana-vision",
+    ):
+        coordinator._installed_version("ohana-vision")
 
 
 def test_infra_backup_publishes_manifest_after_encrypted_archive(

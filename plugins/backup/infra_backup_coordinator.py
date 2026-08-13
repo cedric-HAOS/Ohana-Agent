@@ -11,7 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from plugins.backup.backup_config import BackupConfig
@@ -25,6 +25,7 @@ INFRA_SOURCES = (
     Path("/etc/chrony/chrony.conf"),
 )
 VISION_DATABASE = Path("/var/lib/ohana-vision/vision.db")
+VISION_EXECUTABLE = PurePosixPath("/opt/ohana-vision/venv/bin/ohana-vision")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +49,8 @@ class InfraBackupCoordinator:
         uploader: RcloneStreamUploader | None = None,
         sources: tuple[Path, ...] = INFRA_SOURCES,
         vision_database: Path = VISION_DATABASE,
-        version_resolver: Any = version,
+        version_resolver: Any | None = None,
+        version_command_runner: Any = subprocess.run,
         popen_factory: Any = subprocess.Popen,
     ) -> None:
         self._config = config
@@ -57,6 +59,7 @@ class InfraBackupCoordinator:
         self._sources = sources
         self._vision_database = vision_database
         self._version_resolver = version_resolver
+        self._version_command_runner = version_command_runner
         self._popen_factory = popen_factory
 
     def run(self, *, now: datetime | None = None) -> InfraBackupResult:
@@ -319,10 +322,48 @@ class InfraBackupCoordinator:
         ).encode()
 
     def _installed_version(self, distribution: str) -> str:
+        if self._version_resolver is not None:
+            try:
+                return str(self._version_resolver(distribution))
+            except PackageNotFoundError as error:
+                raise BackupExecutionError(
+                    "inventory",
+                    f"Installed version unavailable for {distribution}.",
+                ) from error
+        if distribution == "ohana-vision":
+            return self._vision_version()
         try:
-            return str(self._version_resolver(distribution))
+            return str(version(distribution))
         except PackageNotFoundError as error:
             raise BackupExecutionError(
                 "inventory",
                 f"Installed version unavailable for {distribution}.",
             ) from error
+
+    def _vision_version(self) -> str:
+        try:
+            result = self._version_command_runner(
+                (str(VISION_EXECUTABLE), "--version"),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as error:
+            raise BackupExecutionError(
+                "inventory",
+                "Installed version unavailable for ohana-vision.",
+            ) from error
+        prefix = "ohana-vision "
+        output = result.stdout.strip()
+        if result.returncode != 0 or not output.startswith(prefix):
+            raise BackupExecutionError(
+                "inventory",
+                "Installed version unavailable for ohana-vision.",
+            )
+        installed = output.removeprefix(prefix).strip()
+        if not installed:
+            raise BackupExecutionError(
+                "inventory",
+                "Installed version unavailable for ohana-vision.",
+            )
+        return installed

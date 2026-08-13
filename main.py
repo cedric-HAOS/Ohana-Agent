@@ -105,7 +105,7 @@ def parse_arguments() -> argparse.Namespace:
         "--backup-config",
         type=Path,
         default=Path("config/plugins/backup.yaml"),
-        help="HAOS streaming backup plugin configuration file.",
+        help="Ohana backup plugin configuration file.",
     )
     parser.add_argument(
         "--log-level",

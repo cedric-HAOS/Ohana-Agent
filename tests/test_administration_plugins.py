@@ -369,7 +369,7 @@ targets:
         bindings=(
             PluginAdministrationBinding(
                 identifier="backup",
-                display_name="Sauvegardes HAOS",
+                display_name="Sauvegardes",
                 capabilities=("backup.run",),
                 configuration_path=configuration_path,
                 configuration_model=BackupPluginConfig,
@@ -464,7 +464,7 @@ targets:
         bindings=(
             PluginAdministrationBinding(
                 identifier="backup",
-                display_name="Sauvegardes HAOS",
+                display_name="Sauvegardes",
                 capabilities=("backup.run",),
                 configuration_path=configuration_path,
                 configuration_model=BackupPluginConfig,

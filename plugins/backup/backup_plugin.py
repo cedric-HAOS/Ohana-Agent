@@ -1,4 +1,4 @@
-"""HAOS-to-iCloud backup capability plugin."""
+"""Ohana encrypted backup capability plugin."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
 
 
 class BackupPlugin(Plugin):
-    """Request HAOS backups and stream them to an rclone remote."""
+    """Back up HAOS targets and INFRA-01 to an rclone remote."""
 
     def __init__(
         self,
@@ -47,8 +47,8 @@ class BackupPlugin(Plugin):
     def manifest(self) -> PluginManifest:
         return PluginManifest(
             name="backup",
-            version="0.1.0",
-            description="Stream encrypted HAOS backups to off-site storage.",
+            version="0.2.0",
+            description="Stream encrypted Ohana backups to off-site storage.",
         )
 
     def register(self, context: PluginContext) -> None:

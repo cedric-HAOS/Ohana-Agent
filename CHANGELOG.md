@@ -6,6 +6,15 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.13.1] — Identité du plugin Sauvegardes — 2026-08-13
+
+## Corrigé
+
+- Le plugin est désormais présenté comme **Sauvegardes**, puisqu'il protège à
+  la fois les systèmes HAOS et INFRA-01.
+- Son manifeste décrit l'ensemble des sauvegardes Ohana et passe en version
+  interne `0.2.0`.
+
 # [1.13.0] — Sauvegarde logique d'INFRA-01 — 2026-08-13
 
 ## Ajouté

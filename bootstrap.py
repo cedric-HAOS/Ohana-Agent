@@ -1679,7 +1679,7 @@ def build_production_agent(
             bindings=(
                 PluginAdministrationBinding(
                     identifier="backup",
-                    display_name="Sauvegardes HAOS",
+                    display_name="Sauvegardes",
                     capabilities=("backup.run",),
                     configuration_path=backup_config_path,
                     configuration_model=BackupPluginConfig,

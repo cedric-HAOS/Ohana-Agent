@@ -65,7 +65,7 @@ Copier `config/plugins/backup.example.yaml` vers
 les prérequis ne sont pas installés.
 
 Les jetons Home Assistant et les mots de passe de chiffrement se saisissent
-directement dans **Vision → Configuration → Plugins → Sauvegardes HAOS**. Agent
+directement dans **Vision → Configuration → Plugins → Sauvegardes**. Agent
 les conserve dans `plugins/backup.yaml`, protège ce fichier en mode `0600` et
 ne renvoie jamais leurs valeurs à Vision. L'API indique seulement si chaque
 secret est configuré ; un champ laissé vide conserve la valeur existante.
@@ -94,8 +94,8 @@ archive iCloud est inutilisable sans le mot de passe correspondant.
 
 ### Administration depuis Vision
 
-Une fois le plugin installé, la page **Configuration → Plugins → Sauvegardes
-HAOS** de Vision permet de modifier sans redémarrage :
+Une fois le plugin installé, la page **Configuration → Plugins → Sauvegardes**
+de Vision permet de modifier sans redémarrage :
 
 - l'activation globale et l'activation de chaque cible ;
 - l'adresse HAOS, y compris sous la forme

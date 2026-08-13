@@ -67,6 +67,13 @@ def test_backup_plugin_publishes_validated_success_metadata() -> None:
     assert result.metadata["size_bytes"] == 42
 
 
+def test_backup_plugin_manifest_covers_all_ohana_backups() -> None:
+    manifest = BackupPlugin(config=make_config()).manifest
+
+    assert manifest.version == "0.2.0"
+    assert manifest.description == "Stream encrypted Ohana backups to off-site storage."
+
+
 def test_backup_plugin_turns_coordinator_failure_into_observation() -> None:
     plugin = BackupPlugin(
         config=make_config(),

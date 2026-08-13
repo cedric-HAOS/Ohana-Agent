@@ -16,8 +16,12 @@ from plugins.backup.rclone_uploader import RcloneStreamUploader, UploadReceipt
 
 
 class NonClosingBytesIO(io.BytesIO):
+    def __init__(self) -> None:
+        super().__init__()
+        self.close_calls = 0
+
     def close(self) -> None:
-        pass
+        self.close_calls += 1
 
 
 class FakeAgeProcess:
@@ -28,6 +32,7 @@ class FakeAgeProcess:
         self.returncode = 0
 
     def communicate(self):
+        assert self.input.close_calls == 1
         destination = Path(self.command[self.command.index("--output") + 1])
         destination.write_bytes(b"age-encrypted")
         return b"", b""
@@ -48,6 +53,7 @@ class FailingAgeProcess(FakeAgeProcess):
     def __init__(self, command) -> None:
         super().__init__(command)
         self.stdin = BrokenAgeInput()
+        self.input = self.stdin
         self.returncode = 1
 
     def communicate(self):

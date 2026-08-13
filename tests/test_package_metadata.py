@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.14.3"
+    assert project["version"] == "1.14.4"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"

@@ -259,6 +259,7 @@ class InfraBackupCoordinator:
                     recursive=False,
                     filter=self._regular_member,
                 )
+            process.stdin.close()
             process.stdin = None
             _stdout, stderr = process.communicate()
         except Exception as error:

@@ -6,6 +6,20 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.14.4] — Fin correcte du chiffrement INFRA-01 — 2026-08-13
+
+## Corrigé
+
+- La sauvegarde INFRA-01 ferme désormais explicitement le flux envoyé à
+  `age` avant d'attendre la fin du chiffrement. Le processus ne reste plus
+  bloqué indéfiniment après la création de l'archive.
+- L'état d'exécution de la sauvegarde redevient disponible après la fin du
+  chiffrement au lieu de rester sur `Backup in progress`.
+
+## Validation
+
+- 1285 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.14.3] — Archive INFRA-01 adaptée au tmpfs — 2026-08-13
 
 ## Corrigé

@@ -10,13 +10,15 @@ temporary_directory: /run/ohana-agent/backup
 require_tmpfs: true
 chunk_size_bytes: 1048576
 
-# Logical backup of the INFRA-01 role. The age recipient is a public key;
-# keep the matching private identity off INFRA-01 (password manager or USB key).
+# Logical backup of the INFRA-01 role. Ohana-Installer manages the age identity
+# locally and copies its recovery identity to iCloud Drive.
 infra_01:
   enabled: false
   schedule: "0 1 * * *"
   age_binary: /usr/bin/age
-  age_recipient: null
+  age_recipient_file: /etc/ohana-agent/keys/infra-01.agepub
+  age_identity_file: /etc/ohana-agent/keys/infra-01.agekey
+  recovery_remote_path: icloud:Ohana/Recovery/infra-01.agekey
   # 0 keeps every complete iCloud backup. A positive value enables rotation.
   remote_retention_count: 0
 

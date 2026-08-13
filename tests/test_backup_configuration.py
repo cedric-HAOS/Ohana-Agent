@@ -23,6 +23,8 @@ def test_backup_example_configuration_builds_three_targets() -> None:
     assert runtime.temporary_directory == "/run/ohana-agent/backup"
     assert runtime.require_tmpfs is True
     assert runtime.infra_01.remote_retention_count == 0
+    assert runtime.infra_01.age_recipient_file.endswith("infra-01.agepub")
+    assert runtime.infra_01.age_identity_file.endswith("infra-01.agekey")
     assert runtime.targets[2].pre_backup_action is not None
     assert runtime.targets[2].pre_backup_action.service == ("ohana_backup_zwave_nvm")
 

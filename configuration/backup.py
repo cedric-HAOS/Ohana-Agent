@@ -91,9 +91,18 @@ class InfraBackupPluginConfig(Config):
     schedule: str = "0 1 * * *"
     age_binary: str = "/usr/bin/age"
     age_recipient: str | None = None
+    age_recipient_file: str = "/etc/ohana-agent/keys/infra-01.agepub"
+    age_identity_file: str = "/etc/ohana-agent/keys/infra-01.agekey"
+    recovery_remote_path: str = "icloud:Ohana/Recovery/infra-01.agekey"
     remote_retention_count: int = Field(default=0, ge=0, le=365)
 
-    @field_validator("schedule", "age_binary")
+    @field_validator(
+        "schedule",
+        "age_binary",
+        "age_recipient_file",
+        "age_identity_file",
+        "recovery_remote_path",
+    )
     @classmethod
     def validate_infra_required_text(cls, value: str) -> str:
         normalized = value.strip()
@@ -107,13 +116,6 @@ class InfraBackupPluginConfig(Config):
         if value is None:
             return None
         return value.strip() or None
-
-    @model_validator(mode="after")
-    def validate_encryption(self) -> InfraBackupPluginConfig:
-        if self.enabled and not self.age_recipient:
-            raise ValueError("Enabled INFRA-01 backup requires an age recipient.")
-        return self
-
 
 class BackupPluginConfig(Config):
     """Global HAOS-to-iCloud streaming backup policy."""

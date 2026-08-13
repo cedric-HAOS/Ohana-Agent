@@ -53,6 +53,9 @@ class BackupConfigurationBuilder:
                 schedule=config.infra_01.schedule,
                 age_binary=config.infra_01.age_binary,
                 age_recipient=config.infra_01.age_recipient,
+                age_recipient_file=config.infra_01.age_recipient_file,
+                age_identity_file=config.infra_01.age_identity_file,
+                recovery_remote_path=config.infra_01.recovery_remote_path,
                 remote_retention_count=config.infra_01.remote_retention_count,
             ),
         )

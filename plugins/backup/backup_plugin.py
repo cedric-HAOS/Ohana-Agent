@@ -47,7 +47,7 @@ class BackupPlugin(Plugin):
     def manifest(self) -> PluginManifest:
         return PluginManifest(
             name="backup",
-            version="0.2.0",
+            version="0.3.0",
             description="Stream encrypted Ohana backups to off-site storage.",
         )
 

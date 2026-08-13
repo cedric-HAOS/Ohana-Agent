@@ -70,7 +70,7 @@ def test_backup_plugin_publishes_validated_success_metadata() -> None:
 def test_backup_plugin_manifest_covers_all_ohana_backups() -> None:
     manifest = BackupPlugin(config=make_config()).manifest
 
-    assert manifest.version == "0.2.0"
+    assert manifest.version == "0.3.0"
     assert manifest.description == "Stream encrypted Ohana backups to off-site storage."
 
 

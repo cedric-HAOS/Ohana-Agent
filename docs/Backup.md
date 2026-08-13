@@ -10,14 +10,16 @@ la reconstruction, chiffre le flux avec `age`, puis le transmet à iCloud sans
 
 ## Sauvegarde d'INFRA-01
 
-Créer la paire de clés `age` sur une autre machine et conserver la clé privée
-hors d'INFRA-01 :
+Ohana-Installer installe `age`, crée l'identité dans
+`/etc/ohana-agent/keys/infra-01.agekey` et en dérive automatiquement le
+destinataire public. Agent copie l'identité de récupération dans
+`icloud:Ohana/Recovery/infra-01.agekey` avant de publier chaque sauvegarde.
+Avec la Protection avancée des données iCloud, cette copie bénéficie aussi du
+chiffrement de bout en bout Apple. Vision ne demande donc plus de clé publique.
 
-```bash
-age-keygen -o ohana-infra-01.agekey
-```
-
-Seule la clé publique `age1...` est enregistrée dans la configuration du plugin.
+Lors d'une restauration iCloud sur une nouvelle machine, Installer récupère
+cette identité avant de déchiffrer l'archive, puis la réinstalle localement.
+L'identité ne doit jamais être recréée pour restaurer une archive existante.
 La sauvegarde contient :
 
 - `/etc/ohana-agent` ;

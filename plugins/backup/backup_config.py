@@ -41,6 +41,9 @@ class InfraBackupConfig:
     schedule: str = "0 1 * * *"
     age_binary: str = "/usr/bin/age"
     age_recipient: str | None = None
+    age_recipient_file: str = "/etc/ohana-agent/keys/infra-01.agepub"
+    age_identity_file: str = "/etc/ohana-agent/keys/infra-01.agekey"
+    recovery_remote_path: str = "icloud:Ohana/Recovery/infra-01.agekey"
     remote_retention_count: int = 0
 
 

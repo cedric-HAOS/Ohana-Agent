@@ -61,7 +61,8 @@ class InfraBackupCoordinator:
 
     def run(self, *, now: datetime | None = None) -> InfraBackupResult:
         current = (now or datetime.now(UTC)).astimezone(UTC)
-        self._preflight_local()
+        recipient = self._preflight_local()
+        self._upload_recovery_identity()
         backup_id = current.strftime("%Y%m%dT%H%M%SZ")
         remote_directory = f"{self._config.rclone_remote}/infra-01/{backup_id}"
         temporary_root = Path(self._config.temporary_directory)
@@ -92,6 +93,7 @@ class InfraBackupCoordinator:
                     archive,
                     snapshot=snapshot,
                     descriptor=descriptor,
+                    recipient=recipient,
                 )
                 size = archive.stat().st_size
                 with archive.open("rb") as stream:
@@ -139,11 +141,9 @@ class InfraBackupCoordinator:
         RcloneStreamUploader._require_tmpfs(Path(self._config.temporary_directory))
         self._uploader.check_remote()
 
-    def _preflight_local(self) -> None:
+    def _preflight_local(self) -> str:
         if not self._infra.enabled:
             raise BackupExecutionError("configuration", "INFRA-01 backup is disabled.")
-        if not self._infra.age_recipient:
-            raise BackupExecutionError("encryption", "Age recipient is missing.")
         if not Path(self._infra.age_binary).is_file():
             raise BackupExecutionError(
                 "encryption",
@@ -155,6 +155,37 @@ class InfraBackupCoordinator:
                 "inventory",
                 "Missing INFRA-01 backup source(s): "
                 + ", ".join(str(path) for path in missing),
+            )
+        return self._age_recipient()
+
+    def _age_recipient(self) -> str:
+        recipient_path = Path(self._infra.age_recipient_file)
+        try:
+            recipient = recipient_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            # Temporary compatibility with pre-managed configurations.
+            recipient = str(self._infra.age_recipient or "").strip()
+        if not recipient:
+            raise BackupExecutionError(
+                "encryption",
+                f"Age public recipient is unavailable: {recipient_path}.",
+            )
+        if not recipient.startswith("age1"):
+            raise BackupExecutionError("encryption", "Age public recipient is invalid.")
+        return recipient
+
+    def _upload_recovery_identity(self) -> None:
+        identity = Path(self._infra.age_identity_file)
+        if not identity.is_file():
+            raise BackupExecutionError(
+                "recovery",
+                f"Age recovery identity is unavailable: {identity}.",
+            )
+        with identity.open("rb") as stream:
+            self._uploader.upload(
+                stream,
+                size_bytes=identity.stat().st_size,
+                remote_path=self._infra.recovery_remote_path,
             )
 
     def _snapshot_vision(self, destination: Path) -> None:
@@ -177,13 +208,14 @@ class InfraBackupCoordinator:
         *,
         snapshot: Path,
         descriptor: Path,
+        recipient: str,
     ) -> None:
         process = self._popen_factory(
             (
                 self._infra.age_binary,
                 "--encrypt",
                 "--recipient",
-                str(self._infra.age_recipient),
+                recipient,
                 "--output",
                 str(destination),
                 "-",

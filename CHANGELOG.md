@@ -6,6 +6,20 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.14.0] — Identité age gérée pour INFRA-01 — 2026-08-13
+
+## Modifié
+
+- La sauvegarde INFRA-01 lit automatiquement son destinataire public dans
+  `/etc/ohana-agent/keys/infra-01.agepub`.
+- Avant chaque sauvegarde, Agent envoie et valide la copie de récupération de
+  l'identité dans `icloud:Ohana/Recovery/infra-01.agekey`.
+- L'ancien champ direct `age_recipient` reste accepté pour la migration.
+
+## Validation
+
+- 1279 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.13.1] — Identité du plugin Sauvegardes — 2026-08-13
 
 ## Corrigé

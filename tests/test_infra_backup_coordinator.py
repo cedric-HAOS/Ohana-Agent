@@ -76,6 +76,8 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
     chrony.write_text("pool example.test\n", encoding="utf-8")
     age = tmp_path / "age"
     age.touch()
+    identity = tmp_path / "infra-01.agekey"
+    identity.write_bytes(b"AGE-SECRET-KEY-1TEST\n")
     uploader = FakeUploader()
     monkeypatch.setattr(RcloneStreamUploader, "_require_tmpfs", lambda _path: None)
     coordinator = InfraBackupCoordinator(
@@ -86,6 +88,7 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
                 enabled=True,
                 age_binary=str(age),
                 age_recipient="age1recipient",
+                age_identity_file=str(identity),
                 remote_retention_count=3,
             ),
         ),
@@ -103,9 +106,12 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
 
     assert result.backup_id == "20260813T120000Z"
     assert result.deleted_remote_backups == 2
-    assert len(uploader.uploads) == 2
-    archive_path, archive_body = uploader.uploads[0]
-    manifest_path, manifest_body = uploader.uploads[1]
+    assert len(uploader.uploads) == 3
+    recovery_path, recovery_body = uploader.uploads[0]
+    archive_path, archive_body = uploader.uploads[1]
+    manifest_path, manifest_body = uploader.uploads[2]
+    assert recovery_path == "icloud:Ohana/Recovery/infra-01.agekey"
+    assert recovery_body == b"AGE-SECRET-KEY-1TEST\n"
     assert archive_path.endswith("/20260813T120000Z/20260813T120000Z.tar.age")
     assert archive_body == b"age-encrypted"
     assert manifest_path.endswith("/20260813T120000Z/manifest.json")

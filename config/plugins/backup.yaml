@@ -11,6 +11,8 @@ infra_01:
   enabled: false
   schedule: "0 1 * * *"
   age_binary: /usr/bin/age
-  age_recipient: null
+  age_recipient_file: /etc/ohana-agent/keys/infra-01.agepub
+  age_identity_file: /etc/ohana-agent/keys/infra-01.agekey
+  recovery_remote_path: icloud:Ohana/Recovery/infra-01.agekey
   remote_retention_count: 0
 targets: []

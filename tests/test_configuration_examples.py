@@ -41,6 +41,8 @@ def test_shikamaru_example_configuration_is_valid() -> None:
     )
     assert configuration.administration.jobs.retention_days == 30
     assert configuration.administration.jobs.max_active_jobs == 1000
+    assert configuration.administration.jobs.worker_tls.enabled is False
+    assert configuration.administration.jobs.worker_tls.port == 8766
 
 
 def test_shikamaru_development_configuration_is_valid() -> None:

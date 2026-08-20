@@ -57,6 +57,7 @@ avec l'Agent sur la boucle locale.
 | `POST` | `/v1/jobs/{job_id}/cancel` | Annuler un job non terminal |
 | `GET` | `/v1/jobs/workers` | Lister les workers enregistrés et leur dernière activité |
 | `POST` | `/v1/jobs/workers/pairings` | Ouvrir une demande d'appairage temporaire |
+| `GET` | `/v1/jobs/workers/trust` | Lire uniquement le certificat public et son empreinte SHA-256 |
 | `GET` | `/v1/jobs/workers/pairings` | Lister les demandes sans secret ni jeton |
 | `POST` | `/v1/jobs/workers/pairings/{pairing_id}/approve` | Autoriser la demande après comparaison du code |
 | `POST` | `/v1/jobs/workers/pairings/{pairing_id}/reject` | Refuser une demande non reconnue |
@@ -90,16 +91,21 @@ Deux plans d'autorisation restent séparés :
 - les deux jetons doivent être différents ; un jeton worker ne permet de lire
   ni l'infrastructure, ni le DHCP, ni les plugins, ni les autres jobs.
 - Une nouvelle installation ouvre une demande bornée sans authentification,
-  affiche son code local et attend l'approbation via l'administration existante.
+  affiche son code local et l'empreinte de l'autorité HTTPS, puis attend
+  l'approbation via l'administration existante.
   Le secret de sondage reste sur Bubule ; Vision ne reçoit que l'identité, les
   capacités, le code et l'expiration. Après approbation, Agent délivre un jeton
   individuel une seule fois, conserve uniquement son SHA-256 et le lie au
   `worker_id`. Le jeton global historique reste accepté pour compatibilité.
 
-Le Bearer doit circuler dans un transport protégé. Si Bubule est distant,
-Katsuyu joint l'adresse d'INFRA-01 à travers le WireGuard existant et une ACL
-réseau limite le port d'administration à Bubule. L'API ne doit jamais être
-publiée directement sur Internet.
+Le Bearer circule exclusivement dans le listener HTTPS worker. Ce listener
+n'expose que l'amorçage de confiance, l'appairage et les opérations Katsuyu ;
+l'administration Vision reste sur `127.0.0.1:8765`. À la première installation,
+Katsuyu télécharge uniquement le certificat public, calcule lui-même son
+SHA-256 et vérifie ensuite le nom d'Agent. Vision affiche la même empreinte :
+l'utilisateur doit comparer le code et l'empreinte complète avant d'autoriser.
+Une connexion distante à travers Internet exige toujours une protection réseau
+supplémentaire ; le port worker ne doit jamais être redirigé publiquement.
 
 ### Contrat v1
 
@@ -314,6 +320,8 @@ sont installés sur le même hôte.
 
 Pour les jobs, la sous-clé `administration.jobs` déclare le fichier SQLite, le
 fichier du jeton Katsuyu, la durée du bail, le délai `WAITING_WORKER`, la
-rétention et la limite de file. L'activation sur une adresse accessible à
-Bubule exige d'abord le tunnel WireGuard, l'ACL réseau et le provisionnement du
-jeton worker avec les mêmes permissions `0640` que les secrets Agent existants.
+rétention et la limite de file. `administration.jobs.worker_tls` déclare le
+listener HTTPS dédié, le certificat serveur, sa clé privée et le certificat
+public de l'autorité locale. Le jeton et la clé serveur conservent des
+permissions `0640`; la clé privée de l'autorité reste exclusivement lisible par
+`root`.

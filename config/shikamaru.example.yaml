@@ -53,6 +53,13 @@ administration:
     waiting_worker_after_seconds: 30
     retention_days: 30
     max_active_jobs: 1000
+    worker_tls:
+      enabled: false
+      host: 0.0.0.0
+      port: 8766
+      certificate_file: /etc/ohana-agent/tls/worker.crt
+      private_key_file: /etc/ohana-agent/tls/worker.key
+      ca_certificate_file: /etc/ohana-agent/tls/ca.crt
   network:
     enabled: false
     helper_path: /usr/local/sbin/ohana-network-helper

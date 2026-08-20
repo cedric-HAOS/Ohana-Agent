@@ -379,6 +379,7 @@ class DistributedWorkerPairingCreated(AdministrationModel):
     polling_secret: str = Field(min_length=32, max_length=128)
     verification_code: str = Field(pattern=r"^[A-Z0-9]{4}-[A-Z0-9]{4}$")
     expires_at: datetime
+    tls_ca_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class DistributedWorkerPairingPoll(AdministrationModel):
@@ -396,6 +397,7 @@ class DistributedWorkerPairingDocument(DistributedWorkerRegistration):
     status: Literal["PENDING", "APPROVED", "CONSUMED", "EXPIRED", "REJECTED"]
     created_at: datetime
     expires_at: datetime
+    tls_ca_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class DistributedWorkerPairingCollection(AdministrationModel):

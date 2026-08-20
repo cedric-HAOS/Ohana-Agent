@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field, IPvAnyAddress
+from pydantic import Field, IPvAnyAddress, model_validator
 
 from configuration.base import Config
 
@@ -43,6 +43,17 @@ class NetworkAdministrationConfig(Config):
     rollback_seconds: int = Field(default=90, ge=30, le=300)
 
 
+class DistributedWorkerTLSConfig(Config):
+    """Dedicated HTTPS listener exposed only to Katsuyu workers."""
+
+    enabled: bool = False
+    host: IPvAnyAddress = IPvAnyAddress("0.0.0.0")
+    port: int = Field(default=8766, ge=1, le=65535)
+    certificate_file: Path = Path("/etc/ohana-agent/tls/worker.crt")
+    private_key_file: Path = Path("/etc/ohana-agent/tls/worker.key")
+    ca_certificate_file: Path = Path("/etc/ohana-agent/tls/ca.crt")
+
+
 class DistributedJobsConfig(Config):
     """Durable Tsunade-to-Katsuyu job protocol configuration."""
 
@@ -53,6 +64,16 @@ class DistributedJobsConfig(Config):
     waiting_worker_after_seconds: int = Field(default=30, ge=0, le=3600)
     retention_days: int = Field(default=30, ge=1, le=365)
     max_active_jobs: int = Field(default=1000, ge=1, le=100_000)
+    worker_tls: DistributedWorkerTLSConfig = Field(
+        default_factory=DistributedWorkerTLSConfig
+    )
+
+    @model_validator(mode="after")
+    def validate_worker_transport(self) -> "DistributedJobsConfig":
+        """Do not expose a worker listener when the job protocol is disabled."""
+        if self.worker_tls.enabled and not self.enabled:
+            raise ValueError("worker TLS requires distributed jobs to be enabled")
+        return self
 
 
 class AdministrationConfig(Config):

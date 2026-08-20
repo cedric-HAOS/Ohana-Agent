@@ -38,13 +38,17 @@ from administration.plugins import (
 )
 from administration.server import (
     AdministrationHTTPServer,
+    AdministrationServerGroup,
     AdministrationService,
+    certificate_sha256,
 )
 
 __all__ = [
     "AdministrationCapabilities",
     "AdministrationHTTPServer",
+    "AdministrationServerGroup",
     "AdministrationService",
+    "certificate_sha256",
     "DHCPAdministrationState",
     "DHCPConfiguration",
     "DHCPConfigurationError",

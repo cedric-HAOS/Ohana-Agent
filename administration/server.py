@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
+import ssl
 from collections.abc import Callable
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
+from pathlib import Path
 from threading import Thread
 from typing import Any
 
@@ -57,6 +60,8 @@ class AdministrationService:
             Callable[[InfrastructureConfig], None] | None
         ) = None,
         agent_version: str | None = None,
+        worker_ca_certificate_pem: str | None = None,
+        worker_ca_sha256: str | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -65,6 +70,12 @@ class AdministrationService:
         self.job_repository = job_repository
         self.on_infrastructure_changed = on_infrastructure_changed
         self.agent_version = agent_version or self._installed_agent_version()
+        if (worker_ca_certificate_pem is None) != (worker_ca_sha256 is None):
+            raise ValueError(
+                "Worker CA certificate and fingerprint must be configured together"
+            )
+        self.worker_ca_certificate_pem = worker_ca_certificate_pem
+        self.worker_ca_sha256 = worker_ca_sha256
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -277,13 +288,32 @@ class AdministrationService:
         """Open a bounded Katsuyu pairing request for later approval."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        return self.job_repository.create_pairing(payload)
+        pairing = self.job_repository.create_pairing(payload)
+        return pairing.model_copy(update={"tls_ca_sha256": self.worker_ca_sha256})
 
     def list_worker_pairings(self) -> object:
         """List pairing requests visible to the administration plane."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        return self.job_repository.list_pairings()
+        collection = self.job_repository.list_pairings()
+        return collection.model_copy(
+            update={
+                "pairings": [
+                    pairing.model_copy(update={"tls_ca_sha256": self.worker_ca_sha256})
+                    for pairing in collection.pairings
+                ]
+            }
+        )
+
+    def read_worker_trust(self) -> object:
+        """Return the public CA material used by the dedicated worker listener."""
+        if self.worker_ca_certificate_pem is None or self.worker_ca_sha256 is None:
+            raise LookupError("Katsuyu HTTPS trust is unavailable")
+        return {
+            "schema_version": 1,
+            "ca_certificate_pem": self.worker_ca_certificate_pem,
+            "ca_sha256": self.worker_ca_sha256,
+        }
 
     def approve_worker_pairing(self, pairing_id: str) -> object:
         """Approve one verification code checked by the administrator."""
@@ -327,6 +357,9 @@ class AdministrationHTTPServer:
         worker_token: str | None = None,
         host: str = "127.0.0.1",
         port: int = 8765,
+        worker_only: bool = False,
+        tls_certificate_file: Path | None = None,
+        tls_private_key_file: Path | None = None,
     ) -> None:
         normalized_token = token.strip()
 
@@ -340,6 +373,13 @@ class AdministrationHTTPServer:
             raise ValueError("Worker and administration tokens must be different.")
         self.host = host
         self.port = port
+        if (tls_certificate_file is None) != (tls_private_key_file is None):
+            raise ValueError(
+                "TLS certificate and private key must be configured together"
+            )
+        self.worker_only = worker_only
+        self.tls_certificate_file = tls_certificate_file
+        self.tls_private_key_file = tls_private_key_file
         self._server: ThreadingHTTPServer | None = None
         self._thread: Thread | None = None
 
@@ -363,20 +403,36 @@ class AdministrationHTTPServer:
             return
 
         handler_class = self._handler_class()
-        self._server = ThreadingHTTPServer(
+        server = ThreadingHTTPServer(
             (self.host, self.port),
             handler_class,
         )
+        if self.tls_certificate_file is not None:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            try:
+                context.load_cert_chain(
+                    certfile=self.tls_certificate_file,
+                    keyfile=self.tls_private_key_file,
+                )
+                server.socket = context.wrap_socket(server.socket, server_side=True)
+            except Exception:
+                server.server_close()
+                raise
+        self._server = server
         self._thread = Thread(
             target=self._server.serve_forever,
-            name="ohana-agent-administration",
+            name=(
+                "ohana-agent-worker-https"
+                if self.worker_only
+                else "ohana-agent-administration"
+            ),
             daemon=True,
         )
         self._thread.start()
-        LOGGER.info(
-            "Administration API listening on http://%s:%s",
-            *self.address,
-        )
+        scheme = "https" if self.tls_certificate_file is not None else "http"
+        role = "Katsuyu worker API" if self.worker_only else "Administration API"
+        LOGGER.info("%s listening on %s://%s:%s", role, scheme, *self.address)
 
     def stop(self) -> None:
         """Stop the HTTP server and release its socket."""
@@ -394,6 +450,7 @@ class AdministrationHTTPServer:
         service = self.service
         expected_token = self.token
         expected_worker_token = self.worker_token
+        worker_only = self.worker_only
 
         class AdministrationRequestHandler(BaseHTTPRequestHandler):
             """Handle one administration request."""
@@ -402,10 +459,19 @@ class AdministrationHTTPServer:
 
             def do_GET(self) -> None:  # noqa: N802
                 """Handle administration reads."""
+                path = self.path.split("?", 1)[0]
+                if worker_only:
+                    if path == "/v1/jobs/workers/trust":
+                        self._execute(service.read_worker_trust)
+                    else:
+                        self._write_error(
+                            HTTPStatus.NOT_FOUND,
+                            "Worker endpoint not found",
+                        )
+                    return
                 if not self._authorized(expected_token, "administration"):
                     return
 
-                path = self.path.split("?", 1)[0]
                 routes: dict[str, Callable[[], object]] = {
                     "/v1/capabilities": service.capabilities,
                     "/v1/infrastructure": service.read_infrastructure,
@@ -442,6 +508,9 @@ class AdministrationHTTPServer:
 
             def do_PUT(self) -> None:  # noqa: N802
                 """Handle configuration changes."""
+                if worker_only:
+                    self._write_error(HTTPStatus.NOT_FOUND, "Worker endpoint not found")
+                    return
                 if not self._authorized(expected_token, "administration"):
                     return
 
@@ -532,6 +601,10 @@ class AdministrationHTTPServer:
                             if payload is not None and self._authorized_worker(payload):
                                 self._execute(partial(operation, job_id, payload))
                             return
+
+                if worker_only:
+                    self._write_error(HTTPStatus.NOT_FOUND, "Worker endpoint not found")
+                    return
 
                 if not self._authorized(expected_token, "administration"):
                     return
@@ -782,3 +855,34 @@ class AdministrationHTTPServer:
                 self.wfile.write(content)
 
         return AdministrationRequestHandler
+
+
+class AdministrationServerGroup:
+    """Start and stop the local administration and worker HTTPS listeners together."""
+
+    def __init__(self, *servers: AdministrationHTTPServer) -> None:
+        if not servers:
+            raise ValueError("At least one administration server is required")
+        self.servers = servers
+
+    def start(self) -> None:
+        started: list[AdministrationHTTPServer] = []
+        try:
+            for server in self.servers:
+                server.start()
+                started.append(server)
+        except Exception:
+            for server in reversed(started):
+                server.stop()
+            raise
+
+    def stop(self) -> None:
+        for server in reversed(self.servers):
+            server.stop()
+
+
+def certificate_sha256(path: Path) -> tuple[str, str]:
+    """Read one public PEM certificate and return its normalized SHA-256."""
+    pem = path.read_text(encoding="ascii")
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    return pem, hashlib.sha256(der).hexdigest()

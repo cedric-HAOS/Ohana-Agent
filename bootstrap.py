@@ -8,6 +8,7 @@ from pathlib import Path
 
 from administration import (
     AdministrationHTTPServer,
+    AdministrationServerGroup,
     AdministrationService,
     DistributedJobRepository,
     DnsmasqDHCPRepository,
@@ -15,6 +16,7 @@ from administration import (
     NetworkManagerRepository,
     PluginAdministrationBinding,
     PluginAdministrationRepository,
+    certificate_sha256,
 )
 from builder import (
     BackupConfigurationBuilder,
@@ -1817,6 +1819,24 @@ def build_production_agent(
             ),
         )
 
+        worker_ca_certificate_pem = None
+        worker_ca_sha256 = None
+        worker_tls_config = None
+        if (
+            administration_config.jobs.enabled
+            and administration_config.jobs.worker_tls.enabled
+        ):
+            worker_tls_config = administration_config.jobs.worker_tls
+            try:
+                worker_ca_certificate_pem, worker_ca_sha256 = certificate_sha256(
+                    worker_tls_config.ca_certificate_file
+                )
+            except (OSError, UnicodeError, ValueError) as error:
+                raise ValueError(
+                    "Unable to read the Katsuyu TLS CA certificate from "
+                    f"{worker_tls_config.ca_certificate_file}."
+                ) from error
+
         administration_service = AdministrationService(
             infrastructure_repository=(
                 InfrastructureConfigurationRepository(
@@ -1833,13 +1853,32 @@ def build_production_agent(
                     VisionInfrastructureMapper().to_payload(changed_configuration),
                 )
             ),
+            worker_ca_certificate_pem=worker_ca_certificate_pem,
+            worker_ca_sha256=worker_ca_sha256,
         )
-        agent.administration_runtime = AdministrationHTTPServer(
+        administration_server = AdministrationHTTPServer(
             service=administration_service,
             token=administration_token,
             worker_token=worker_token,
             host=str(administration_config.host),
             port=administration_config.port,
         )
+        if worker_tls_config is None:
+            agent.administration_runtime = administration_server
+        else:
+            worker_server = AdministrationHTTPServer(
+                service=administration_service,
+                token=administration_token,
+                worker_token=None,
+                host=str(worker_tls_config.host),
+                port=worker_tls_config.port,
+                worker_only=True,
+                tls_certificate_file=worker_tls_config.certificate_file,
+                tls_private_key_file=worker_tls_config.private_key_file,
+            )
+            agent.administration_runtime = AdministrationServerGroup(
+                administration_server,
+                worker_server,
+            )
 
     return agent

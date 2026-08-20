@@ -701,3 +701,70 @@ def test_http_pairing_requires_tsunade_approval_and_binds_worker_token(
     finally:
         server.stop()
         repository.close()
+
+
+def test_worker_listener_exposes_only_worker_routes(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    fingerprint = "a" * 64
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            job_repository=repository,
+            worker_ca_certificate_pem="test public CA",
+            worker_ca_sha256=fingerprint,
+        ),
+        token="tsunade-secret",
+        worker_token=None,
+        worker_only=True,
+        port=0,
+    )
+    server.start()
+    try:
+        trust = _request_json(
+            server,
+            "/v1/jobs/workers/trust",
+            token="",
+        )
+        with pytest.raises(HTTPError) as capabilities:
+            _request_json(
+                server,
+                "/v1/capabilities",
+                token="tsunade-secret",
+            )
+        with pytest.raises(HTTPError) as create_job:
+            _request_json(
+                server,
+                "/v1/jobs",
+                token="tsunade-secret",
+                method="POST",
+                payload=job_payload(clock),
+            )
+        with pytest.raises(HTTPError) as shared_worker_token:
+            _request_json(
+                server,
+                "/v1/jobs/workers/register",
+                token="katsuyu-secret",
+                method="POST",
+                payload={
+                    "protocol_version": 1,
+                    "worker_id": "katsuyu-bubule",
+                    "capabilities": ["system.health"],
+                    "platform": "Windows 11",
+                    "worker_version": "0.1.0",
+                },
+            )
+    finally:
+        server.stop()
+        repository.close()
+
+    assert trust["ca_sha256"] == fingerprint
+    assert capabilities.value.code == 404
+    assert create_job.value.code == 404
+    assert shared_worker_token.value.code == 401

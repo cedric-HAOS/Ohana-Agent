@@ -6,6 +6,25 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.17.0] — Canal HTTPS dédié aux workers — 2026-08-20
+
+## Ajouté
+
+- Agent peut servir le protocole Katsuyu sur un listener HTTPS distinct de
+  l'administration locale, avec certificat et clé configurables.
+- L'appairage publie l'empreinte SHA-256 de l'autorité locale afin que
+  l'installateur Katsuyu puisse épingler explicitement cette confiance.
+
+## Sécurité
+
+- Le listener worker n'expose que l'appairage, l'enregistrement, la prise de
+  job, le heartbeat et la remise de résultat ; les routes de gestion y restent
+  indisponibles.
+- Les jetons individuels issus de l'appairage sont obligatoires sur ce canal :
+  le jeton worker partagé historique n'y est jamais accepté.
+- TLS 1.2 constitue la version minimale et le listener d'administration reste
+  lié à l'interface locale en HTTP.
+
 # [1.16.0] — Appairage Katsuyu et jobs déterministes — 2026-08-20
 
 ## Ajouté

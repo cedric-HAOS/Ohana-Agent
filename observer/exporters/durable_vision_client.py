@@ -63,9 +63,8 @@ class DurableVisionClient:
         self.outbox.close()
 
     def send_observation(self, payload: dict[str, Any]) -> None:
-        """Persist an observation before attempting immediate delivery."""
+        """Persist an observation and wake the asynchronous delivery worker."""
         self.outbox.enqueue(payload)
-        self.flush()
         self._wake_event.set()
 
     def send_infrastructure(self, payload: dict[str, Any]) -> None:

@@ -69,6 +69,20 @@ Katsuyu dispose d'un jeton worker distinct et ne peut ni administrer Agent ni
 exécuter une commande arbitraire. Les jobs expirés sont repris sans traitement
 périodique permanent.
 
+La version 1.15.1 fournit le premier processus worker dans ce même dépôt. La
+commande suivante s'exécute sur Bubule, joint l'API Agent à travers le réseau
+protégé existant et ne déclare que le handler `system.health` :
+
+```bash
+ohana-katsuyu \
+  --base-url http://infra-01.ohana.lan:8765 \
+  --token-file /etc/ohana-agent/katsuyu.token \
+  --worker-id katsuyu-bubule
+```
+
+La commande n'est ni activée ni lancée sur INFRA-01 lors de l'installation
+d'Agent.
+
 ---
 
 # Principes

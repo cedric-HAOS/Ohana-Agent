@@ -131,6 +131,34 @@ Le magasin est limité à 1 000 jobs actifs par défaut. Les jobs terminés et l
 journal sont purgés après 30 jours. Ces limites sont configurables. Aucune IA
 n'intervient dans ce protocole ou dans le type v1.
 
+### Worker Katsuyu minimal
+
+Le paquet Agent fournit également `ohana-katsuyu`, destiné à Bubule. Ce worker
+réutilise les endpoints `/v1/jobs/claim` et `/v1/jobs/{job_id}/complete` ainsi
+que le jeton worker existant. Sa liste de types envoyée à Agent est construite
+uniquement depuis ses handlers locaux ; la version 1.15.1 ne déclare que
+`system.health`.
+
+`system.health` effectue deux échantillons CPU courts, lit procfs/sysfs et
+l'espace du disque racine, applique des seuils déterministes puis renvoie le
+modèle strict déjà validé par Agent. Une erreur de collecte devient un résultat
+`FAILED` borné. Aucun shell, chemin, URL ou secret fourni par le job n'est
+interprété.
+
+Exécution ponctuelle de validation :
+
+```bash
+ohana-katsuyu \
+  --base-url http://infra-01.ohana.lan:8765 \
+  --token-file /etc/ohana-agent/katsuyu.token \
+  --worker-id katsuyu-bubule \
+  --once
+```
+
+L'exploitation continue omet `--once` et utilise `--poll-seconds`. Le service
+de déploiement sur Bubule sera défini avec son environnement d'exploitation ;
+aucun worker Katsuyu ne doit être activé sur INFRA-01.
+
 ## Administration réseau de l’hôte
 
 Ohana-Agent ne lance jamais `nmcli` avec les droits de son utilisateur de

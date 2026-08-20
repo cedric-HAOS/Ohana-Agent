@@ -6,6 +6,28 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.15.1] — Export non bloquant et premier worker Katsuyu — 2026-08-20
+
+## Ajouté
+
+- La commande `ohana-katsuyu` réclame exclusivement les types de jobs pour
+  lesquels un handler local existe et exécute `system.health` sans shell, LLM
+  ni paramètre libre.
+- Katsuyu réutilise le jeton worker, les ACL et les endpoints de jobs Agent
+  introduits en 1.15.0 ; aucun nouveau transport ni système d'authentification
+  n'est ajouté.
+
+## Corrigé
+
+- La livraison durable vers Vision reste asynchrone après la mise en file. Un
+  rattrapage volumineux ne bloque plus le scheduler, MQTT ou la publication de
+  la santé de l'hôte Agent.
+
+## Validation
+
+- 1 308 tests réussis, 1 ignoré, Ruff et tests du cycle complet
+  `system.health` Katsuyu vers Agent validés.
+
 # [1.15.0] — Protection INFRA-01 et jobs distribués — 2026-08-20
 
 ## Ajouté

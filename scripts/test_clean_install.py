@@ -43,6 +43,14 @@ def virtual_environment_cli(environment: Path) -> Path:
     return environment / "bin" / "ohana-agent"
 
 
+def virtual_environment_katsuyu_cli(environment: Path) -> Path:
+    """Return the installed Katsuyu worker executable."""
+    if os.name == "nt":
+        return environment / "Scripts" / "ohana-katsuyu.exe"
+
+    return environment / "bin" / "ohana-katsuyu"
+
+
 def run_command(
     command: list[str | Path],
     *,
@@ -97,6 +105,7 @@ def main() -> int:
 
         python_executable = virtual_environment_python(environment)
         cli_executable = virtual_environment_cli(environment)
+        katsuyu_executable = virtual_environment_katsuyu_cli(environment)
 
         print()
         print("Installing the wheel...")
@@ -113,6 +122,10 @@ def main() -> int:
 
         if not cli_executable.is_file():
             raise RuntimeError(f"The CLI executable was not created: {cli_executable}")
+        if not katsuyu_executable.is_file():
+            raise RuntimeError(
+                f"The Katsuyu executable was not created: {katsuyu_executable}"
+            )
 
         print()
         print("Checking installed package metadata...")
@@ -167,6 +180,27 @@ def main() -> int:
         if missing_options:
             raise RuntimeError(
                 "Missing CLI options: " + ", ".join(sorted(missing_options))
+            )
+
+        print()
+        print("Checking Katsuyu CLI help...")
+        katsuyu_help = run_command([katsuyu_executable, "--help"])
+        expected_katsuyu_options = {
+            "--base-url",
+            "--token-file",
+            "--worker-id",
+            "--poll-seconds",
+            "--once",
+        }
+        missing_katsuyu_options = {
+            option
+            for option in expected_katsuyu_options
+            if option not in katsuyu_help.stdout
+        }
+        if missing_katsuyu_options:
+            raise RuntimeError(
+                "Missing Katsuyu CLI options: "
+                + ", ".join(sorted(missing_katsuyu_options))
             )
 
         print()

@@ -1,6 +1,7 @@
 """Tests for durable delivery to Ohana-Vision."""
 
 from pathlib import Path
+from threading import Event
 from time import monotonic, sleep
 from typing import Any
 from uuid import uuid4
@@ -49,14 +50,52 @@ def durable_client(tmp_path: Path, client: FakeVisionClient) -> DurableVisionCli
     )
 
 
-def test_client_delivers_and_removes_observation_immediately(tmp_path: Path) -> None:
+def test_client_delivers_and_removes_observation_in_background(tmp_path: Path) -> None:
     target = FakeVisionClient()
     client = durable_client(tmp_path, target)
     observation = payload()
 
+    client.start()
     client.send_observation(observation)
+    deadline = monotonic() + 1.0
+    while client.pending_count and monotonic() < deadline:
+        sleep(0.01)
 
     assert target.observations == [observation]
+    assert client.pending_count == 0
+    client.stop()
+
+
+def test_slow_replay_never_blocks_new_observation_producers(tmp_path: Path) -> None:
+    """A long backlog must not suspend Agent's scheduler and host-health loop."""
+
+    class BlockingVisionClient(FakeVisionClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = Event()
+            self.release = Event()
+
+        def send_observation(self, observation: dict[str, Any]) -> None:
+            self.started.set()
+            self.release.wait(timeout=1)
+            super().send_observation(observation)
+
+    target = BlockingVisionClient()
+    client = durable_client(tmp_path, target)
+    client.start()
+    client.send_observation(payload())
+    assert target.started.wait(timeout=1)
+
+    started = monotonic()
+    client.send_observation(payload())
+    elapsed = monotonic() - started
+
+    assert elapsed < 0.1
+    assert client.pending_count == 2
+    target.release.set()
+    deadline = monotonic() + 1.0
+    while client.pending_count and monotonic() < deadline:
+        sleep(0.01)
     assert client.pending_count == 0
     client.stop()
 

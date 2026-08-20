@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -238,7 +239,11 @@ def test_infra_backup_rejects_tmpfs_too_small_for_vision_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database = tmp_path / "vision.db"
-    database.write_bytes(b"database")
+    connection = sqlite3.connect(database)
+    connection.execute("CREATE TABLE observations(value TEXT)")
+    connection.execute("INSERT INTO observations VALUES ('database')")
+    connection.commit()
+    connection.close()
     coordinator = InfraBackupCoordinator(
         BackupConfig(),
         vision_database=database,
@@ -250,3 +255,29 @@ def test_infra_backup_rejects_tmpfs_too_small_for_vision_snapshot(
 
     with pytest.raises(BackupExecutionError, match="Insufficient tmpfs space"):
         coordinator._ensure_temporary_capacity(tmp_path)
+
+
+def test_infra_backup_compacts_sqlite_snapshot_in_tmpfs(tmp_path: Path) -> None:
+    database = tmp_path / "vision.db"
+    connection = sqlite3.connect(database)
+    connection.execute("CREATE TABLE observations(value TEXT)")
+    connection.executemany(
+        "INSERT INTO observations VALUES (?)",
+        (("x" * 1000,) for _index in range(1000)),
+    )
+    connection.commit()
+    connection.execute("DELETE FROM observations")
+    connection.commit()
+    connection.close()
+    destination = tmp_path / "snapshot.db"
+    coordinator = InfraBackupCoordinator(
+        BackupConfig(),
+        vision_database=database,
+    )
+
+    coordinator._snapshot_vision(destination)
+
+    assert destination.stat().st_size < database.stat().st_size
+    snapshot = sqlite3.connect(destination)
+    assert snapshot.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+    snapshot.close()

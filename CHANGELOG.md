@@ -6,6 +6,30 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.15.0] — Protection INFRA-01 et jobs distribués — 2026-08-20
+
+## Ajouté
+
+- Un protocole de jobs Tsunade vers Katsuyu, optionnel et désactivé par
+  défaut, avec authentification worker distincte, types autorisés, validation
+  stricte, timeout, bail, reprise, idempotence, rétention et résultat vérifié
+  par SHA-256.
+- Le premier contrat déterministe `system.health`, sans paramètre libre, pour
+  mesurer les ressources de l'hôte Katsuyu sans LLM.
+- La télémétrie de l'hôte publie désormais la RAM totale et disponible, le
+  swap et la température lorsqu'elle est accessible.
+
+## Modifié
+
+- La file d'observations Vision est bornée et compactable afin de protéger la
+  mémoire et le stockage d'INFRA-01.
+- La sauvegarde INFRA-01 vérifie la capacité du tmpfs avant l'instantané et
+  expose des diagnostics de ressources plus précis.
+
+## Validation
+
+- 1302 tests réussis, 1 ignoré, Ruff et contrôles de distribution validés.
+
 # [1.14.4] — Fin correcte du chiffrement INFRA-01 — 2026-08-13
 
 ## Corrigé

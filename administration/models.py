@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from enum import StrEnum
 from ipaddress import IPv4Address, IPv4Interface
 from typing import Any, Literal, Self
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -231,6 +233,157 @@ class AdministrationCapabilities(AdministrationModel):
     schema_version: Literal[1] = 1
     agent_version: str = Field(min_length=1)
     operations: list[str] = Field(default_factory=list)
+
+
+class DistributedJobStatus(StrEnum):
+    """Stable states exposed by the distributed job protocol."""
+
+    CREATED = "CREATED"
+    QUEUED = "QUEUED"
+    WAITING_WORKER = "WAITING_WORKER"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    TIMEOUT = "TIMEOUT"
+
+
+class DistributedJobCreate(AdministrationModel):
+    """Versioned request accepted from Tsunade."""
+
+    protocol_version: Literal[1] = 1
+    job_id: UUID
+    type: str = Field(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+    created_at: datetime
+    parameters: dict[str, Any]
+    timeout: int = Field(ge=1, le=86_400)
+
+    @field_validator("created_at")
+    @classmethod
+    def require_aware_created_at(cls, value: datetime) -> datetime:
+        """Reject ambiguous local timestamps in a distributed protocol."""
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("created_at must include a timezone")
+        return value
+
+
+class DistributedJobError(AdministrationModel):
+    """Bounded structured failure returned by a worker."""
+
+    code: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_.-]+$")
+    message: str = Field(min_length=1, max_length=1000)
+    retryable: bool = False
+
+
+class DistributedJobDocument(AdministrationModel):
+    """Current durable state of one distributed job."""
+
+    protocol_version: Literal[1] = 1
+    job_id: UUID
+    type: str
+    created_at: datetime
+    parameters: dict[str, Any]
+    timeout: int
+    status: DistributedJobStatus
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    result: dict[str, Any] | None = None
+    result_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    error: DistributedJobError | None = None
+    worker_id: str | None = None
+    attempt: int = Field(default=0, ge=0)
+    lease_expires_at: datetime | None = None
+
+
+class DistributedJobClaim(AdministrationModel):
+    """Katsuyu request for one compatible queued job."""
+
+    protocol_version: Literal[1] = 1
+    worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    supported_types: list[str] = Field(min_length=1, max_length=32)
+
+
+class DistributedJobClaimResult(AdministrationModel):
+    """Claim response; an empty job asks the worker to poll later."""
+
+    protocol_version: Literal[1] = 1
+    job: DistributedJobDocument | None = None
+
+
+class DistributedJobHeartbeat(AdministrationModel):
+    """Lease renewal sent only by the worker owning the attempt."""
+
+    protocol_version: Literal[1] = 1
+    worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    attempt: int = Field(ge=1)
+
+
+class DistributedJobCompletion(DistributedJobHeartbeat):
+    """Terminal result submitted by the worker owning the attempt."""
+
+    status: Literal[
+        DistributedJobStatus.SUCCEEDED,
+        DistributedJobStatus.FAILED,
+    ]
+    result: dict[str, Any] | None = None
+    error: DistributedJobError | None = None
+
+    @model_validator(mode="after")
+    def validate_terminal_payload(self) -> Self:
+        """Require exactly the payload associated with the terminal state."""
+        if self.status == DistributedJobStatus.SUCCEEDED:
+            if self.result is None or self.error is not None:
+                raise ValueError("SUCCEEDED requires result and forbids error")
+        elif self.result is not None or self.error is None:
+            raise ValueError("FAILED requires error and forbids result")
+        return self
+
+
+class SystemHealthParameters(AdministrationModel):
+    """Parameter-free deterministic health collection on the Katsuyu host."""
+
+
+class SystemHealthIssue(AdministrationModel):
+    """One bounded issue detected by the Katsuyu health handler."""
+
+    code: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_.-]+$")
+    message: str = Field(min_length=1, max_length=500)
+
+
+class SystemHealthResult(AdministrationModel):
+    """Strict result expected from the first Katsuyu MVP handler."""
+
+    status: Literal["OK", "DEGRADED"]
+    collected_at: datetime
+    platform: str = Field(min_length=1, max_length=100)
+    cpu_percent: float = Field(ge=0, le=100)
+    memory_total_bytes: int = Field(ge=1)
+    memory_available_bytes: int = Field(ge=0)
+    disk_total_bytes: int = Field(ge=1)
+    disk_free_bytes: int = Field(ge=0)
+    temperature_c: float | None = Field(default=None, ge=-50, le=150)
+    issues: list[SystemHealthIssue] = Field(default_factory=list, max_length=32)
+
+    @field_validator("collected_at")
+    @classmethod
+    def require_aware_collection_time(cls, value: datetime) -> datetime:
+        """Require an unambiguous timestamp from the remote worker."""
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("collected_at must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_health_consistency(self) -> Self:
+        """Reject impossible resource values and contradictory summaries."""
+        if self.memory_available_bytes > self.memory_total_bytes:
+            raise ValueError("memory_available_bytes cannot exceed total memory")
+        if self.disk_free_bytes > self.disk_total_bytes:
+            raise ValueError("disk_free_bytes cannot exceed total disk")
+        if self.status == "OK" and self.issues:
+            raise ValueError("OK cannot include issues")
+        if self.status == "DEGRADED" and not self.issues:
+            raise ValueError("DEGRADED requires at least one issue")
+        return self
 
 
 PluginAdministrationStatus = Literal[

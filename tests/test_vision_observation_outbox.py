@@ -58,3 +58,18 @@ def test_outbox_retains_failures_until_delivery(tmp_path: Path) -> None:
     outbox.mark_delivered(observation_id)
     assert outbox.pending_count == 0
     outbox.close()
+
+
+def test_outbox_discards_oldest_payloads_at_the_configured_limit(
+    tmp_path: Path,
+) -> None:
+    outbox = VisionObservationOutbox(tmp_path / "outbox.db", max_entries=2)
+    observations = [payload() for _index in range(3)]
+
+    for observation in observations:
+        outbox.enqueue(observation)
+
+    assert outbox.pending_count == 2
+    assert outbox.oldest() is not None
+    assert outbox.oldest().payload == observations[1]
+    outbox.close()

@@ -148,7 +148,9 @@ class InfraBackupCoordinator:
         """Valider les sources, age, tmpfs et iCloud sans créer d'archive."""
 
         self._preflight_local()
-        RcloneStreamUploader._require_tmpfs(Path(self._config.temporary_directory))
+        temporary_root = Path(self._config.temporary_directory)
+        RcloneStreamUploader._require_tmpfs(temporary_root)
+        self._ensure_temporary_capacity(temporary_root)
         self._uploader.check_remote()
 
     def _preflight_local(self) -> str:
@@ -205,11 +207,9 @@ class InfraBackupCoordinator:
             f"file:{self._vision_database.as_posix()}?mode=ro",
             uri=True,
         )
-        target = sqlite3.connect(destination)
         try:
-            source.backup(target)
+            source.execute("VACUUM INTO ?", (str(destination),))
         finally:
-            target.close()
             source.close()
 
     def _create_encrypted_archive(
@@ -285,12 +285,12 @@ class InfraBackupCoordinator:
     def _ensure_temporary_capacity(self, temporary_root: Path) -> None:
         """Ensure the tmpfs can hold the SQLite snapshot and archive headroom."""
 
-        database_size = (
-            self._vision_database.stat().st_size
-            if self._vision_database.is_file()
-            else 0
+        database_size = self._compact_database_size()
+        required = (
+            database_size * 2
+            + self._source_size_bytes()
+            + MINIMUM_ARCHIVE_HEADROOM_BYTES
         )
-        required = database_size + MINIMUM_ARCHIVE_HEADROOM_BYTES
         available = shutil.disk_usage(temporary_root).free
         if available < required:
             raise BackupExecutionError(
@@ -298,6 +298,33 @@ class InfraBackupCoordinator:
                 "Insufficient tmpfs space for INFRA-01 backup: "
                 f"{available} bytes available, at least {required} required.",
             )
+
+    def _compact_database_size(self) -> int:
+        if not self._vision_database.is_file():
+            return 0
+        connection = sqlite3.connect(
+            f"file:{self._vision_database.as_posix()}?mode=ro",
+            uri=True,
+        )
+        try:
+            page_count = int(connection.execute("PRAGMA page_count").fetchone()[0])
+            free_pages = int(connection.execute("PRAGMA freelist_count").fetchone()[0])
+            page_size = int(connection.execute("PRAGMA page_size").fetchone()[0])
+        finally:
+            connection.close()
+        return max(page_count - free_pages, 0) * page_size
+
+    def _source_size_bytes(self) -> int:
+        total = 0
+        for source in self._sources:
+            candidates = source.rglob("*") if source.is_dir() else (source,)
+            for candidate in candidates:
+                try:
+                    if candidate.is_file() and not candidate.is_symlink():
+                        total += candidate.stat().st_size
+                except OSError:
+                    continue
+        return total
 
     @staticmethod
     def _regular_member(member: tarfile.TarInfo) -> tarfile.TarInfo | None:

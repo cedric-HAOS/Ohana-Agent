@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
+from time import monotonic
 from typing import Any
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,8 +29,17 @@ class VisionObservationOutbox:
 
     _SCHEMA_VERSION = 1
 
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(
+        self,
+        database_path: Path | str,
+        *,
+        max_entries: int = 50_000,
+    ) -> None:
+        if max_entries <= 0:
+            raise ValueError("max_entries must be greater than zero.")
         self.database_path = Path(database_path)
+        self.max_entries = max_entries
+        self._last_limit_warning_at: float | None = None
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._connection = sqlite3.connect(
@@ -67,7 +80,33 @@ class VisionObservationOutbox:
                 """,
                 (observation_id, serialized, datetime.now(UTC).isoformat()),
             )
+            removed = self._connection.execute(
+                """
+                DELETE FROM observation_outbox
+                WHERE sequence < COALESCE(
+                    (
+                        SELECT sequence
+                        FROM observation_outbox
+                        ORDER BY sequence DESC
+                        LIMIT 1 OFFSET ?
+                    ),
+                    0
+                )
+                """,
+                (self.max_entries - 1,),
+            ).rowcount
             self._connection.commit()
+            now = monotonic()
+            if removed > 0 and (
+                self._last_limit_warning_at is None
+                or now - self._last_limit_warning_at >= 300
+            ):
+                LOGGER.warning(
+                    "Vision outbox reached %s entries; dropped %s oldest payload(s)",
+                    self.max_entries,
+                    removed,
+                )
+                self._last_limit_warning_at = now
 
     def oldest(self) -> VisionObservationOutboxEntry | None:
         """Return the oldest pending payload."""

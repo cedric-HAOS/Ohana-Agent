@@ -49,6 +49,7 @@ def test_load_shikamaru_configuration() -> None:
     assert configuration.vision.infrastructure_refresh_seconds == 300.0
     assert configuration.vision.outbox_path is None
     assert configuration.vision.outbox_retry_seconds == 10.0
+    assert configuration.vision.outbox_max_entries == 50_000
 
 
 def test_configuration_accepts_schema_version_one(

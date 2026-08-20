@@ -9,6 +9,7 @@ from pathlib import Path
 from administration import (
     AdministrationHTTPServer,
     AdministrationService,
+    DistributedJobRepository,
     DnsmasqDHCPRepository,
     InfrastructureConfigurationRepository,
     NetworkManagerRepository,
@@ -741,7 +742,10 @@ def build_production_agent(
         else:
             vision_export_runtime = DurableVisionClient(
                 http_vision_client,
-                VisionObservationOutbox(outbox_path),
+                VisionObservationOutbox(
+                    outbox_path,
+                    max_entries=configuration.vision.outbox_max_entries,
+                ),
                 retry_seconds=configuration.vision.outbox_retry_seconds,
             )
             resolved_vision_client = vision_export_runtime
@@ -1638,7 +1642,30 @@ def build_production_agent(
             ) from error
 
         dhcp_repository = None
+        job_repository = None
         network_repository = None
+        worker_token = None
+
+        if administration_config.jobs.enabled:
+            jobs_config = administration_config.jobs
+            try:
+                worker_token = jobs_config.worker_token_file.read_text(
+                    encoding="utf-8"
+                ).strip()
+            except OSError as error:
+                raise ValueError(
+                    "Unable to read the Katsuyu worker token from "
+                    f"{jobs_config.worker_token_file}."
+                ) from error
+            if not worker_token:
+                raise ValueError("The Katsuyu worker token cannot be empty.")
+            job_repository = DistributedJobRepository(
+                jobs_config.database_path,
+                lease_seconds=jobs_config.lease_seconds,
+                waiting_worker_after_seconds=(jobs_config.waiting_worker_after_seconds),
+                retention_days=jobs_config.retention_days,
+                max_active_jobs=jobs_config.max_active_jobs,
+            )
 
         if administration_config.network.enabled:
             administration_network_config = administration_config.network
@@ -1799,6 +1826,7 @@ def build_production_agent(
             dhcp_repository=dhcp_repository,
             plugin_repository=plugin_repository,
             network_repository=network_repository,
+            job_repository=job_repository,
             on_infrastructure_changed=lambda changed_configuration: (
                 agent.apply_infrastructure_configuration(
                     changed_configuration,
@@ -1809,6 +1837,7 @@ def build_production_agent(
         agent.administration_runtime = AdministrationHTTPServer(
             service=administration_service,
             token=administration_token,
+            worker_token=worker_token,
             host=str(administration_config.host),
             port=administration_config.port,
         )

@@ -25,3 +25,4 @@ class VisionConfig(Config):
     infrastructure_refresh_seconds: PositiveFloat = 300.0
     outbox_path: Path | None = None
     outbox_retry_seconds: PositiveFloat = 10.0
+    outbox_max_entries: int = Field(default=50_000, ge=1000, le=250_000)

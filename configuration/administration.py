@@ -43,6 +43,18 @@ class NetworkAdministrationConfig(Config):
     rollback_seconds: int = Field(default=90, ge=30, le=300)
 
 
+class DistributedJobsConfig(Config):
+    """Durable Tsunade-to-Katsuyu job protocol configuration."""
+
+    enabled: bool = False
+    database_path: Path = Path("/var/lib/ohana-agent/distributed-jobs.db")
+    worker_token_file: Path = Path("/etc/ohana-agent/katsuyu.token")
+    lease_seconds: int = Field(default=60, ge=10, le=3600)
+    waiting_worker_after_seconds: int = Field(default=30, ge=0, le=3600)
+    retention_days: int = Field(default=30, ge=1, le=365)
+    max_active_jobs: int = Field(default=1000, ge=1, le=100_000)
+
+
 class AdministrationConfig(Config):
     """Agent administration endpoint configuration."""
 
@@ -54,3 +66,4 @@ class AdministrationConfig(Config):
     network: NetworkAdministrationConfig = Field(
         default_factory=NetworkAdministrationConfig
     )
+    jobs: DistributedJobsConfig = Field(default_factory=DistributedJobsConfig)

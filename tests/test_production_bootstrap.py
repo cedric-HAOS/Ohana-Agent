@@ -47,6 +47,53 @@ class FakeVisionClient:
         self.operations.append(("infrastructure", payload))
 
 
+def test_bootstrap_wires_explicitly_enabled_distributed_jobs(
+    tmp_path: Path,
+) -> None:
+    """Enable the protocol only with a distinct worker token and durable path."""
+    management_token = tmp_path / "management.token"
+    worker_token = tmp_path / "katsuyu.token"
+    jobs_database = tmp_path / "distributed-jobs.db"
+    management_token.write_text("management-secret\n", encoding="utf-8")
+    worker_token.write_text("worker-secret\n", encoding="utf-8")
+    application_path = tmp_path / "shikamaru.yaml"
+    application_path.write_text(
+        f"""\
+version: 1
+agent:
+  name: Shikamaru
+  environment: test
+vision:
+  enabled: true
+  observation_url: http://127.0.0.1:8000/api/observations
+  infrastructure_url: http://127.0.0.1:8000/api/infrastructure
+administration:
+  enabled: true
+  token_file: {management_token.as_posix()}
+  jobs:
+    enabled: true
+    database_path: {jobs_database.as_posix()}
+    worker_token_file: {worker_token.as_posix()}
+  dhcp:
+    enabled: false
+""",
+        encoding="utf-8",
+    )
+
+    agent = build_production_agent(
+        application_config_path=application_path,
+        vision_client=FakeVisionClient(),
+    )
+
+    assert agent.administration_runtime is not None
+    assert agent.administration_runtime.worker_token == "worker-secret"
+    repository = agent.administration_runtime.service.job_repository
+    assert repository is not None
+    assert repository.supported_types == ("system.health",)
+    assert jobs_database.is_file()
+    repository.close()
+
+
 class FakeDHCPCheck:
     """Return deterministic local DHCP state for bootstrap tests."""
 

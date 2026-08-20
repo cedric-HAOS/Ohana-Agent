@@ -7,6 +7,10 @@ from administration.dhcp import (
 from administration.infrastructure import (
     InfrastructureConfigurationRepository,
 )
+from administration.jobs import (
+    DistributedJobConflictError,
+    DistributedJobRepository,
+)
 from administration.models import (
     AdministrationCapabilities,
     AgentNetworkChange,
@@ -48,6 +52,8 @@ __all__ = [
     "DHCPReservation",
     "DHCPSettings",
     "DnsmasqDHCPRepository",
+    "DistributedJobConflictError",
+    "DistributedJobRepository",
     "InfrastructureConfigurationRepository",
     "AgentNetworkChange",
     "AgentNetworkChangeRequest",

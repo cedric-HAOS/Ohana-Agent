@@ -60,8 +60,11 @@ def test_system_host_probe_reads_linux_metrics(
     assert second.cpu_percent == 50.0
     assert second.load_1m_per_cpu == 1.0
     assert second.memory_percent == 75.0
+    assert second.memory_total_bytes == 1000 * 1024
     assert second.memory_available_bytes == 250 * 1024
     assert second.swap_percent == 75.0
+    assert second.swap_total_bytes == 100 * 1024
+    assert second.swap_used_bytes == 75 * 1024
     assert second.disk_percent == 90.0
     assert second.disk_free_bytes == 100
     assert second.temperature_c == 78.0
@@ -69,6 +72,7 @@ def test_system_host_probe_reads_linux_metrics(
     assert second.agent_uptime_seconds == 20
     assert second.agent_restarts is None
     assert second.failed_systemd_units == ()
+    assert second.inactive_systemd_units == ()
 
 
 def test_system_host_probe_reads_systemd_health(tmp_path: Path) -> None:
@@ -83,15 +87,17 @@ def test_system_host_probe_reads_systemd_health(tmp_path: Path) -> None:
         commands.append(arguments)
         if arguments[0] == "show":
             return CompletedProcess(command, 0, stdout="3\n", stderr="")
-        return CompletedProcess(
-            command,
-            0,
-            stdout=(
-                "ohana-vision.service loaded failed failed Ohana Vision\n"
-                "unrelated.service loaded failed failed Unrelated\n"
-            ),
-            stderr="",
-        )
+        if arguments[0] == "list-units":
+            return CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    "ohana-vision.service loaded failed failed Ohana Vision\n"
+                    "unrelated.service loaded failed failed Unrelated\n"
+                ),
+                stderr="",
+            )
+        return CompletedProcess(command, 3, stdout="inactive\n", stderr="")
 
     probe = SystemHostProbe(
         proc_root=proc_root,
@@ -104,6 +110,7 @@ def test_system_host_probe_reads_systemd_health(tmp_path: Path) -> None:
 
     assert metrics.agent_restarts == 3
     assert metrics.failed_systemd_units == ("ohana-vision.service",)
+    assert metrics.inactive_systemd_units == ("ohana-vision.service",)
     assert commands == [
         (
             "show",
@@ -117,6 +124,7 @@ def test_system_host_probe_reads_systemd_health(tmp_path: Path) -> None:
             "--no-legend",
             "--plain",
         ),
+        ("is-active", "ohana-vision.service"),
     ]
 
 
@@ -137,8 +145,11 @@ def make_metrics(**changes) -> HostMetrics:
         cpu_percent=10.0,
         load_1m_per_cpu=0.2,
         memory_percent=40.0,
+        memory_total_bytes=2_000_000,
         memory_available_bytes=1_000_000,
         swap_percent=0.0,
+        swap_total_bytes=1_000_000,
+        swap_used_bytes=0,
         disk_percent=30.0,
         disk_free_bytes=10_000_000,
         temperature_c=50.0,
@@ -146,6 +157,7 @@ def make_metrics(**changes) -> HostMetrics:
         agent_uptime_seconds=600,
         agent_restarts=0,
         failed_systemd_units=(),
+        inactive_systemd_units=(),
     )
     return replace(metrics, **changes)
 
@@ -172,6 +184,7 @@ def test_host_health_reports_immediate_critical_conditions() -> None:
             disk_percent=96.0,
             agent_restarts=3,
             failed_systemd_units=("ohana-vision.service",),
+            inactive_systemd_units=("ohana-vision.service",),
         )
     )
     monitor = HostHealthMonitor(probe)
@@ -183,6 +196,7 @@ def test_host_health_reports_immediate_critical_conditions() -> None:
         "disk_critical",
         "agent_restarts_critical",
         "systemd_units_failed",
+        "systemd_units_inactive",
     )
 
 

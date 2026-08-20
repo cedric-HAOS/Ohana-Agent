@@ -38,12 +38,21 @@ vision:
   infrastructure_refresh_seconds: 300.0
   outbox_path: /var/lib/ohana-agent/vision-outbox.db
   outbox_retry_seconds: 10.0
+  outbox_max_entries: 50000
 
 administration:
   enabled: true
   host: 127.0.0.1
   port: 8765
   token_file: /etc/ohana-agent/management.token
+  jobs:
+    enabled: false
+    database_path: /var/lib/ohana-agent/distributed-jobs.db
+    worker_token_file: /etc/ohana-agent/katsuyu.token
+    lease_seconds: 60
+    waiting_worker_after_seconds: 30
+    retention_days: 30
+    max_active_jobs: 1000
   network:
     enabled: false
     helper_path: /usr/local/sbin/ohana-network-helper

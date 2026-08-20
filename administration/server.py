@@ -23,6 +23,10 @@ from administration.dhcp import (
 from administration.infrastructure import (
     InfrastructureConfigurationRepository,
 )
+from administration.jobs import (
+    DistributedJobConflictError,
+    DistributedJobRepository,
+)
 from administration.models import (
     AdministrationCapabilities,
     DHCPConfiguration,
@@ -48,6 +52,7 @@ class AdministrationService:
         dhcp_repository: DnsmasqDHCPRepository | None = None,
         plugin_repository: PluginAdministrationRepository | None = None,
         network_repository: NetworkManagerRepository | None = None,
+        job_repository: DistributedJobRepository | None = None,
         on_infrastructure_changed: (
             Callable[[InfrastructureConfig], None] | None
         ) = None,
@@ -57,6 +62,7 @@ class AdministrationService:
         self.dhcp_repository = dhcp_repository
         self.plugin_repository = plugin_repository
         self.network_repository = network_repository
+        self.job_repository = job_repository
         self.on_infrastructure_changed = on_infrastructure_changed
         self.agent_version = agent_version or self._installed_agent_version()
 
@@ -94,6 +100,18 @@ class AdministrationService:
                     "plugins.test",
                     "plugins.backup.icloud.connect",
                     "plugins.backup.run",
+                ]
+            )
+
+        if self.job_repository is not None:
+            operations.extend(
+                [
+                    "jobs.create",
+                    "jobs.read",
+                    "jobs.cancel",
+                    "jobs.worker.claim",
+                    "jobs.worker.heartbeat",
+                    "jobs.worker.complete",
                 ]
             )
 
@@ -213,6 +231,42 @@ class AdministrationService:
             raise LookupError("Plugin administration is unavailable")
         return self.plugin_repository.run_backup(target_id)
 
+    def create_job(self, payload: dict[str, Any]) -> object:
+        """Validate and queue one explicitly typed distributed job."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.create(payload)
+
+    def read_job(self, job_id: str) -> object:
+        """Read the current durable state of one job."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.get(job_id)
+
+    def cancel_job(self, job_id: str) -> object:
+        """Cancel one job through the Tsunade control plane."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.cancel(job_id)
+
+    def claim_job(self, payload: dict[str, Any]) -> object:
+        """Lease the oldest compatible job to Katsuyu."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.claim(payload)
+
+    def heartbeat_job(self, job_id: str, payload: dict[str, Any]) -> object:
+        """Renew a job lease for its current Katsuyu attempt."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.heartbeat(job_id, payload)
+
+    def complete_job(self, job_id: str, payload: dict[str, Any]) -> object:
+        """Record a verified result from the current Katsuyu attempt."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.complete(job_id, payload)
+
 
 class AdministrationHTTPServer:
     """Run the administration API in a dedicated loopback thread."""
@@ -222,6 +276,7 @@ class AdministrationHTTPServer:
         *,
         service: AdministrationService,
         token: str,
+        worker_token: str | None = None,
         host: str = "127.0.0.1",
         port: int = 8765,
     ) -> None:
@@ -232,6 +287,13 @@ class AdministrationHTTPServer:
 
         self.service = service
         self.token = normalized_token
+        self.worker_token = worker_token.strip() if worker_token else None
+        if service.job_repository is not None and not self.worker_token:
+            raise ValueError(
+                "A distinct worker token is required when distributed jobs are enabled."
+            )
+        if self.worker_token and hmac.compare_digest(self.worker_token, self.token):
+            raise ValueError("Worker and administration tokens must be different.")
         self.host = host
         self.port = port
         self._server: ThreadingHTTPServer | None = None
@@ -287,6 +349,7 @@ class AdministrationHTTPServer:
     def _handler_class(self) -> type[BaseHTTPRequestHandler]:
         service = self.service
         expected_token = self.token
+        expected_worker_token = self.worker_token
 
         class AdministrationRequestHandler(BaseHTTPRequestHandler):
             """Handle one administration request."""
@@ -295,7 +358,7 @@ class AdministrationHTTPServer:
 
             def do_GET(self) -> None:  # noqa: N802
                 """Handle administration reads."""
-                if not self._authorized(expected_token):
+                if not self._authorized(expected_token, "administration"):
                     return
 
                 path = self.path.split("?", 1)[0]
@@ -317,6 +380,11 @@ class AdministrationHTTPServer:
                         def operation() -> object:
                             return service.read_plugin(plugin_identifier)
 
+                if operation is None and path.startswith("/v1/jobs/"):
+                    job_id = path.removeprefix("/v1/jobs/")
+                    if job_id and "/" not in job_id:
+                        operation = partial(service.read_job, job_id)
+
                 if operation is None:
                     self._write_error(
                         HTTPStatus.NOT_FOUND,
@@ -328,7 +396,7 @@ class AdministrationHTTPServer:
 
             def do_PUT(self) -> None:  # noqa: N802
                 """Handle configuration changes."""
-                if not self._authorized(expected_token):
+                if not self._authorized(expected_token, "administration"):
                     return
 
                 path = self.path.split("?", 1)[0]
@@ -369,10 +437,47 @@ class AdministrationHTTPServer:
 
             def do_POST(self) -> None:  # noqa: N802
                 """Handle immediate administration actions."""
-                if not self._authorized(expected_token):
+                path = self.path.split("?", 1)[0]
+                if path == "/v1/jobs/claim":
+                    if not self._authorized(expected_worker_token, "worker"):
+                        return
+                    payload = self._read_json()
+                    if payload is not None:
+                        self._execute(lambda: service.claim_job(payload))
                     return
 
-                path = self.path.split("?", 1)[0]
+                jobs_prefix = "/v1/jobs/"
+                for action, operation in (
+                    ("heartbeat", service.heartbeat_job),
+                    ("complete", service.complete_job),
+                ):
+                    action_suffix = f"/{action}"
+                    if path.startswith(jobs_prefix) and path.endswith(action_suffix):
+                        if not self._authorized(expected_worker_token, "worker"):
+                            return
+                        job_id = path[len(jobs_prefix) : -len(action_suffix)]
+                        if job_id and "/" not in job_id:
+                            payload = self._read_json()
+                            if payload is not None:
+                                self._execute(partial(operation, job_id, payload))
+                            return
+
+                if not self._authorized(expected_token, "administration"):
+                    return
+
+                if path == "/v1/jobs":
+                    payload = self._read_json()
+                    if payload is not None:
+                        self._execute(lambda: service.create_job(payload))
+                    return
+
+                cancel_suffix = "/cancel"
+                if path.startswith(jobs_prefix) and path.endswith(cancel_suffix):
+                    job_id = path[len(jobs_prefix) : -len(cancel_suffix)]
+                    if job_id and "/" not in job_id:
+                        self._execute(partial(service.cancel_job, job_id))
+                        return
+
                 prefix = "/v1/plugins/"
                 suffix = "/test"
 
@@ -428,17 +533,21 @@ class AdministrationHTTPServer:
                     format % args,
                 )
 
-            def _authorized(self, token: str) -> bool:
+            def _authorized(self, token: str | None, role: str) -> bool:
                 authorization = self.headers.get("Authorization", "")
                 prefix = "Bearer "
 
-                if not authorization.startswith(prefix) or not hmac.compare_digest(
-                    authorization.removeprefix(prefix),
-                    token,
+                if (
+                    token is None
+                    or not authorization.startswith(prefix)
+                    or not hmac.compare_digest(
+                        authorization.removeprefix(prefix),
+                        token,
+                    )
                 ):
                     self._write_error(
                         HTTPStatus.UNAUTHORIZED,
-                        "A valid administration token is required",
+                        f"A valid {role} token is required",
                     )
                     return False
 
@@ -492,6 +601,12 @@ class AdministrationHTTPServer:
                 except LookupError as error:
                     self._write_error(
                         HTTPStatus.NOT_FOUND,
+                        str(error),
+                    )
+                    return
+                except DistributedJobConflictError as error:
+                    self._write_error(
+                        HTTPStatus.CONFLICT,
                         str(error),
                     )
                     return

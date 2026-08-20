@@ -36,6 +36,12 @@ descripteur placé à l'intérieur de l'archive chiffrée reprend l'identité et
 versions de la sauvegarde ; Installer exige sa correspondance exacte avec le
 manifeste public avant d'appliquer le moindre fichier.
 
+Le snapshot SQLite est produit avec `VACUUM INTO` afin de ne copier que les
+pages utiles après la purge de rétention Vision. Le préflight contrôle la
+capacité effective du `tmpfs` pour conserver simultanément le snapshot compact
+et l'archive chiffrée, avec une marge de sécurité. Si cette capacité manque,
+la sauvegarde est refusée avant la création de tout fichier ou upload.
+
 La rétention iCloud est indépendante de la sauvegarde locale des HAOS. La valeur
 `remote_retention_count: 0` conserve toutes les sauvegardes INFRA-01. Une valeur
 positive active la rotation : elle n'intervient qu'après la validation et la

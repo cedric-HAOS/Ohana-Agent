@@ -96,8 +96,11 @@ class FakeHostHealthMonitor:
             cpu_percent=42.0,
             load_1m_per_cpu=0.5,
             memory_percent=86.0,
+            memory_total_bytes=2_000_000,
             memory_available_bytes=1_000_000,
             swap_percent=2.0,
+            swap_total_bytes=1_000_000,
+            swap_used_bytes=20_000,
             disk_percent=30.0,
             disk_free_bytes=10_000_000,
             temperature_c=55.0,
@@ -105,6 +108,7 @@ class FakeHostHealthMonitor:
             agent_uptime_seconds=600,
             agent_restarts=0,
             failed_systemd_units=(),
+            inactive_systemd_units=(),
         )
 
 

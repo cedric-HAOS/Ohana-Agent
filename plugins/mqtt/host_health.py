@@ -32,8 +32,11 @@ class HostMetrics:
     cpu_percent: float | None
     load_1m_per_cpu: float | None
     memory_percent: float | None
+    memory_total_bytes: int | None
     memory_available_bytes: int | None
     swap_percent: float | None
+    swap_total_bytes: int | None
+    swap_used_bytes: int | None
     disk_percent: float | None
     disk_free_bytes: int | None
     temperature_c: float | None
@@ -41,6 +44,7 @@ class HostMetrics:
     agent_uptime_seconds: int
     agent_restarts: int | None
     failed_systemd_units: tuple[str, ...]
+    inactive_systemd_units: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,8 +61,11 @@ class HostHealthSnapshot:
     cpu_percent: float | None
     load_1m_per_cpu: float | None
     memory_percent: float | None
+    memory_total_bytes: int | None
     memory_available_bytes: int | None
     swap_percent: float | None
+    swap_total_bytes: int | None
+    swap_used_bytes: int | None
     disk_percent: float | None
     disk_free_bytes: int | None
     temperature_c: float | None
@@ -66,6 +73,7 @@ class HostHealthSnapshot:
     agent_uptime_seconds: int
     agent_restarts: int | None
     failed_systemd_units: tuple[str, ...]
+    inactive_systemd_units: tuple[str, ...]
 
     def to_json(self) -> str:
         """Serialize the snapshot using stable compact JSON."""
@@ -141,8 +149,11 @@ class SystemHostProbe:
             cpu_percent=self._cpu_percent(),
             load_1m_per_cpu=self._load_1m_per_cpu(cpu_count),
             memory_percent=memory[0],
-            memory_available_bytes=memory[1],
-            swap_percent=memory[2],
+            memory_total_bytes=memory[1],
+            memory_available_bytes=memory[2],
+            swap_percent=memory[3],
+            swap_total_bytes=memory[4],
+            swap_used_bytes=memory[5],
             disk_percent=disk[0],
             disk_free_bytes=disk[1],
             temperature_c=self._temperature_c(),
@@ -153,6 +164,7 @@ class SystemHostProbe:
             ),
             agent_restarts=self._agent_restarts(),
             failed_systemd_units=self._failed_systemd_units(),
+            inactive_systemd_units=self._inactive_systemd_units(),
         )
 
     def _cpu_percent(self) -> float | None:
@@ -197,11 +209,20 @@ class SystemHostProbe:
             return None
         return round(load / cpu_count, 2)
 
-    def _memory_metrics(self) -> tuple[float | None, int | None, float | None]:
+    def _memory_metrics(
+        self,
+    ) -> tuple[
+        float | None,
+        int | None,
+        int | None,
+        float | None,
+        int | None,
+        int | None,
+    ]:
         try:
             lines = (self._proc_root / "meminfo").read_text(encoding="utf-8")
         except OSError:
-            return None, None, None
+            return None, None, None, None, None, None
 
         values: dict[str, int] = {}
         for line in lines.splitlines():
@@ -229,7 +250,12 @@ class SystemHostProbe:
             if swap_total == 0
             else None
         )
-        return memory_percent, available, swap_percent
+        swap_used = (
+            swap_total - swap_free
+            if swap_total is not None and swap_free is not None
+            else None
+        )
+        return memory_percent, total, available, swap_percent, swap_total, swap_used
 
     def _disk_metrics(self) -> tuple[float | None, int | None]:
         try:
@@ -301,6 +327,14 @@ class SystemHostProbe:
                 }
             )
         )
+
+    def _inactive_systemd_units(self) -> tuple[str, ...]:
+        inactive: list[str] = []
+        for unit in ("ohana-vision.service",):
+            result = self._run_systemctl("is-active", unit)
+            if result is not None and result.returncode != 0:
+                inactive.append(unit)
+        return tuple(inactive)
 
     def _run_systemctl(self, *arguments: str) -> Any | None:
         if not self._systemctl_path.is_file():
@@ -394,6 +428,10 @@ class HostHealthMonitor:
         if metrics.failed_systemd_units:
             conditions.append(
                 ("systemd_units", "degraded", "systemd_units_failed", True)
+            )
+        if metrics.inactive_systemd_units:
+            conditions.append(
+                ("systemd_inactive", "degraded", "systemd_units_inactive", True)
             )
 
         return conditions

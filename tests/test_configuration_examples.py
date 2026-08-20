@@ -31,6 +31,16 @@ def test_shikamaru_example_configuration_is_valid() -> None:
         "/var/lib/ohana-agent/vision-outbox.db"
     )
     assert configuration.vision.outbox_retry_seconds == 10.0
+    assert configuration.vision.outbox_max_entries == 50_000
+    assert configuration.administration.jobs.enabled is False
+    assert configuration.administration.jobs.database_path == Path(
+        "/var/lib/ohana-agent/distributed-jobs.db"
+    )
+    assert configuration.administration.jobs.worker_token_file == Path(
+        "/etc/ohana-agent/katsuyu.token"
+    )
+    assert configuration.administration.jobs.retention_days == 30
+    assert configuration.administration.jobs.max_active_jobs == 1000
 
 
 def test_shikamaru_development_configuration_is_valid() -> None:

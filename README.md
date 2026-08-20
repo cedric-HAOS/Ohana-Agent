@@ -62,6 +62,13 @@ complète est décrite dans [`docs/Backup.md`](docs/Backup.md).
 Le contrat et le modèle de sécurité sont détaillés dans
 [`docs/Administration.md`](docs/Administration.md).
 
+Cette API porte aussi, lorsqu'il est explicitement activé, le protocole de jobs
+durables Tsunade vers Katsuyu. Son premier type, `system.health`, collecte un
+état de ressources strictement borné sur l'hôte Katsuyu, sans paramètre libre.
+Katsuyu dispose d'un jeton worker distinct et ne peut ni administrer Agent ni
+exécuter une commande arbitraire. Les jobs expirés sont repris sans traitement
+périodique permanent.
+
 ---
 
 # Principes
@@ -106,6 +113,13 @@ disque presque plein et les incidents systemd sont immédiats.
 Les uptimes sont présentés sous forme compacte (`8 j 19 h 29 min`). Le même
 snapshot, avec les secondes brutes conservées, est envoyé à Vision via la
 capacité `host.health` afin que les deux interfaces affichent la même mesure.
+
+Le payload conserve aussi la mémoire totale et disponible, le swap total et
+utilisé, ainsi que les unités systemd attendues mais inactives. Lorsque Vision
+est indisponible, l'outbox SQLite d'Agent reste bornée par
+`vision.outbox_max_entries` (50 000 par défaut). Au-delà, les plus anciens
+payloads sont supprimés avec un avertissement afin d'éviter une croissance
+illimitée sur la microSD.
 
 Le document d'infrastructure définit notamment :
 

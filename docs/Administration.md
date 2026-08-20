@@ -52,6 +52,12 @@ avec l'Agent sur la boucle locale.
 | `GET` | `/v1/plugins/{plugin_id}` | Lire un plugin et sa configuration publique |
 | `PUT` | `/v1/plugins/{plugin_id}` | Valider, enregistrer et appliquer sa configuration |
 | `POST` | `/v1/plugins/{plugin_id}/test` | Exécuter un contrôle immédiat |
+| `POST` | `/v1/jobs` | Créer ou rejouer idempotemment une demande Tsunade |
+| `GET` | `/v1/jobs/{job_id}` | Lire l'état et le résultat d'un job |
+| `POST` | `/v1/jobs/{job_id}/cancel` | Annuler un job non terminal |
+| `POST` | `/v1/jobs/claim` | Attribuer un job compatible à Katsuyu |
+| `POST` | `/v1/jobs/{job_id}/heartbeat` | Renouveler le bail de l'exécution courante |
+| `POST` | `/v1/jobs/{job_id}/complete` | Publier le résultat terminal vérifié |
 
 Les opérations sont annoncées explicitement par `/v1/capabilities` :
 
@@ -61,6 +67,69 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
   plugins est disponible ;
 - `system.network.read`, `system.network.write`, `system.network.confirm` et
   `system.network.rollback` lorsque le helper NetworkManager est installé.
+
+## Jobs distribués Tsunade vers Katsuyu
+
+Le protocole est une extension optionnelle de l'API d'administration existante.
+Il ne crée ni bus d'événements, ni ordonnanceur distant générique, ni voie
+d'exécution contournant Agent. Il est désactivé par défaut.
+
+Deux plans d'autorisation restent séparés :
+
+- Tsunade utilise le jeton d'administration existant pour créer, lire ou
+  annuler un job ;
+- Katsuyu utilise exclusivement `/etc/ohana-agent/katsuyu.token` pour prendre
+  un job, renouveler son bail et remettre son résultat ;
+- les deux jetons doivent être différents ; un jeton worker ne permet de lire
+  ni l'infrastructure, ni le DHCP, ni les plugins, ni les autres jobs.
+
+Le Bearer doit circuler dans un transport protégé. Si Bubule est distant,
+Katsuyu joint l'adresse d'INFRA-01 à travers le WireGuard existant et une ACL
+réseau limite le port d'administration à Bubule. L'API ne doit jamais être
+publiée directement sur Internet.
+
+### Contrat v1
+
+Une création contient `protocol_version: 1`, un UUID `job_id` fourni par
+Tsunade, un type déclaré, une date RFC 3339 avec fuseau, des paramètres et un
+timeout entre 1 seconde et 24 heures. Le même `job_id` et le même document
+retournent le job existant ; un contenu différent pour cet identifiant produit
+un conflit HTTP 409.
+
+Le seul type v1 initial est `system.health`. Il ne prend aucun paramètre :
+Katsuyu mesure exclusivement l'hôte sur lequel il s'exécute. Le résultat borné
+contient l'horodatage, la plateforme, le CPU, la mémoire totale et disponible,
+l'espace disque total et libre, la température lorsqu'elle est disponible,
+ainsi qu'un état `OK` ou `DEGRADED` et au plus 32 problèmes synthétiques.
+
+Le job ne transporte ni URL libre, ni identifiant secret, ni commande, ni
+chemin de fichier. Les types `backup.compress`, `backup.encrypt` et
+`backup.verify` seront ajoutés en PHASE 3 avec leurs handlers et leur contrat
+d'artefact explicite. L'analyse ciblée de journaux reste réservée à sa phase
+dédiée : aucun contrat prématuré ne centralise ni ne persiste des journaux.
+
+### États, reprise et vérification
+
+Les états publics sont `CREATED`, `QUEUED`, `WAITING_WORKER`, `RUNNING`,
+`SUCCEEDED`, `FAILED`, `CANCELLED` et `TIMEOUT`. `CREATED` et chaque transition
+sont conservés dans le journal SQLite ; le document courant est retourné en
+`QUEUED` après acceptation.
+
+La prise d'un job est atomique. Elle attribue un numéro de tentative et un bail
+court. Le heartbeat prolonge ce bail sans dépasser le timeout global. Après une
+perte de connexion, l'expiration du bail replace le job en file et la tentative
+suivante reçoit un nouveau numéro ; un résultat tardif de l'ancien worker est
+refusé. Aucun balayage périodique n'est nécessaire : la reprise, les timeouts et
+la purge sont appliqués lors du prochain accès au magasin.
+
+Un succès est revalidé contre le modèle de résultat du type puis accompagné du
+SHA-256 de sa forme JSON canonique. Un échec doit fournir un code, un message
+borné et le caractère retentable. Les fins de jobs peuvent être rejouées à
+l'identique, mais une seconde valeur différente est refusée.
+
+Le magasin est limité à 1 000 jobs actifs par défaut. Les jobs terminés et leur
+journal sont purgés après 30 jours. Ces limites sont configurables. Aucune IA
+n'intervient dans ce protocole ou dans le type v1.
 
 ## Administration réseau de l’hôte
 
@@ -201,3 +270,9 @@ d'Ohana.
 L'exemple complet se trouve dans `config/shikamaru.example.yaml`, sous la clé
 `administration`. L'écoute doit rester sur `127.0.0.1` lorsque Vision et Agent
 sont installés sur le même hôte.
+
+Pour les jobs, la sous-clé `administration.jobs` déclare le fichier SQLite, le
+fichier du jeton Katsuyu, la durée du bail, le délai `WAITING_WORKER`, la
+rétention et la limite de file. L'activation sur une adresse accessible à
+Bubule exige d'abord le tunnel WireGuard, l'ACL réseau et le provisionnement du
+jeton worker avec les mêmes permissions `0640` que les secrets Agent existants.

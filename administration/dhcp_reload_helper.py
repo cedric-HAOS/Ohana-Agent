@@ -150,6 +150,11 @@ def apply_reload(
 
 
 def main() -> int:
+    # Removing Agent's RuntimeDirectory also triggers PathChanged. That expected
+    # deletion must not leave the privileged oneshot unit in a failed state.
+    if not REQUEST_PATH.exists():
+        return 0
+
     try:
         result = apply_reload()
     except Exception as error:  # Root helper must return one concise error.

@@ -159,3 +159,16 @@ def test_reload_helper_starts_dnsmasq_when_lease_purge_fails(
         )
 
     assert [command[1] for command in calls] == ["stop", "start"]
+
+
+def test_main_ignores_runtime_directory_removal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        dhcp_reload_helper,
+        "REQUEST_PATH",
+        tmp_path / "missing-request",
+    )
+
+    assert dhcp_reload_helper.main() == 0

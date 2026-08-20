@@ -6,6 +6,14 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.15.2] — Arrêt Agent sans faux incident DHCP — 2026-08-20
+
+## Corrigé
+
+- Le helper DHCP considère la disparition attendue de sa requête avec le
+  répertoire d'exécution de l'Agent comme une absence de travail, sans laisser
+  `ohana-dhcp-reload.service` en échec lors d'un arrêt ou d'une mise à jour.
+
 # [1.15.1] — Export non bloquant et premier worker Katsuyu — 2026-08-20
 
 ## Ajouté

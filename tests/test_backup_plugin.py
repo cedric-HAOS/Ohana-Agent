@@ -92,6 +92,7 @@ def test_backup_plugin_runs_enabled_infra_01_target() -> None:
         infra_01=InfraBackupConfig(
             enabled=True,
             age_recipient="age1recipient",
+            use_katsuyu=False,
         )
     )
     plugin = BackupPlugin(

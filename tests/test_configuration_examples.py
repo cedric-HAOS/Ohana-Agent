@@ -43,6 +43,11 @@ def test_shikamaru_example_configuration_is_valid() -> None:
     assert configuration.administration.jobs.max_active_jobs == 1000
     assert configuration.administration.jobs.worker_tls.enabled is False
     assert configuration.administration.jobs.worker_tls.port == 8766
+    assert configuration.administration.jobs.wake_on_lan.enabled is False
+    assert (
+        str(configuration.administration.jobs.wake_on_lan.broadcast_address)
+        == "192.168.1.255"
+    )
 
 
 def test_shikamaru_development_configuration_is_valid() -> None:

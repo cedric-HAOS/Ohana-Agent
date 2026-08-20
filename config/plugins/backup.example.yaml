@@ -21,6 +21,10 @@ infra_01:
   recovery_remote_path: icloud:Ohana/Recovery/infra-01.agekey
   # 0 keeps every complete iCloud backup. A positive value enables rotation.
   remote_retention_count: 0
+  # Katsuyu downloads an uncompressed job-bound tar, then compresses and encrypts it.
+  use_katsuyu: true
+  katsuyu_timeout_seconds: 3600
+  max_artifact_bytes: 8589934592
 
 targets:
   - id: ha-01

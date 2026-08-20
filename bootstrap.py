@@ -18,6 +18,7 @@ from administration import (
     PluginAdministrationRepository,
     certificate_sha256,
 )
+from administration.wake_on_lan import WakeOnLanSender
 from builder import (
     BackupConfigurationBuilder,
     DHCPConfigurationBuilder,
@@ -92,6 +93,10 @@ from plugin.plugin_manager import PluginManager
 from plugins.backup.backup_config import BackupConfig
 from plugins.backup.backup_coordinator import BackupCoordinator
 from plugins.backup.backup_plugin import BackupPlugin
+from plugins.backup.distributed_infra_backup import (
+    DistributedInfraBackupCoordinator,
+    DistributedInfraBackupTransfer,
+)
 from plugins.dhcp.dhcp_check import DHCPCheck
 from plugins.dhcp.dhcp_config import DHCPConfig
 from plugins.dhcp.dhcp_plugin import DHCPPlugin
@@ -1667,6 +1672,9 @@ def build_production_agent(
                 waiting_worker_after_seconds=(jobs_config.waiting_worker_after_seconds),
                 retention_days=jobs_config.retention_days,
                 max_active_jobs=jobs_config.max_active_jobs,
+                worker_available_seconds=(
+                    jobs_config.wake_on_lan.available_for_seconds
+                ),
             )
 
         if administration_config.network.enabled:
@@ -1837,6 +1845,19 @@ def build_production_agent(
                     f"{worker_tls_config.ca_certificate_file}."
                 ) from error
 
+        wake_sender = None
+        wake_worker_id = None
+        wake_timeout_seconds = 180
+        if administration_config.jobs.wake_on_lan.enabled:
+            wake_config = administration_config.jobs.wake_on_lan
+            wake_sender = WakeOnLanSender(
+                mac_address=str(wake_config.mac_address),
+                broadcast_address=str(wake_config.broadcast_address),
+                port=wake_config.port,
+            ).send
+            wake_worker_id = wake_config.worker_id
+            wake_timeout_seconds = wake_config.wait_timeout_seconds
+
         administration_service = AdministrationService(
             infrastructure_repository=(
                 InfrastructureConfigurationRepository(
@@ -1855,7 +1876,31 @@ def build_production_agent(
             ),
             worker_ca_certificate_pem=worker_ca_certificate_pem,
             worker_ca_sha256=worker_ca_sha256,
+            wake_worker_id=wake_worker_id,
+            wake_timeout_seconds=wake_timeout_seconds,
+            wake_sender=wake_sender,
         )
+        if job_repository is not None and backup_config.infra_01.use_katsuyu:
+            def distributed_backup_factory(
+                current_backup_config: BackupConfig,
+            ) -> DistributedInfraBackupCoordinator:
+                transfer = DistributedInfraBackupTransfer(
+                    current_backup_config,
+                    job_repository,
+                )
+                administration_service.backup_transfer = transfer
+                return DistributedInfraBackupCoordinator(
+                    current_backup_config,
+                    transfer,
+                    create_job=administration_service.create_job,
+                    read_job=administration_service.read_job,
+                )
+
+            administration_service.backup_transfer = (
+                backup_plugin.enable_distributed_infra(
+                    distributed_backup_factory,
+                )
+            )
         administration_server = AdministrationHTTPServer(
             service=administration_service,
             token=administration_token,

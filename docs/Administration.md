@@ -325,3 +325,15 @@ listener HTTPS dédié, le certificat serveur, sa clé privée et le certificat
 public de l'autorité locale. Le jeton et la clé serveur conservent des
 permissions `0640`; la clé privée de l'autorité reste exclusivement lisible par
 `root`.
+
+`administration.jobs.wake_on_lan` cible un seul worker connu et une seule MAC.
+Lorsqu'un job compatible arrive après expiration de la fraîcheur du worker,
+Agent émet un paquet magique, expose le worker en `WAKING`, puis conserve
+`woken_by_ohana: true` lorsque Katsuyu s'enregistre. Une arrivée spontanée reste
+`woken_by_ohana: false`. Cette version n'implémente aucune extinction de Bubule.
+
+Le job `backup.infra` étend le même listener HTTPS avec deux flux liés au job :
+`GET /v1/jobs/{job_id}/input` et `POST /v1/jobs/{job_id}/artifact`. Le jeton
+individuel, le worker propriétaire et la tentative courante sont tous vérifiés.
+La source est une liste fixe détenue par Agent ; les paramètres ne contiennent
+ni commande, ni chemin, ni secret rclone.

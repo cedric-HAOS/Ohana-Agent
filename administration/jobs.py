@@ -31,6 +31,7 @@ from administration.models import (
     DistributedJobDocument,
     DistributedJobHeartbeat,
     DistributedJobStatus,
+    DistributedWorkerAvailability,
     DistributedWorkerCollection,
     DistributedWorkerDocument,
     DistributedWorkerPairingCollection,
@@ -40,6 +41,8 @@ from administration.models import (
     DistributedWorkerPairingRequest,
     DistributedWorkerPairingResult,
     DistributedWorkerRegistration,
+    InfraBackupParameters,
+    InfraBackupResult,
     SystemHealthParameters,
     SystemHealthResult,
 )
@@ -59,6 +62,7 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "backup.compress": (BackupCompressParameters, BackupCompressResult),
     "backup.encrypt": (BackupEncryptParameters, BackupEncryptResult),
     "backup.verify": (BackupVerifyParameters, BackupVerifyResult),
+    "backup.infra": (InfraBackupParameters, InfraBackupResult),
 }
 PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -80,6 +84,7 @@ class DistributedJobRepository:
         max_active_jobs: int = 1000,
         pairing_ttl_seconds: int = 600,
         max_pending_pairings: int = 10,
+        worker_available_seconds: int = 30,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if lease_seconds < 10:
@@ -94,6 +99,8 @@ class DistributedJobRepository:
             raise ValueError("pairing_ttl_seconds must be between 60 and 3600")
         if max_pending_pairings < 1 or max_pending_pairings > 100:
             raise ValueError("max_pending_pairings must be between 1 and 100")
+        if worker_available_seconds < 10 or worker_available_seconds > 600:
+            raise ValueError("worker_available_seconds must be between 10 and 600")
 
         self.path = path
         self.lease_seconds = lease_seconds
@@ -102,6 +109,7 @@ class DistributedJobRepository:
         self.max_active_jobs = max_active_jobs
         self.pairing_ttl_seconds = pairing_ttl_seconds
         self.max_pending_pairings = max_pending_pairings
+        self.worker_available_seconds = worker_available_seconds
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = Lock()
         if path != Path(":memory:"):
@@ -305,24 +313,39 @@ class DistributedJobRepository:
         normalized = registration.model_copy(update={"capabilities": capabilities})
         with self._lock, self._connection:
             existing = self._connection.execute(
-                "SELECT registered_at FROM distributed_workers WHERE worker_id = ?",
+                "SELECT * FROM distributed_workers WHERE worker_id = ?",
                 (normalized.worker_id,),
             ).fetchone()
             registered_at = (
                 self._parse_timestamp(existing["registered_at"]) if existing else now
             )
+            existing_wake_deadline = (
+                self._parse_timestamp(existing["wake_deadline_at"])
+                if existing and existing["wake_deadline_at"]
+                else None
+            )
+            waking = bool(existing_wake_deadline and existing_wake_deadline >= now)
+            woken_by_ohana = bool(existing and existing["woken_by_ohana"] and waking)
+            wake_requested_at = (
+                existing["wake_requested_at"] if woken_by_ohana else None
+            )
+            wake_deadline_at = existing["wake_deadline_at"] if woken_by_ohana else None
             self._connection.execute(
                 """
                 INSERT INTO distributed_workers (
                     worker_id, protocol_version, capabilities_json, platform,
-                    worker_version, registered_at, last_seen_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    worker_version, registered_at, last_seen_at, woken_by_ohana,
+                    wake_requested_at, wake_deadline_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(worker_id) DO UPDATE SET
                     protocol_version = excluded.protocol_version,
                     capabilities_json = excluded.capabilities_json,
                     platform = excluded.platform,
                     worker_version = excluded.worker_version,
-                    last_seen_at = excluded.last_seen_at
+                    last_seen_at = excluded.last_seen_at,
+                    woken_by_ohana = excluded.woken_by_ohana,
+                    wake_requested_at = excluded.wake_requested_at,
+                    wake_deadline_at = excluded.wake_deadline_at
                 """,
                 (
                     normalized.worker_id,
@@ -332,6 +355,9 @@ class DistributedJobRepository:
                     normalized.worker_version,
                     self._timestamp(registered_at),
                     self._timestamp(now),
+                    woken_by_ohana,
+                    wake_requested_at,
+                    wake_deadline_at,
                 ),
             )
         LOGGER.info(
@@ -343,6 +369,16 @@ class DistributedJobRepository:
             **normalized.model_dump(),
             registered_at=registered_at,
             last_seen_at=now,
+            availability=DistributedWorkerAvailability.AVAILABLE,
+            woken_by_ohana=woken_by_ohana,
+            wake_requested_at=(
+                self._parse_timestamp(wake_requested_at)
+                if wake_requested_at
+                else None
+            ),
+            wake_deadline_at=(
+                self._parse_timestamp(wake_deadline_at) if wake_deadline_at else None
+            ),
         )
 
     def list_workers(self) -> DistributedWorkerCollection:
@@ -351,20 +387,88 @@ class DistributedJobRepository:
             rows = self._connection.execute(
                 "SELECT * FROM distributed_workers ORDER BY worker_id"
             ).fetchall()
+        now = self._now()
         return DistributedWorkerCollection(
-            workers=[
-                DistributedWorkerDocument(
-                    protocol_version=row["protocol_version"],
-                    worker_id=row["worker_id"],
-                    capabilities=json.loads(row["capabilities_json"]),
-                    platform=row["platform"],
-                    worker_version=row["worker_version"],
-                    registered_at=self._parse_timestamp(row["registered_at"]),
-                    last_seen_at=self._parse_timestamp(row["last_seen_at"]),
-                )
-                for row in rows
-            ]
+            workers=[self._worker_document(row, now) for row in rows]
         )
+
+    def mark_worker_waking(
+        self,
+        worker_id: str,
+        *,
+        timeout_seconds: int,
+    ) -> DistributedWorkerDocument:
+        """Persist that Ohana sent WOL for a known, currently unavailable worker."""
+        if timeout_seconds < 10 or timeout_seconds > 1800:
+            raise ValueError("wake timeout must be between 10 and 1800 seconds")
+        now = self._now()
+        deadline = now + timedelta(seconds=timeout_seconds)
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT * FROM distributed_workers WHERE worker_id = ?",
+                (worker_id,),
+            ).fetchone()
+            if row is None:
+                raise LookupError(f"distributed worker not found: {worker_id}")
+            document = self._worker_document(row, now)
+            if document.availability == DistributedWorkerAvailability.AVAILABLE:
+                return document
+            self._connection.execute(
+                """
+                UPDATE distributed_workers
+                SET woken_by_ohana = 1, wake_requested_at = ?, wake_deadline_at = ?
+                WHERE worker_id = ?
+                """,
+                (self._timestamp(now), self._timestamp(deadline), worker_id),
+            )
+            updated = self._connection.execute(
+                "SELECT * FROM distributed_workers WHERE worker_id = ?",
+                (worker_id,),
+            ).fetchone()
+        LOGGER.info("Katsuyu worker %s is waking after an Ohana WOL request", worker_id)
+        return self._worker_document(updated, now)
+
+    def worker_supports(self, worker_id: str, job_type: str) -> bool:
+        """Return whether a previously registered worker announced a job type."""
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT capabilities_json FROM distributed_workers WHERE worker_id = ?",
+                (worker_id,),
+            ).fetchone()
+        return bool(row and job_type in json.loads(row["capabilities_json"]))
+
+    def worker_availability(self, worker_id: str) -> DistributedWorkerDocument:
+        """Return the current computed availability of one worker."""
+        now = self._now()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM distributed_workers WHERE worker_id = ?",
+                (worker_id,),
+            ).fetchone()
+        if row is None:
+            raise LookupError(f"distributed worker not found: {worker_id}")
+        return self._worker_document(row, now)
+
+    def authorize_job_transfer(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        attempt: int,
+        job_type: str = "backup.infra",
+    ) -> DistributedJobDocument:
+        """Authorize a bounded transfer for the worker owning a running job."""
+        now = self._now()
+        with self._lock, self._connection:
+            self._recover_locked(now)
+            row = self._select_required_locked(job_id)
+            self._require_owner(row, worker_id, attempt)
+            if row["type"] != job_type:
+                raise DistributedJobConflictError(
+                    f"job type does not permit this transfer: {row['type']}"
+                )
+            self._touch_worker_locked(worker_id, now)
+            return self._document(row)
 
     def create_pairing(
         self, payload: dict[str, Any]
@@ -733,10 +837,32 @@ class DistributedJobRepository:
                     platform TEXT NOT NULL,
                     worker_version TEXT NOT NULL,
                     registered_at TEXT NOT NULL,
-                    last_seen_at TEXT NOT NULL
+                    last_seen_at TEXT NOT NULL,
+                    woken_by_ohana INTEGER NOT NULL DEFAULT 0,
+                    wake_requested_at TEXT,
+                    wake_deadline_at TEXT
                 )
                 """
             )
+            worker_columns = {
+                row["name"]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(distributed_workers)"
+                ).fetchall()
+            }
+            if "woken_by_ohana" not in worker_columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_workers "
+                    "ADD COLUMN woken_by_ohana INTEGER NOT NULL DEFAULT 0"
+                )
+            if "wake_requested_at" not in worker_columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_workers ADD COLUMN wake_requested_at TEXT"
+                )
+            if "wake_deadline_at" not in worker_columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_workers ADD COLUMN wake_deadline_at TEXT"
+                )
             self._connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS distributed_worker_pairings (
@@ -968,6 +1094,39 @@ class DistributedJobRepository:
         self._connection.execute(
             "UPDATE distributed_workers SET last_seen_at = ? WHERE worker_id = ?",
             (self._timestamp(now), worker_id),
+        )
+
+    def _worker_document(
+        self, row: sqlite3.Row, now: datetime
+    ) -> DistributedWorkerDocument:
+        last_seen = self._parse_timestamp(row["last_seen_at"])
+        wake_deadline = (
+            self._parse_timestamp(row["wake_deadline_at"])
+            if row["wake_deadline_at"]
+            else None
+        )
+        if last_seen + timedelta(seconds=self.worker_available_seconds) >= now:
+            availability = DistributedWorkerAvailability.AVAILABLE
+        elif wake_deadline is not None and wake_deadline >= now:
+            availability = DistributedWorkerAvailability.WAKING
+        else:
+            availability = DistributedWorkerAvailability.UNAVAILABLE
+        return DistributedWorkerDocument(
+            protocol_version=row["protocol_version"],
+            worker_id=row["worker_id"],
+            capabilities=json.loads(row["capabilities_json"]),
+            platform=row["platform"],
+            worker_version=row["worker_version"],
+            registered_at=self._parse_timestamp(row["registered_at"]),
+            last_seen_at=last_seen,
+            availability=availability,
+            woken_by_ohana=bool(row["woken_by_ohana"]),
+            wake_requested_at=(
+                self._parse_timestamp(row["wake_requested_at"])
+                if row["wake_requested_at"]
+                else None
+            ),
+            wake_deadline_at=wake_deadline,
         )
 
     @staticmethod

@@ -53,6 +53,14 @@ administration:
     waiting_worker_after_seconds: 30
     retention_days: 30
     max_active_jobs: 1000
+    wake_on_lan:
+      enabled: false
+      worker_id: katsuyu-bubule
+      mac_address: null
+      broadcast_address: 192.168.1.255
+      port: 9
+      wait_timeout_seconds: 180
+      available_for_seconds: 30
     worker_tls:
       enabled: false
       host: 0.0.0.0

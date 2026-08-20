@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field, IPvAnyAddress, model_validator
+from pydantic import Field, IPvAnyAddress, field_validator, model_validator
 
 from configuration.base import Config
 
@@ -54,6 +54,40 @@ class DistributedWorkerTLSConfig(Config):
     ca_certificate_file: Path = Path("/etc/ohana-agent/tls/ca.crt")
 
 
+class WakeOnLanConfig(Config):
+    """Optional, bounded Wake-on-LAN policy for one Katsuyu host."""
+
+    enabled: bool = False
+    worker_id: str = "katsuyu-bubule"
+    mac_address: str | None = None
+    broadcast_address: IPvAnyAddress = IPvAnyAddress("255.255.255.255")
+    port: int = Field(default=9, ge=1, le=65535)
+    wait_timeout_seconds: int = Field(default=180, ge=10, le=1800)
+    available_for_seconds: int = Field(default=30, ge=10, le=600)
+
+    @field_validator("worker_id")
+    @classmethod
+    def validate_worker_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Wake-on-LAN worker_id cannot be empty")
+        return normalized
+
+    @field_validator("mac_address")
+    @classmethod
+    def normalize_mac_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_enabled_policy(self) -> "WakeOnLanConfig":
+        if self.enabled and self.mac_address is None:
+            raise ValueError("enabled Wake-on-LAN requires a MAC address")
+        return self
+
+
 class DistributedJobsConfig(Config):
     """Durable Tsunade-to-Katsuyu job protocol configuration."""
 
@@ -67,6 +101,7 @@ class DistributedJobsConfig(Config):
     worker_tls: DistributedWorkerTLSConfig = Field(
         default_factory=DistributedWorkerTLSConfig
     )
+    wake_on_lan: WakeOnLanConfig = Field(default_factory=WakeOnLanConfig)
 
     @model_validator(mode="after")
     def validate_worker_transport(self) -> "DistributedJobsConfig":

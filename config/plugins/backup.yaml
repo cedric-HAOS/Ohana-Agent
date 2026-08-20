@@ -15,4 +15,7 @@ infra_01:
   age_identity_file: /etc/ohana-agent/keys/infra-01.agekey
   recovery_remote_path: icloud:Ohana/Recovery/infra-01.agekey
   remote_retention_count: 0
+  use_katsuyu: true
+  katsuyu_timeout_seconds: 3600
+  max_artifact_bytes: 8589934592
 targets: []

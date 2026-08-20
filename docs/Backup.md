@@ -28,19 +28,28 @@ La sauvegarde contient :
 - `/etc/chrony/chrony.conf` ;
 - un instantané cohérent de `/var/lib/ohana-vision/vision.db`.
 
-Agent compresse le tar en flux puis le chiffre dans un `tmpfs`, envoie d'abord
-l'archive `.tar.age`, puis publie le manifeste JSON en dernier. Ce manifeste permet à
+Avec `use_katsuyu: true`, Agent crée un job `backup.infra` et diffuse à son
+propriétaire un tar non compressé sur le listener HTTPS Katsuyu. Katsuyu
+compresse, chiffre avec le destinataire public `age`, calcule l'intégrité puis
+renvoie l'artefact. Agent transmet ce retour directement à `rclone rcat` sans
+le stocker et publie le manifeste JSON en dernier. Ce manifeste permet à
 Ohana-Installer de sélectionner uniquement une sauvegarde complètement publiée
 et de réinstaller la composition Agent/Vision correspondante. Un second
 descripteur placé à l'intérieur de l'archive chiffrée reprend l'identité et les
 versions de la sauvegarde ; Installer exige sa correspondance exacte avec le
 manifeste public avant d'appliquer le moindre fichier.
 
-Le snapshot SQLite est produit avec `VACUUM INTO` afin de ne copier que les
-pages utiles après la purge de rétention Vision. Le préflight contrôle la
-capacité effective du `tmpfs` pour conserver simultanément le snapshot compact
-et l'archive chiffrée, avec une marge de sécurité. Si cette capacité manque,
-la sauvegarde est refusée avant la création de tout fichier ou upload.
+Seul l'instantané SQLite cohérent demeure produit temporairement sur le `tmpfs`
+d'INFRA-01, au moyen de l'API de sauvegarde en ligne SQLite. INFRA-01 ne
+compresse plus, ne chiffre plus et ne conserve ni tar ni archive chiffrée. Le
+jeton worker, l'identité du propriétaire du job et son numéro de tentative
+protègent les deux flux ; aucun chemin arbitraire n'est accepté.
+
+Le résultat du job contient durée, temps CPU, pic mémoire du processus Katsuyu,
+volumes logiques lus/écrits, tailles avant/après et SHA-256. Ces mesures se
+comparent aux observations hôte Agent/Shikamaru prises avant et pendant le job.
+Les sauvegardes HAOS ne changent pas : elles restent créées et chiffrées
+nativement par HA-01, LINKY-01 et ZWAVE-01, puis seulement relayées en flux.
 
 La rétention iCloud est indépendante de la sauvegarde locale des HAOS. La valeur
 `remote_retention_count: 0` conserve toutes les sauvegardes INFRA-01. Une valeur
@@ -162,6 +171,10 @@ Le service systemd crée `/run/ohana-agent`. Le plugin vérifie que le système 
 fichiers contenant `temporary_directory` est réellement `tmpfs`. Il échoue au
 lieu de se rabattre sur la microSD. `require_tmpfs: false` ne doit être utilisé
 qu'avec un stockage externe explicitement validé, par exemple un SSD USB.
+
+`use_katsuyu: false` conserve le chemin local historique pour un retour arrière
+explicite. Ce mode local compresse et chiffre sur INFRA-01 et ne constitue pas
+la cible d'exploitation normale.
 
 ## ZWAVE-01
 

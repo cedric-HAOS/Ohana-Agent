@@ -6,6 +6,27 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.18.0] — Sauvegarde distribuée et réveil Katsuyu — 2026-08-20
+
+## Ajouté
+
+- Le job typé `backup.infra` diffuse un tar non compressé à son worker
+  propriétaire, reçoit l'artefact `age` et le transmet directement à rclone.
+- Les workers exposent `AVAILABLE`, `UNAVAILABLE` ou `WAKING`, ainsi que
+  `woken_by_ohana` et les bornes temporelles du réveil.
+- Wake-on-LAN cible une seule identité et une seule MAC configurées, sans shell.
+
+## Sécurité et ressources
+
+- Le transfert réutilise le jeton worker individuel, l'identité propriétaire et
+  la tentative en cours ; aucun chemin arbitraire ou secret rclone ne traverse
+  le contrat.
+- INFRA-01 ne compresse plus, ne chiffre plus et ne stocke plus l'archive ; seul
+  l'instantané SQLite cohérent demeure temporairement en `tmpfs`.
+- Si Katsuyu est requis mais que les jobs distribués sont indisponibles, Agent
+  refuse de retomber silencieusement sur le traitement local.
+- Aucune extinction de Bubule n'est implémentée dans cette version.
+
 # [1.17.0] — Canal HTTPS dédié aux workers — 2026-08-20
 
 ## Ajouté

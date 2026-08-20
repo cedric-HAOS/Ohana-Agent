@@ -45,6 +45,22 @@ LOGGER = logging.getLogger(__name__)
 MAXIMUM_REQUEST_BYTES = 1024 * 1024
 
 
+class _BoundedRequestStream:
+    """Expose exactly one declared HTTP request body and then return EOF."""
+
+    def __init__(self, stream: object, size_bytes: int) -> None:
+        self.stream = stream
+        self.remaining = size_bytes
+
+    def read(self, size: int = -1) -> bytes:
+        if self.remaining <= 0:
+            return b""
+        requested = self.remaining if size < 0 else min(size, self.remaining)
+        chunk = self.stream.read(requested)
+        self.remaining -= len(chunk)
+        return chunk
+
+
 class AdministrationService:
     """Execute versioned administration operations owned by Agent."""
 
@@ -62,6 +78,10 @@ class AdministrationService:
         agent_version: str | None = None,
         worker_ca_certificate_pem: str | None = None,
         worker_ca_sha256: str | None = None,
+        wake_worker_id: str | None = None,
+        wake_timeout_seconds: int = 180,
+        wake_sender: Callable[[], None] | None = None,
+        backup_transfer: Any | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -76,6 +96,10 @@ class AdministrationService:
             )
         self.worker_ca_certificate_pem = worker_ca_certificate_pem
         self.worker_ca_sha256 = worker_ca_sha256
+        self.wake_worker_id = wake_worker_id
+        self.wake_timeout_seconds = wake_timeout_seconds
+        self.wake_sender = wake_sender
+        self.backup_transfer = backup_transfer
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -252,7 +276,33 @@ class AdministrationService:
         """Validate and queue one explicitly typed distributed job."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        return self.job_repository.create(payload)
+        job = self.job_repository.create(payload)
+        self._wake_compatible_worker(job.type)
+        return job
+
+    def _wake_compatible_worker(self, job_type: str) -> None:
+        """Wake only the configured worker when it is known and unavailable."""
+        if (
+            self.job_repository is None
+            or self.wake_sender is None
+            or self.wake_worker_id is None
+            or not self.job_repository.worker_supports(self.wake_worker_id, job_type)
+        ):
+            return
+        worker = self.job_repository.worker_availability(self.wake_worker_id)
+        if worker.availability.value != "UNAVAILABLE":
+            return
+        try:
+            self.wake_sender()
+            self.job_repository.mark_worker_waking(
+                self.wake_worker_id,
+                timeout_seconds=self.wake_timeout_seconds,
+            )
+        except OSError:
+            LOGGER.exception(
+                "Unable to send Wake-on-LAN for Katsuyu worker %s",
+                self.wake_worker_id,
+            )
 
     def read_job(self, job_id: str) -> object:
         """Read the current durable state of one job."""
@@ -344,6 +394,40 @@ class AdministrationService:
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
         return self.job_repository.complete(job_id, payload)
+
+    def authorize_backup_transfer(
+        self, job_id: str, worker_id: str, attempt: int
+    ) -> object:
+        if self.backup_transfer is None:
+            raise LookupError("Distributed INFRA backup transfer is unavailable")
+        return self.backup_transfer.authorize(job_id, worker_id, attempt)
+
+    def stream_backup_source(
+        self, job_id: str, worker_id: str, attempt: int, output: object
+    ) -> None:
+        if self.backup_transfer is None:
+            raise LookupError("Distributed INFRA backup transfer is unavailable")
+        self.backup_transfer.stream_source(job_id, worker_id, attempt, output)
+
+    def receive_backup_artifact(
+        self,
+        job_id: str,
+        worker_id: str,
+        attempt: int,
+        stream: object,
+        size_bytes: int,
+        sha256: str,
+    ) -> object:
+        if self.backup_transfer is None:
+            raise LookupError("Distributed INFRA backup transfer is unavailable")
+        return self.backup_transfer.receive_artifact(
+            job_id,
+            worker_id,
+            attempt,
+            stream,
+            size_bytes=size_bytes,
+            expected_sha256=sha256,
+        )
 
 
 class AdministrationHTTPServer:
@@ -461,7 +545,16 @@ class AdministrationHTTPServer:
                 """Handle administration reads."""
                 path = self.path.split("?", 1)[0]
                 if worker_only:
-                    if path == "/v1/jobs/workers/trust":
+                    input_suffix = "/input"
+                    if path.startswith("/v1/jobs/") and path.endswith(input_suffix):
+                        job_id = path[len("/v1/jobs/") : -len(input_suffix)]
+                        if job_id and "/" not in job_id:
+                            self._download_backup_source(job_id)
+                        else:
+                            self._write_error(
+                                HTTPStatus.NOT_FOUND, "Worker endpoint not found"
+                            )
+                    elif path == "/v1/jobs/workers/trust":
                         self._execute(service.read_worker_trust)
                     else:
                         self._write_error(
@@ -553,6 +646,16 @@ class AdministrationHTTPServer:
             def do_POST(self) -> None:  # noqa: N802
                 """Handle immediate administration actions."""
                 path = self.path.split("?", 1)[0]
+                artifact_suffix = "/artifact"
+                if path.startswith("/v1/jobs/") and path.endswith(artifact_suffix):
+                    job_id = path[len("/v1/jobs/") : -len(artifact_suffix)]
+                    if job_id and "/" not in job_id:
+                        self._upload_backup_artifact(job_id)
+                    else:
+                        self._write_error(
+                            HTTPStatus.NOT_FOUND, "Worker endpoint not found"
+                        )
+                    return
                 if path == "/v1/jobs/workers/pairings":
                     payload = self._read_json()
                     if payload is not None:
@@ -733,6 +836,70 @@ class AdministrationHTTPServer:
                     )
                     return False
                 return True
+
+            def _worker_transfer_identity(self) -> tuple[str, int] | None:
+                worker_id = self.headers.get("X-Ohana-Worker-Id", "").strip()
+                try:
+                    attempt = int(self.headers.get("X-Ohana-Attempt", "0"))
+                except ValueError:
+                    attempt = 0
+                payload = {"worker_id": worker_id}
+                if not worker_id:
+                    self._write_error(HTTPStatus.BAD_REQUEST, "Worker ID is required")
+                    return None
+                if attempt < 1:
+                    self._write_error(HTTPStatus.BAD_REQUEST, "Invalid job attempt")
+                    return None
+                if not self._authorized_worker(payload):
+                    return None
+                return worker_id, attempt
+
+            def _download_backup_source(self, job_id: str) -> None:
+                identity = self._worker_transfer_identity()
+                if identity is None:
+                    return
+                worker_id, attempt = identity
+                try:
+                    service.authorize_backup_transfer(job_id, worker_id, attempt)
+                except LookupError as error:
+                    self._write_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
+                except DistributedJobConflictError as error:
+                    self._write_error(HTTPStatus.CONFLICT, str(error))
+                    return
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/x-tar")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.close_connection = True
+                try:
+                    service.stream_backup_source(
+                        job_id, worker_id, attempt, self.wfile
+                    )
+                except (BrokenPipeError, ConnectionError, OSError):
+                    LOGGER.exception("Distributed backup source stream failed")
+
+            def _upload_backup_artifact(self, job_id: str) -> None:
+                identity = self._worker_transfer_identity()
+                if identity is None:
+                    return
+                worker_id, attempt = identity
+                try:
+                    content_length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    self._write_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
+                    return
+                sha256 = self.headers.get("X-Ohana-SHA256", "").strip().lower()
+                self._execute(
+                    lambda: service.receive_backup_artifact(
+                        job_id,
+                        worker_id,
+                        attempt,
+                        _BoundedRequestStream(self.rfile, content_length),
+                        content_length,
+                        sha256,
+                    )
+                )
 
             def _read_json(self) -> dict[str, Any] | None:
                 raw_length = self.headers.get("Content-Length")

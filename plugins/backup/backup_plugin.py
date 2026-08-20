@@ -15,6 +15,10 @@ from plugins.backup.backup_coordinator import (
     BackupCoordinator,
     BackupExecutionError,
 )
+from plugins.backup.distributed_infra_backup import (
+    DistributedInfraBackupCoordinator,
+    DistributedInfraBackupTransfer,
+)
 from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
 
 
@@ -34,6 +38,7 @@ class BackupPlugin(Plugin):
             self.config
         )
         self._state = PluginState.LOADED
+        self._distributed_factory: Any | None = None
 
     @property
     def name(self) -> str:
@@ -120,6 +125,15 @@ class BackupPlugin(Plugin):
             raise ValueError("Backup target is disabled: 'infra-01'.")
         started_at = perf_counter()
         try:
+            if (
+                self.config.infra_01.use_katsuyu
+                and self._distributed_factory is None
+            ):
+                raise BackupExecutionError(
+                    "katsuyu",
+                    "Distributed jobs are unavailable; refusing local compression "
+                    "or encryption on INFRA-01.",
+                )
             result = self._infra_coordinator.run()
         except BackupExecutionError as error:
             return ObserverResult(
@@ -174,6 +188,14 @@ class BackupPlugin(Plugin):
                 backup_count += self._coordinator.preflight(target)
                 checked += 1
             if check_infra:
+                if (
+                    self.config.infra_01.use_katsuyu
+                    and self._distributed_factory is None
+                ):
+                    raise BackupExecutionError(
+                        "katsuyu",
+                        "Distributed jobs are unavailable for the INFRA-01 backup.",
+                    )
                 self._infra_coordinator.preflight()
                 checked += 1
         except BackupExecutionError as error:
@@ -210,7 +232,25 @@ class BackupPlugin(Plugin):
         """Apply an updated policy without restarting Agent."""
         self.config = config
         self._coordinator = BackupCoordinator(config)
-        self._infra_coordinator = InfraBackupCoordinator(config)
+        if self._distributed_factory is not None and config.infra_01.use_katsuyu:
+            self._infra_coordinator = self._distributed_factory(config)
+        else:
+            self._infra_coordinator = InfraBackupCoordinator(config)
+
+    def enable_distributed_infra(
+        self,
+        factory: Any,
+    ) -> DistributedInfraBackupTransfer:
+        """Select Katsuyu for INFRA backups while retaining explicit local fallback."""
+        self._distributed_factory = factory
+        coordinator = factory(self.config)
+        if not isinstance(coordinator, DistributedInfraBackupCoordinator):
+            raise TypeError(
+                "distributed backup factory returned an invalid coordinator"
+            )
+        if self.config.infra_01.use_katsuyu:
+            self._infra_coordinator = coordinator
+        return coordinator.transfer
 
     @staticmethod
     def _metadata(

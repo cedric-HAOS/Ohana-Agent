@@ -57,5 +57,10 @@ class BackupConfigurationBuilder:
                 age_identity_file=config.infra_01.age_identity_file,
                 recovery_remote_path=config.infra_01.recovery_remote_path,
                 remote_retention_count=config.infra_01.remote_retention_count,
+                use_katsuyu=config.infra_01.use_katsuyu,
+                katsuyu_timeout_seconds=(
+                    config.infra_01.katsuyu_timeout_seconds
+                ),
+                max_artifact_bytes=config.infra_01.max_artifact_bytes,
             ),
         )

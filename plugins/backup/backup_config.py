@@ -45,6 +45,9 @@ class InfraBackupConfig:
     age_identity_file: str = "/etc/ohana-agent/keys/infra-01.agekey"
     recovery_remote_path: str = "icloud:Ohana/Recovery/infra-01.agekey"
     remote_retention_count: int = 0
+    use_katsuyu: bool = True
+    katsuyu_timeout_seconds: int = 3600
+    max_artifact_bytes: int = 8 * 1024 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)

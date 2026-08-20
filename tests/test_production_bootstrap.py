@@ -93,8 +93,9 @@ administration:
         "system.health",
         "backup.compress",
         "backup.encrypt",
-        "backup.verify",
-    )
+            "backup.verify",
+            "backup.infra",
+        )
     assert jobs_database.is_file()
     repository.close()
 

@@ -230,6 +230,8 @@ def test_worker_registration_and_progress_survive_in_sqlite(
     )
     assert registration.capabilities == ["backup.verify", "system.health"]
     assert registration.registered_at == clock.now
+    assert registration.availability.value == "AVAILABLE"
+    assert registration.woken_by_ohana is False
 
     repository.create(job_payload(clock))
     repository.claim(claim_payload())
@@ -248,6 +250,110 @@ def test_worker_registration_and_progress_survive_in_sqlite(
     )
     assert running.progress is not None
     assert running.progress.percent == 42.5
+
+
+def test_tsunade_wakes_only_an_unavailable_compatible_worker(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.3.0",
+        }
+    )
+    clock.advance(31)
+    sent: list[bool] = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_worker_id="katsuyu-bubule",
+        wake_timeout_seconds=180,
+        wake_sender=lambda: sent.append(True),
+    )
+    try:
+        service.create_job(job_payload(clock))
+        worker = repository.worker_availability("katsuyu-bubule")
+        assert sent == [True]
+        assert worker.availability.value == "WAKING"
+        assert worker.woken_by_ohana is True
+
+        registered = repository.register_worker(
+            {
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.3.0",
+            }
+        )
+        assert registered.availability.value == "AVAILABLE"
+        assert registered.woken_by_ohana is True
+    finally:
+        repository.close()
+
+
+def test_spontaneous_worker_registration_is_never_marked_woken_by_ohana(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.3.0",
+        }
+    )
+    clock.advance(31)
+    assert (
+        repository.worker_availability("katsuyu-bubule").availability.value
+        == "UNAVAILABLE"
+    )
+    registered = repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.3.0",
+        }
+    )
+    assert registered.woken_by_ohana is False
+
+
+def test_registration_after_wake_deadline_is_treated_as_human_start(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.3.0",
+        }
+    )
+    clock.advance(31)
+    repository.mark_worker_waking("katsuyu-bubule", timeout_seconds=180)
+    clock.advance(181)
+    registered = repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.3.0",
+        }
+    )
+    assert registered.woken_by_ohana is False
+    assert registered.wake_requested_at is None
 
 
 def test_heartbeat_observes_tsunade_cancellation(

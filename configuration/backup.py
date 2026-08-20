@@ -95,6 +95,13 @@ class InfraBackupPluginConfig(Config):
     age_identity_file: str = "/etc/ohana-agent/keys/infra-01.agekey"
     recovery_remote_path: str = "icloud:Ohana/Recovery/infra-01.agekey"
     remote_retention_count: int = Field(default=0, ge=0, le=365)
+    use_katsuyu: bool = True
+    katsuyu_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
+    max_artifact_bytes: int = Field(
+        default=8 * 1024 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=64 * 1024 * 1024 * 1024,
+    )
 
     @field_validator(
         "schedule",

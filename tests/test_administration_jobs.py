@@ -132,6 +132,27 @@ def test_create_is_idempotent_and_rejects_changed_duplicate(
             ValidationError,
         ),
         ({"protocol_version": 2}, ValidationError),
+        (
+            {
+                "type": "backup.compress",
+                "parameters": {
+                    "source": "../outside.tar",
+                    "destination": "backup.tar.gz",
+                },
+            },
+            ValidationError,
+        ),
+        (
+            {
+                "type": "backup.encrypt",
+                "parameters": {
+                    "source": "backup.tar.gz",
+                    "destination": "backup.tar.gz",
+                    "recipient": "age1" + "q" * 58,
+                },
+            },
+            ValidationError,
+        ),
     ],
 )
 def test_create_rejects_undeclared_types_and_invalid_parameters(
@@ -192,6 +213,70 @@ def test_claim_heartbeat_and_verified_completion(
     assert completed.result_sha256 == expected_digest
     assert completed.finished_at == clock.now
     assert repository.complete(JOB_ID, success_payload()) == completed
+
+
+def test_worker_registration_and_progress_survive_in_sqlite(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    registration = repository.register_worker(
+        {
+            "protocol_version": 1,
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health", "backup.verify"],
+            "platform": "Windows 11",
+            "worker_version": "1.15.2",
+        }
+    )
+    assert registration.capabilities == ["backup.verify", "system.health"]
+    assert registration.registered_at == clock.now
+
+    repository.create(job_payload(clock))
+    repository.claim(claim_payload())
+    running = repository.heartbeat(
+        JOB_ID,
+        {
+            "protocol_version": 1,
+            "worker_id": "katsuyu-bubule",
+            "attempt": 1,
+            "progress": {
+                "percent": 42.5,
+                "stage": "system.sample",
+                "message": "Mesure en cours",
+            },
+        },
+    )
+    assert running.progress is not None
+    assert running.progress.percent == 42.5
+
+
+def test_heartbeat_observes_tsunade_cancellation(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    repository.create(job_payload(clock))
+    repository.claim(claim_payload())
+    repository.cancel(JOB_ID)
+
+    observed = repository.heartbeat(
+        JOB_ID,
+        {
+            "protocol_version": 1,
+            "worker_id": "katsuyu-bubule",
+            "attempt": 1,
+        },
+    )
+
+    assert observed.status == DistributedJobStatus.CANCELLED
+    with pytest.raises(DistributedJobConflictError):
+        repository.heartbeat(
+            JOB_ID,
+            {
+                "protocol_version": 1,
+                "worker_id": "katsuyu-other",
+                "attempt": 1,
+            },
+        )
 
 
 @pytest.mark.parametrize(
@@ -337,6 +422,78 @@ def test_server_requires_distinct_worker_credentials(
         repository.close()
 
 
+def test_worker_pairing_issues_one_bound_credential(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    try:
+        created = repository.create_pairing(
+            {
+                "protocol_version": 1,
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.1.0",
+            }
+        )
+        assert created.verification_code
+        assert repository.list_pairings().pairings[0].status == "PENDING"
+
+        pending = repository.poll_pairing(
+            str(created.pairing_id),
+            {"protocol_version": 1, "polling_secret": created.polling_secret},
+        )
+        assert pending.status == "PENDING"
+        assert pending.worker_token is None
+
+        repository.approve_pairing(str(created.pairing_id))
+        consumed = repository.poll_pairing(
+            str(created.pairing_id),
+            {"protocol_version": 1, "polling_secret": created.polling_secret},
+        )
+        assert consumed.status == "CONSUMED"
+        assert consumed.worker_token is not None
+        assert repository.authorize_worker("katsuyu-bubule", consumed.worker_token)
+        assert not repository.authorize_worker("another-worker", consumed.worker_token)
+
+        repeated = repository.poll_pairing(
+            str(created.pairing_id),
+            {"protocol_version": 1, "polling_secret": created.polling_secret},
+        )
+        assert repeated.status == "CONSUMED"
+        assert repeated.worker_token is None
+    finally:
+        repository.close()
+
+
+def test_worker_pairing_expires_without_approval(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, pairing_ttl_seconds=60
+    )
+    try:
+        created = repository.create_pairing(
+            {
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.1.0",
+            }
+        )
+        clock.now += timedelta(seconds=61)
+        result = repository.poll_pairing(
+            str(created.pairing_id),
+            {"polling_secret": created.polling_secret},
+        )
+        assert result.status == "EXPIRED"
+        assert result.worker_token is None
+    finally:
+        repository.close()
+
+
 def _request_json(
     server: AdministrationHTTPServer,
     path: str,
@@ -395,6 +552,24 @@ def test_http_routes_keep_tsunade_and_katsuyu_permissions_separate(
             method="POST",
             payload=job_payload(clock),
         )
+        registered = _request_json(
+            server,
+            "/v1/jobs/workers/register",
+            token="katsuyu-secret",
+            method="POST",
+            payload={
+                "protocol_version": 1,
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "1.15.2",
+            },
+        )
+        workers = _request_json(
+            server,
+            "/v1/jobs/workers",
+            token="tsunade-secret",
+        )
         with pytest.raises(HTTPError) as management_on_worker:
             _request_json(
                 server,
@@ -428,8 +603,101 @@ def test_http_routes_keep_tsunade_and_katsuyu_permissions_separate(
         repository.close()
 
     assert "jobs.create" in capabilities["operations"]
+    assert "jobs.worker.register" in capabilities["operations"]
+    assert "jobs.workers.read" in capabilities["operations"]
     assert created["status"] == "QUEUED"
+    assert registered["worker_id"] == "katsuyu-bubule"
+    assert workers["workers"][0]["capabilities"] == ["system.health"]  # type: ignore[index]
     assert management_on_worker.value.code == 401
     assert worker_on_management.value.code == 401
     assert claimed["job"]["status"] == "RUNNING"  # type: ignore[index]
     assert completed["status"] == "SUCCEEDED"
+
+
+def test_http_pairing_requires_tsunade_approval_and_binds_worker_token(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            job_repository=repository,
+        ),
+        token="tsunade-secret",
+        worker_token="legacy-katsuyu-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        pairing = _request_json(
+            server,
+            "/v1/jobs/workers/pairings",
+            token="",
+            method="POST",
+            payload={
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.1.0",
+            },
+        )
+        pairing_id = str(pairing["pairing_id"])
+        polling_secret = str(pairing["polling_secret"])
+        listed = _request_json(
+            server,
+            "/v1/jobs/workers/pairings",
+            token="tsunade-secret",
+        )
+        assert "polling_secret" not in listed["pairings"][0]  # type: ignore[index]
+        assert "worker_token" not in listed["pairings"][0]  # type: ignore[index]
+
+        _request_json(
+            server,
+            f"/v1/jobs/workers/pairings/{pairing_id}/approve",
+            token="tsunade-secret",
+            method="POST",
+        )
+        result = _request_json(
+            server,
+            f"/v1/jobs/workers/pairings/{pairing_id}/poll",
+            token="",
+            method="POST",
+            payload={"polling_secret": polling_secret},
+        )
+        worker_token = str(result["worker_token"])
+        registered = _request_json(
+            server,
+            "/v1/jobs/workers/register",
+            token=worker_token,
+            method="POST",
+            payload={
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.1.0",
+            },
+        )
+        assert registered["worker_id"] == "katsuyu-bubule"
+
+        with pytest.raises(HTTPError) as wrong_worker:
+            _request_json(
+                server,
+                "/v1/jobs/workers/register",
+                token=worker_token,
+                method="POST",
+                payload={
+                    "worker_id": "katsuyu-other",
+                    "capabilities": ["system.health"],
+                    "platform": "Windows 11",
+                    "worker_version": "0.1.0",
+                },
+            )
+        assert wrong_worker.value.code == 401
+    finally:
+        server.stop()
+        repository.close()

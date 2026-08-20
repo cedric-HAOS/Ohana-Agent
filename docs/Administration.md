@@ -55,6 +55,13 @@ avec l'Agent sur la boucle locale.
 | `POST` | `/v1/jobs` | Créer ou rejouer idempotemment une demande Tsunade |
 | `GET` | `/v1/jobs/{job_id}` | Lire l'état et le résultat d'un job |
 | `POST` | `/v1/jobs/{job_id}/cancel` | Annuler un job non terminal |
+| `GET` | `/v1/jobs/workers` | Lister les workers enregistrés et leur dernière activité |
+| `POST` | `/v1/jobs/workers/pairings` | Ouvrir une demande d'appairage temporaire |
+| `GET` | `/v1/jobs/workers/pairings` | Lister les demandes sans secret ni jeton |
+| `POST` | `/v1/jobs/workers/pairings/{pairing_id}/approve` | Autoriser la demande après comparaison du code |
+| `POST` | `/v1/jobs/workers/pairings/{pairing_id}/reject` | Refuser une demande non reconnue |
+| `POST` | `/v1/jobs/workers/pairings/{pairing_id}/poll` | Récupérer une fois le jeton après autorisation |
+| `POST` | `/v1/jobs/workers/register` | Enregistrer Katsuyu et annoncer ses capacités |
 | `POST` | `/v1/jobs/claim` | Attribuer un job compatible à Katsuyu |
 | `POST` | `/v1/jobs/{job_id}/heartbeat` | Renouveler le bail de l'exécution courante |
 | `POST` | `/v1/jobs/{job_id}/complete` | Publier le résultat terminal vérifié |
@@ -78,10 +85,16 @@ Deux plans d'autorisation restent séparés :
 
 - Tsunade utilise le jeton d'administration existant pour créer, lire ou
   annuler un job ;
-- Katsuyu utilise exclusivement `/etc/ohana-agent/katsuyu.token` pour prendre
-  un job, renouveler son bail et remettre son résultat ;
+- Katsuyu utilise exclusivement un Bearer worker pour s'enregistrer, prendre un
+  job, renouveler son bail et remettre son résultat ;
 - les deux jetons doivent être différents ; un jeton worker ne permet de lire
   ni l'infrastructure, ni le DHCP, ni les plugins, ni les autres jobs.
+- Une nouvelle installation ouvre une demande bornée sans authentification,
+  affiche son code local et attend l'approbation via l'administration existante.
+  Le secret de sondage reste sur Bubule ; Vision ne reçoit que l'identité, les
+  capacités, le code et l'expiration. Après approbation, Agent délivre un jeton
+  individuel une seule fois, conserve uniquement son SHA-256 et le lie au
+  `worker_id`. Le jeton global historique reste accepté pour compatibilité.
 
 Le Bearer doit circuler dans un transport protégé. Si Bubule est distant,
 Katsuyu joint l'adresse d'INFRA-01 à travers le WireGuard existant et une ACL
@@ -96,17 +109,28 @@ timeout entre 1 seconde et 24 heures. Le même `job_id` et le même document
 retournent le job existant ; un contenu différent pour cet identifiant produit
 un conflit HTTP 409.
 
-Le seul type v1 initial est `system.health`. Il ne prend aucun paramètre :
-Katsuyu mesure exclusivement l'hôte sur lequel il s'exécute. Le résultat borné
-contient l'horodatage, la plateforme, le CPU, la mémoire totale et disponible,
-l'espace disque total et libre, la température lorsqu'elle est disponible,
-ainsi qu'un état `OK` ou `DEGRADED` et au plus 32 problèmes synthétiques.
+Les quatre types du MVP sont strictement déclarés :
 
-Le job ne transporte ni URL libre, ni identifiant secret, ni commande, ni
-chemin de fichier. Les types `backup.compress`, `backup.encrypt` et
-`backup.verify` seront ajoutés en PHASE 3 avec leurs handlers et leur contrat
-d'artefact explicite. L'analyse ciblée de journaux reste réservée à sa phase
-dédiée : aucun contrat prématuré ne centralise ni ne persiste des journaux.
+- `system.health` ne prend aucun paramètre et mesure exclusivement l'hôte
+  Katsuyu ;
+- `backup.compress` reçoit les chemins relatifs `source` et `destination` dans
+  l'espace Katsuyu ainsi qu'un niveau gzip de 1 à 9 ;
+- `backup.encrypt` reçoit deux chemins relatifs et une clé publique `age1...` ;
+  l'exécutable `age` est fixé par la configuration locale du worker ;
+- `backup.verify` reçoit un chemin relatif, un SHA-256 attendu et,
+  facultativement, une taille attendue.
+
+Les trois résultats de sauvegarde publient SHA-256 et tailles. Une divergence
+de vérification est un succès technique avec `valid: false`, afin que Tsunade
+puisse décider de la suite sans confondre une corruption avec une panne du
+worker. Les sorties déjà présentes sont relues et vérifiées lors d'une reprise,
+ce qui évite de refaire une opération terminée après une perte de connexion.
+
+Tous les chemins sont confinés dans un espace de travail configuré sur Bubule.
+Les chemins absolus, `..`, les liens symboliques et les fichiers non réguliers
+sont refusés. Aucun job ne transporte de commande, d'URL, de clé privée ou de
+chemin d'exécutable. L'analyse ciblée de journaux reste réservée à sa phase
+dédiée : aucun contrat ne centralise ni ne persiste des journaux.
 
 ### États, reprise et vérification
 
@@ -116,8 +140,11 @@ sont conservés dans le journal SQLite ; le document courant est retourné en
 `QUEUED` après acceptation.
 
 La prise d'un job est atomique. Elle attribue un numéro de tentative et un bail
-court. Le heartbeat prolonge ce bail sans dépasser le timeout global. Après une
-perte de connexion, l'expiration du bail replace le job en file et la tentative
+court. Le heartbeat prolonge ce bail sans dépasser le timeout global, persiste
+un instantané borné `{percent, stage, message}` et renvoie l'état courant.
+Katsuyu arrête ainsi son handler par coopération dès qu'il observe `CANCELLED`
+ou `TIMEOUT`. Après une perte de connexion, l'expiration du bail replace le job
+en file et la tentative
 suivante reçoit un nouveau numéro ; un résultat tardif de l'ancien worker est
 refusé. Aucun balayage périodique n'est nécessaire : la reprise, les timeouts et
 la purge sont appliqués lors du prochain accès au magasin.
@@ -133,31 +160,17 @@ n'intervient dans ce protocole ou dans le type v1.
 
 ### Worker Katsuyu minimal
 
-Le paquet Agent fournit également `ohana-katsuyu`, destiné à Bubule. Ce worker
-réutilise les endpoints `/v1/jobs/claim` et `/v1/jobs/{job_id}/complete` ainsi
-que le jeton worker existant. Sa liste de types envoyée à Agent est construite
-uniquement depuis ses handlers locaux ; la version 1.15.1 ne déclare que
-`system.health`.
+Le worker est livré par le projet Windows autonome **Ohana-Katsuyu**. Agent ne
+contient que le plan de contrôle : contrats stricts, authentification, file,
+baux, progression, annulation et validation des résultats. Cette séparation
+évite d'installer les plugins et dépendances d'Agent sur Bubule.
 
-`system.health` effectue deux échantillons CPU courts, lit procfs/sysfs et
-l'espace du disque racine, applique des seuils déterministes puis renvoie le
-modèle strict déjà validé par Agent. Une erreur de collecte devient un résultat
-`FAILED` borné. Aucun shell, chemin, URL ou secret fourni par le job n'est
-interprété.
-
-Exécution ponctuelle de validation :
-
-```bash
-ohana-katsuyu \
-  --base-url http://infra-01.ohana.lan:8765 \
-  --token-file /etc/ohana-agent/katsuyu.token \
-  --worker-id katsuyu-bubule \
-  --once
-```
-
-L'exploitation continue omet `--once` et utilise `--poll-seconds`. Le service
-de déploiement sur Bubule sera défini avec son environnement d'exploitation ;
-aucun worker Katsuyu ne doit être activé sur INFRA-01.
+Katsuyu s'enregistre avec son identité, sa plateforme, sa version et la liste
+exacte de ses handlers. Il réutilise le jeton worker et les endpoints décrits
+ci-dessus ; aucun transport ou système d'authentification parallèle n'est
+créé. Son installation Windows, son workspace, ses logs et `age.exe` sont
+documentés dans son propre dépôt. Aucun worker ne doit être activé sur
+INFRA-01.
 
 ## Administration réseau de l’hôte
 

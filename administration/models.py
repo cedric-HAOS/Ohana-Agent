@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from enum import StrEnum
 from ipaddress import IPv4Address, IPv4Interface
+from pathlib import PurePosixPath
 from typing import Any, Literal, Self
 from uuid import UUID
 
@@ -15,6 +16,20 @@ MAC_ADDRESS_PATTERN = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 HOSTNAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]+(?:\.(?!-)[A-Za-z0-9-]+)*$"
 )
+
+
+def _workspace_relative_path(value: str) -> str:
+    """Require one portable relative path before a backup job is queued."""
+    if "\\" in value or ":" in value or value.startswith("/") or value.endswith("/"):
+        raise ValueError("path must be a portable workspace-relative file path")
+    path = PurePosixPath(value)
+    if (
+        not path.parts
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise ValueError("path must be a portable workspace-relative file path")
+    return path.as_posix()
 
 
 class AdministrationModel(BaseModel):
@@ -275,6 +290,14 @@ class DistributedJobError(AdministrationModel):
     retryable: bool = False
 
 
+class DistributedJobProgress(AdministrationModel):
+    """Bounded progress snapshot reported by the owning worker."""
+
+    percent: float = Field(ge=0, le=100)
+    stage: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_.-]+$")
+    message: str | None = Field(default=None, max_length=500)
+
+
 class DistributedJobDocument(AdministrationModel):
     """Current durable state of one distributed job."""
 
@@ -293,6 +316,7 @@ class DistributedJobDocument(AdministrationModel):
     worker_id: str | None = None
     attempt: int = Field(default=0, ge=0)
     lease_expires_at: datetime | None = None
+    progress: DistributedJobProgress | None = None
 
 
 class DistributedJobClaim(AdministrationModel):
@@ -316,6 +340,79 @@ class DistributedJobHeartbeat(AdministrationModel):
     protocol_version: Literal[1] = 1
     worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
     attempt: int = Field(ge=1)
+    progress: DistributedJobProgress | None = None
+
+
+class DistributedWorkerRegistration(AdministrationModel):
+    """Authenticated Katsuyu registration and capability announcement."""
+
+    protocol_version: Literal[1] = 1
+    worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    capabilities: list[str] = Field(min_length=1, max_length=32)
+    platform: str = Field(min_length=1, max_length=100)
+    worker_version: str = Field(min_length=1, max_length=40)
+
+
+class DistributedWorkerDocument(DistributedWorkerRegistration):
+    """Latest durable registration known by Agent/Tsunade."""
+
+    registered_at: datetime
+    last_seen_at: datetime
+
+
+class DistributedWorkerCollection(AdministrationModel):
+    """Workers registered with the Agent control plane."""
+
+    protocol_version: Literal[1] = 1
+    workers: list[DistributedWorkerDocument] = Field(default_factory=list)
+
+
+class DistributedWorkerPairingRequest(DistributedWorkerRegistration):
+    """Bounded identity and capabilities proposed by an unpaired installer."""
+
+
+class DistributedWorkerPairingCreated(AdministrationModel):
+    """One-time polling material shown only to the requesting installer."""
+
+    protocol_version: Literal[1] = 1
+    pairing_id: UUID
+    polling_secret: str = Field(min_length=32, max_length=128)
+    verification_code: str = Field(pattern=r"^[A-Z0-9]{4}-[A-Z0-9]{4}$")
+    expires_at: datetime
+
+
+class DistributedWorkerPairingPoll(AdministrationModel):
+    """Proof that a poll belongs to the installer that opened the request."""
+
+    protocol_version: Literal[1] = 1
+    polling_secret: str = Field(min_length=32, max_length=128)
+
+
+class DistributedWorkerPairingDocument(DistributedWorkerRegistration):
+    """Administrative view of a pending or completed pairing request."""
+
+    pairing_id: UUID
+    verification_code: str = Field(pattern=r"^[A-Z0-9]{4}-[A-Z0-9]{4}$")
+    status: Literal["PENDING", "APPROVED", "CONSUMED", "EXPIRED", "REJECTED"]
+    created_at: datetime
+    expires_at: datetime
+
+
+class DistributedWorkerPairingCollection(AdministrationModel):
+    """Pairing requests visible to Tsunade through Vision."""
+
+    protocol_version: Literal[1] = 1
+    pairings: list[DistributedWorkerPairingDocument] = Field(default_factory=list)
+
+
+class DistributedWorkerPairingResult(AdministrationModel):
+    """Poll result; a credential is returned exactly once after approval."""
+
+    protocol_version: Literal[1] = 1
+    pairing_id: UUID
+    status: Literal["PENDING", "APPROVED", "CONSUMED", "EXPIRED", "REJECTED"]
+    expires_at: datetime
+    worker_token: str | None = Field(default=None, min_length=32, max_length=128)
 
 
 class DistributedJobCompletion(DistributedJobHeartbeat):
@@ -384,6 +481,86 @@ class SystemHealthResult(AdministrationModel):
         if self.status == "DEGRADED" and not self.issues:
             raise ValueError("DEGRADED requires at least one issue")
         return self
+
+
+class BackupCompressParameters(AdministrationModel):
+    """Compress one workspace file to deterministic gzip without a shell."""
+
+    source: str = Field(min_length=1, max_length=500)
+    destination: str = Field(min_length=1, max_length=500)
+    compression_level: int = Field(default=6, ge=1, le=9)
+
+    @field_validator("source", "destination")
+    @classmethod
+    def validate_paths(cls, value: str) -> str:
+        return _workspace_relative_path(value)
+
+    @model_validator(mode="after")
+    def require_distinct_paths(self) -> Self:
+        if self.source == self.destination:
+            raise ValueError("source and destination must differ")
+        return self
+
+
+class BackupCompressResult(AdministrationModel):
+    """Verifiable compression result returned by Katsuyu."""
+
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_size: int = Field(ge=0)
+    destination_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    destination_size: int = Field(ge=1)
+
+
+class BackupEncryptParameters(AdministrationModel):
+    """Encrypt one workspace file for one explicit age recipient."""
+
+    source: str = Field(min_length=1, max_length=500)
+    destination: str = Field(min_length=1, max_length=500)
+    recipient: str = Field(min_length=20, max_length=200, pattern=r"^age1[0-9a-z]+$")
+
+    @field_validator("source", "destination")
+    @classmethod
+    def validate_paths(cls, value: str) -> str:
+        return _workspace_relative_path(value)
+
+    @model_validator(mode="after")
+    def require_distinct_paths(self) -> Self:
+        if self.source == self.destination:
+            raise ValueError("source and destination must differ")
+        return self
+
+
+class BackupEncryptResult(AdministrationModel):
+    """Verifiable encrypted artifact metadata."""
+
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_size: int = Field(ge=0)
+    destination_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    destination_size: int = Field(ge=1)
+    recipient: str = Field(min_length=20, max_length=200, pattern=r"^age1[0-9a-z]+$")
+
+
+class BackupVerifyParameters(AdministrationModel):
+    """Verify one workspace file against mandatory expected metadata."""
+
+    path: str = Field(min_length=1, max_length=500)
+    expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_size: int | None = Field(default=None, ge=0)
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        return _workspace_relative_path(value)
+
+
+class BackupVerifyResult(AdministrationModel):
+    """Deterministic integrity decision."""
+
+    valid: bool
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size: int = Field(ge=0)
+    sha256_matches: bool
+    size_matches: bool | None = None
 
 
 PluginAdministrationStatus = Literal[

@@ -109,6 +109,12 @@ class AdministrationService:
                     "jobs.create",
                     "jobs.read",
                     "jobs.cancel",
+                    "jobs.workers.read",
+                    "jobs.workers.pairings.read",
+                    "jobs.workers.pairings.approve",
+                    "jobs.workers.pairings.reject",
+                    "jobs.worker.pair",
+                    "jobs.worker.register",
                     "jobs.worker.claim",
                     "jobs.worker.heartbeat",
                     "jobs.worker.complete",
@@ -255,6 +261,48 @@ class AdministrationService:
             raise LookupError("Distributed jobs are unavailable")
         return self.job_repository.claim(payload)
 
+    def register_worker(self, payload: dict[str, Any]) -> object:
+        """Register Katsuyu and its finite capabilities."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.register_worker(payload)
+
+    def list_workers(self) -> object:
+        """List the worker registrations visible to Tsunade."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.list_workers()
+
+    def create_worker_pairing(self, payload: dict[str, Any]) -> object:
+        """Open a bounded Katsuyu pairing request for later approval."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.create_pairing(payload)
+
+    def list_worker_pairings(self) -> object:
+        """List pairing requests visible to the administration plane."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.list_pairings()
+
+    def approve_worker_pairing(self, pairing_id: str) -> object:
+        """Approve one verification code checked by the administrator."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.approve_pairing(pairing_id)
+
+    def reject_worker_pairing(self, pairing_id: str) -> object:
+        """Reject one untrusted or obsolete pairing request."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.reject_pairing(pairing_id)
+
+    def poll_worker_pairing(self, pairing_id: str, payload: dict[str, Any]) -> object:
+        """Let the originating installer retrieve its credential once."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.poll_pairing(pairing_id, payload)
+
     def heartbeat_job(self, job_id: str, payload: dict[str, Any]) -> object:
         """Renew a job lease for its current Katsuyu attempt."""
         if self.job_repository is None:
@@ -288,10 +336,6 @@ class AdministrationHTTPServer:
         self.service = service
         self.token = normalized_token
         self.worker_token = worker_token.strip() if worker_token else None
-        if service.job_repository is not None and not self.worker_token:
-            raise ValueError(
-                "A distinct worker token is required when distributed jobs are enabled."
-            )
         if self.worker_token and hmac.compare_digest(self.worker_token, self.token):
             raise ValueError("Worker and administration tokens must be different.")
         self.host = host
@@ -368,6 +412,8 @@ class AdministrationHTTPServer:
                     "/v1/dhcp": service.read_dhcp,
                     "/v1/plugins": service.list_plugins,
                     "/v1/system/network": service.read_network,
+                    "/v1/jobs/workers": service.list_workers,
+                    "/v1/jobs/workers/pairings": service.list_worker_pairings,
                 }
                 operation = routes.get(path)
 
@@ -438,11 +484,38 @@ class AdministrationHTTPServer:
             def do_POST(self) -> None:  # noqa: N802
                 """Handle immediate administration actions."""
                 path = self.path.split("?", 1)[0]
-                if path == "/v1/jobs/claim":
-                    if not self._authorized(expected_worker_token, "worker"):
-                        return
+                if path == "/v1/jobs/workers/pairings":
                     payload = self._read_json()
                     if payload is not None:
+                        self._execute(lambda: service.create_worker_pairing(payload))
+                    return
+
+                pairing_prefix = "/v1/jobs/workers/pairings/"
+                pairing_poll_suffix = "/poll"
+                if path.startswith(pairing_prefix) and path.endswith(
+                    pairing_poll_suffix
+                ):
+                    pairing_id = path[len(pairing_prefix) : -len(pairing_poll_suffix)]
+                    if pairing_id and "/" not in pairing_id:
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                partial(
+                                    service.poll_worker_pairing,
+                                    pairing_id,
+                                    payload,
+                                )
+                            )
+                        return
+
+                if path == "/v1/jobs/workers/register":
+                    payload = self._read_json()
+                    if payload is not None and self._authorized_worker(payload):
+                        self._execute(lambda: service.register_worker(payload))
+                    return
+                if path == "/v1/jobs/claim":
+                    payload = self._read_json()
+                    if payload is not None and self._authorized_worker(payload):
                         self._execute(lambda: service.claim_job(payload))
                     return
 
@@ -453,12 +526,10 @@ class AdministrationHTTPServer:
                 ):
                     action_suffix = f"/{action}"
                     if path.startswith(jobs_prefix) and path.endswith(action_suffix):
-                        if not self._authorized(expected_worker_token, "worker"):
-                            return
                         job_id = path[len(jobs_prefix) : -len(action_suffix)]
                         if job_id and "/" not in job_id:
                             payload = self._read_json()
-                            if payload is not None:
+                            if payload is not None and self._authorized_worker(payload):
                                 self._execute(partial(operation, job_id, payload))
                             return
 
@@ -470,6 +541,17 @@ class AdministrationHTTPServer:
                     if payload is not None:
                         self._execute(lambda: service.create_job(payload))
                     return
+
+                for action, operation in (
+                    ("approve", service.approve_worker_pairing),
+                    ("reject", service.reject_worker_pairing),
+                ):
+                    suffix = f"/{action}"
+                    if path.startswith(pairing_prefix) and path.endswith(suffix):
+                        pairing_id = path[len(pairing_prefix) : -len(suffix)]
+                        if pairing_id and "/" not in pairing_id:
+                            self._execute(partial(operation, pairing_id))
+                            return
 
                 cancel_suffix = "/cancel"
                 if path.startswith(jobs_prefix) and path.endswith(cancel_suffix):
@@ -551,6 +633,32 @@ class AdministrationHTTPServer:
                     )
                     return False
 
+                return True
+
+            def _authorized_worker(self, payload: dict[str, Any]) -> bool:
+                authorization = self.headers.get("Authorization", "")
+                prefix = "Bearer "
+                worker_id = payload.get("worker_id")
+                supplied_token = authorization.removeprefix(prefix)
+                shared_matches = (
+                    expected_worker_token is not None
+                    and authorization.startswith(prefix)
+                    and hmac.compare_digest(supplied_token, expected_worker_token)
+                )
+                paired_matches = (
+                    isinstance(worker_id, str)
+                    and authorization.startswith(prefix)
+                    and service.job_repository is not None
+                    and service.job_repository.authorize_worker(
+                        worker_id, supplied_token
+                    )
+                )
+                if not shared_matches and not paired_matches:
+                    self._write_error(
+                        HTTPStatus.UNAUTHORIZED,
+                        "A valid worker token is required",
+                    )
+                    return False
                 return True
 
             def _read_json(self) -> dict[str, Any] | None:

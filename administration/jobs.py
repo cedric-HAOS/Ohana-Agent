@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
+import secrets
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel
 
 from administration.models import (
+    BackupCompressParameters,
+    BackupCompressResult,
+    BackupEncryptParameters,
+    BackupEncryptResult,
+    BackupVerifyParameters,
+    BackupVerifyResult,
     DistributedJobClaim,
     DistributedJobClaimResult,
     DistributedJobCompletion,
@@ -22,6 +31,15 @@ from administration.models import (
     DistributedJobDocument,
     DistributedJobHeartbeat,
     DistributedJobStatus,
+    DistributedWorkerCollection,
+    DistributedWorkerDocument,
+    DistributedWorkerPairingCollection,
+    DistributedWorkerPairingCreated,
+    DistributedWorkerPairingDocument,
+    DistributedWorkerPairingPoll,
+    DistributedWorkerPairingRequest,
+    DistributedWorkerPairingResult,
+    DistributedWorkerRegistration,
     SystemHealthParameters,
     SystemHealthResult,
 )
@@ -38,7 +56,11 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
         SystemHealthParameters,
         SystemHealthResult,
     ),
+    "backup.compress": (BackupCompressParameters, BackupCompressResult),
+    "backup.encrypt": (BackupEncryptParameters, BackupEncryptResult),
+    "backup.verify": (BackupVerifyParameters, BackupVerifyResult),
 }
+PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 class DistributedJobConflictError(RuntimeError):
@@ -56,6 +78,8 @@ class DistributedJobRepository:
         waiting_worker_after_seconds: int = 30,
         retention_days: int = 30,
         max_active_jobs: int = 1000,
+        pairing_ttl_seconds: int = 600,
+        max_pending_pairings: int = 10,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if lease_seconds < 10:
@@ -66,12 +90,18 @@ class DistributedJobRepository:
             raise ValueError("retention_days must be at least one")
         if max_active_jobs < 1:
             raise ValueError("max_active_jobs must be at least one")
+        if pairing_ttl_seconds < 60 or pairing_ttl_seconds > 3600:
+            raise ValueError("pairing_ttl_seconds must be between 60 and 3600")
+        if max_pending_pairings < 1 or max_pending_pairings > 100:
+            raise ValueError("max_pending_pairings must be between 1 and 100")
 
         self.path = path
         self.lease_seconds = lease_seconds
         self.waiting_worker_after_seconds = waiting_worker_after_seconds
         self.retention_days = retention_days
         self.max_active_jobs = max_active_jobs
+        self.pairing_ttl_seconds = pairing_ttl_seconds
+        self.max_pending_pairings = max_pending_pairings
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = Lock()
         if path != Path(":memory:"):
@@ -206,6 +236,7 @@ class DistributedJobRepository:
         placeholders = ",".join("?" for _ in compatible_types)
         with self._lock, self._connection:
             self._recover_locked(now)
+            self._touch_worker_locked(claim.worker_id, now)
             row = self._connection.execute(
                 f"""
                 SELECT * FROM distributed_jobs
@@ -261,6 +292,269 @@ class DistributedJobRepository:
             document = self._document(self._select_required_locked(row["job_id"]))
             return DistributedJobClaimResult(job=document)
 
+    def register_worker(self, payload: dict[str, Any]) -> DistributedWorkerDocument:
+        """Persist one authenticated worker identity and finite capability list."""
+        registration = DistributedWorkerRegistration.model_validate(payload)
+        capabilities = sorted(set(registration.capabilities))
+        unsupported = sorted(set(capabilities) - set(JOB_TYPE_MODELS))
+        if unsupported:
+            raise ValueError(
+                "unsupported worker capabilities: " + ", ".join(unsupported)
+            )
+        now = self._now()
+        normalized = registration.model_copy(update={"capabilities": capabilities})
+        with self._lock, self._connection:
+            existing = self._connection.execute(
+                "SELECT registered_at FROM distributed_workers WHERE worker_id = ?",
+                (normalized.worker_id,),
+            ).fetchone()
+            registered_at = (
+                self._parse_timestamp(existing["registered_at"]) if existing else now
+            )
+            self._connection.execute(
+                """
+                INSERT INTO distributed_workers (
+                    worker_id, protocol_version, capabilities_json, platform,
+                    worker_version, registered_at, last_seen_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(worker_id) DO UPDATE SET
+                    protocol_version = excluded.protocol_version,
+                    capabilities_json = excluded.capabilities_json,
+                    platform = excluded.platform,
+                    worker_version = excluded.worker_version,
+                    last_seen_at = excluded.last_seen_at
+                """,
+                (
+                    normalized.worker_id,
+                    normalized.protocol_version,
+                    self._json(capabilities),
+                    normalized.platform,
+                    normalized.worker_version,
+                    self._timestamp(registered_at),
+                    self._timestamp(now),
+                ),
+            )
+        LOGGER.info(
+            "Katsuyu worker %s registered (%s)",
+            normalized.worker_id,
+            ", ".join(capabilities),
+        )
+        return DistributedWorkerDocument(
+            **normalized.model_dump(),
+            registered_at=registered_at,
+            last_seen_at=now,
+        )
+
+    def list_workers(self) -> DistributedWorkerCollection:
+        """Return the latest authenticated registrations to Tsunade."""
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM distributed_workers ORDER BY worker_id"
+            ).fetchall()
+        return DistributedWorkerCollection(
+            workers=[
+                DistributedWorkerDocument(
+                    protocol_version=row["protocol_version"],
+                    worker_id=row["worker_id"],
+                    capabilities=json.loads(row["capabilities_json"]),
+                    platform=row["platform"],
+                    worker_version=row["worker_version"],
+                    registered_at=self._parse_timestamp(row["registered_at"]),
+                    last_seen_at=self._parse_timestamp(row["last_seen_at"]),
+                )
+                for row in rows
+            ]
+        )
+
+    def create_pairing(
+        self, payload: dict[str, Any]
+    ) -> DistributedWorkerPairingCreated:
+        """Open one short-lived pairing request without issuing a credential."""
+        request = DistributedWorkerPairingRequest.model_validate(payload)
+        capabilities = sorted(set(request.capabilities))
+        unsupported = sorted(set(capabilities) - set(JOB_TYPE_MODELS))
+        if unsupported:
+            raise ValueError(
+                "unsupported worker capabilities: " + ", ".join(unsupported)
+            )
+        now = self._now()
+        expires_at = now + timedelta(seconds=self.pairing_ttl_seconds)
+        polling_secret = secrets.token_urlsafe(32)
+        pairing_id = str(uuid4())
+        code_raw = "".join(secrets.choice(PAIRING_ALPHABET) for _ in range(8))
+        verification_code = f"{code_raw[:4]}-{code_raw[4:]}"
+        with self._lock, self._connection:
+            self._expire_pairings_locked(now)
+            existing = self._connection.execute(
+                """
+                SELECT 1 FROM distributed_worker_pairings
+                WHERE worker_id = ? AND status IN ('PENDING', 'APPROVED')
+                """,
+                (request.worker_id,),
+            ).fetchone()
+            if existing is not None:
+                raise DistributedJobConflictError(
+                    "an active pairing already exists for this worker"
+                )
+            pending_count = self._connection.execute(
+                """
+                SELECT COUNT(*) FROM distributed_worker_pairings
+                WHERE status IN ('PENDING', 'APPROVED')
+                """
+            ).fetchone()[0]
+            if int(pending_count) >= self.max_pending_pairings:
+                raise ValueError("worker pairing queue limit reached")
+            self._connection.execute(
+                """
+                INSERT INTO distributed_worker_pairings (
+                    pairing_id, worker_id, protocol_version, capabilities_json,
+                    platform, worker_version, polling_secret_sha256,
+                    verification_code, status, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+                """,
+                (
+                    pairing_id,
+                    request.worker_id,
+                    request.protocol_version,
+                    self._json(capabilities),
+                    request.platform,
+                    request.worker_version,
+                    self._secret_digest(polling_secret),
+                    verification_code,
+                    self._timestamp(now),
+                    self._timestamp(expires_at),
+                ),
+            )
+        LOGGER.info("Worker pairing %s requested for %s", pairing_id, request.worker_id)
+        return DistributedWorkerPairingCreated(
+            pairing_id=pairing_id,
+            polling_secret=polling_secret,
+            verification_code=verification_code,
+            expires_at=expires_at,
+        )
+
+    def list_pairings(self) -> DistributedWorkerPairingCollection:
+        """List pairing requests without exposing polling secrets or credentials."""
+        with self._lock, self._connection:
+            self._expire_pairings_locked(self._now())
+            rows = self._connection.execute(
+                """
+                SELECT * FROM distributed_worker_pairings
+                ORDER BY created_at DESC LIMIT 100
+                """
+            ).fetchall()
+        return DistributedWorkerPairingCollection(
+            pairings=[self._pairing_document(row) for row in rows]
+        )
+
+    def approve_pairing(self, pairing_id: str) -> DistributedWorkerPairingDocument:
+        """Authorize credential issuance for one verified installer request."""
+        now = self._now()
+        with self._lock, self._connection:
+            self._expire_pairings_locked(now)
+            row = self._select_pairing_required_locked(pairing_id)
+            if row["status"] == "APPROVED":
+                return self._pairing_document(row)
+            if row["status"] != "PENDING":
+                raise DistributedJobConflictError(
+                    f"pairing cannot be approved from {row['status']}"
+                )
+            self._connection.execute(
+                """
+                UPDATE distributed_worker_pairings
+                SET status = 'APPROVED', approved_at = ? WHERE pairing_id = ?
+                """,
+                (self._timestamp(now), pairing_id),
+            )
+            row = self._select_pairing_required_locked(pairing_id)
+        LOGGER.info("Worker pairing %s approved", pairing_id)
+        return self._pairing_document(row)
+
+    def reject_pairing(self, pairing_id: str) -> DistributedWorkerPairingDocument:
+        """Reject a request so its polling secret can never obtain a credential."""
+        now = self._now()
+        with self._lock, self._connection:
+            self._expire_pairings_locked(now)
+            row = self._select_pairing_required_locked(pairing_id)
+            if row["status"] == "REJECTED":
+                return self._pairing_document(row)
+            if row["status"] not in {"PENDING", "APPROVED"}:
+                raise DistributedJobConflictError(
+                    f"pairing cannot be rejected from {row['status']}"
+                )
+            self._connection.execute(
+                """
+                UPDATE distributed_worker_pairings
+                SET status = 'REJECTED' WHERE pairing_id = ?
+                """,
+                (pairing_id,),
+            )
+            row = self._select_pairing_required_locked(pairing_id)
+        LOGGER.info("Worker pairing %s rejected", pairing_id)
+        return self._pairing_document(row)
+
+    def poll_pairing(
+        self, pairing_id: str, payload: dict[str, Any]
+    ) -> DistributedWorkerPairingResult:
+        """Return state and issue one per-worker bearer credential exactly once."""
+        poll = DistributedWorkerPairingPoll.model_validate(payload)
+        now = self._now()
+        worker_token: str | None = None
+        with self._lock, self._connection:
+            self._expire_pairings_locked(now)
+            row = self._select_pairing_required_locked(pairing_id)
+            if not hmac.compare_digest(
+                row["polling_secret_sha256"],
+                self._secret_digest(poll.polling_secret),
+            ):
+                raise LookupError("worker pairing not found")
+            if row["status"] == "APPROVED":
+                worker_token = secrets.token_urlsafe(48)
+                self._connection.execute(
+                    """
+                    INSERT INTO distributed_worker_credentials (
+                        worker_id, token_sha256, created_at, revoked_at
+                    ) VALUES (?, ?, ?, NULL)
+                    ON CONFLICT(worker_id) DO UPDATE SET
+                        token_sha256 = excluded.token_sha256,
+                        created_at = excluded.created_at,
+                        revoked_at = NULL
+                    """,
+                    (
+                        row["worker_id"],
+                        self._secret_digest(worker_token),
+                        self._timestamp(now),
+                    ),
+                )
+                self._connection.execute(
+                    """
+                    UPDATE distributed_worker_pairings
+                    SET status = 'CONSUMED', consumed_at = ? WHERE pairing_id = ?
+                    """,
+                    (self._timestamp(now), pairing_id),
+                )
+                row = self._select_pairing_required_locked(pairing_id)
+        return DistributedWorkerPairingResult(
+            pairing_id=row["pairing_id"],
+            status=row["status"],
+            expires_at=self._parse_timestamp(row["expires_at"]),
+            worker_token=worker_token,
+        )
+
+    def authorize_worker(self, worker_id: str, token: str) -> bool:
+        """Validate a per-worker bearer credential without storing its clear text."""
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT token_sha256 FROM distributed_worker_credentials
+                WHERE worker_id = ? AND revoked_at IS NULL
+                """,
+                (worker_id,),
+            ).fetchone()
+        return row is not None and hmac.compare_digest(
+            row["token_sha256"], self._secret_digest(token)
+        )
+
     def heartbeat(
         self,
         job_id: str,
@@ -272,7 +566,19 @@ class DistributedJobRepository:
         with self._lock, self._connection:
             self._recover_locked(now)
             row = self._select_required_locked(job_id)
+            current = DistributedJobStatus(row["status"])
+            if current in {
+                DistributedJobStatus.CANCELLED,
+                DistributedJobStatus.TIMEOUT,
+            }:
+                self._require_attempt_owner(
+                    row,
+                    heartbeat.worker_id,
+                    heartbeat.attempt,
+                )
+                return self._document(row)
             self._require_owner(row, heartbeat.worker_id, heartbeat.attempt)
+            self._touch_worker_locked(heartbeat.worker_id, now)
             lease_expires_at = min(
                 self._deadline(row),
                 now + timedelta(seconds=self.lease_seconds),
@@ -280,11 +586,16 @@ class DistributedJobRepository:
             self._connection.execute(
                 """
                 UPDATE distributed_jobs
-                SET lease_expires_at = ?, updated_at = ?
+                SET lease_expires_at = ?, progress_json = ?, updated_at = ?
                 WHERE job_id = ?
                 """,
                 (
                     self._timestamp(lease_expires_at),
+                    (
+                        self._json(heartbeat.progress.model_dump(mode="json"))
+                        if heartbeat.progress is not None
+                        else row["progress_json"]
+                    ),
                     self._timestamp(now),
                     job_id,
                 ),
@@ -373,10 +684,21 @@ class DistributedJobRepository:
                     attempt INTEGER NOT NULL DEFAULT 0,
                     lease_expires_at TEXT,
                     request_sha256 TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    progress_json TEXT
                 )
                 """
             )
+            columns = {
+                row["name"]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(distributed_jobs)"
+                ).fetchall()
+            }
+            if "progress_json" not in columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_jobs ADD COLUMN progress_json TEXT"
+                )
             self._connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_distributed_jobs_dispatch
@@ -399,6 +721,54 @@ class DistributedJobRepository:
                     status TEXT NOT NULL,
                     detail TEXT NOT NULL,
                     FOREIGN KEY(job_id) REFERENCES distributed_jobs(job_id)
+                )
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributed_workers (
+                    worker_id TEXT PRIMARY KEY,
+                    protocol_version INTEGER NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    worker_version TEXT NOT NULL,
+                    registered_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
+                )
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributed_worker_pairings (
+                    pairing_id TEXT PRIMARY KEY,
+                    worker_id TEXT NOT NULL,
+                    protocol_version INTEGER NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    worker_version TEXT NOT NULL,
+                    polling_secret_sha256 TEXT NOT NULL,
+                    verification_code TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    approved_at TEXT,
+                    consumed_at TEXT
+                )
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_worker_pairings_status
+                ON distributed_worker_pairings(status, expires_at)
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributed_worker_credentials (
+                    worker_id TEXT PRIMARY KEY,
+                    token_sha256 TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    revoked_at TEXT
                 )
                 """
             )
@@ -438,6 +808,7 @@ class DistributedJobRepository:
                     now,
                     detail="worker lease expired; queued for retry",
                     clear_lease=True,
+                    clear_owner=True,
                 )
                 continue
             if (
@@ -482,6 +853,42 @@ class DistributedJobRepository:
         )
         LOGGER.info("Purged %s expired distributed jobs", len(identifiers))
 
+    def _expire_pairings_locked(self, now: datetime) -> None:
+        self._connection.execute(
+            """
+            UPDATE distributed_worker_pairings SET status = 'EXPIRED'
+            WHERE status IN ('PENDING', 'APPROVED') AND expires_at <= ?
+            """,
+            (self._timestamp(now),),
+        )
+
+    def _select_pairing_required_locked(self, pairing_id: str) -> sqlite3.Row:
+        row = self._connection.execute(
+            "SELECT * FROM distributed_worker_pairings WHERE pairing_id = ?",
+            (pairing_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError("worker pairing not found")
+        return row
+
+    def _pairing_document(self, row: sqlite3.Row) -> DistributedWorkerPairingDocument:
+        return DistributedWorkerPairingDocument(
+            pairing_id=row["pairing_id"],
+            protocol_version=row["protocol_version"],
+            worker_id=row["worker_id"],
+            capabilities=json.loads(row["capabilities_json"]),
+            platform=row["platform"],
+            worker_version=row["worker_version"],
+            verification_code=row["verification_code"],
+            status=row["status"],
+            created_at=self._parse_timestamp(row["created_at"]),
+            expires_at=self._parse_timestamp(row["expires_at"]),
+        )
+
+    @staticmethod
+    def _secret_digest(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
     def _transition_locked(
         self,
         row: sqlite3.Row,
@@ -491,6 +898,7 @@ class DistributedJobRepository:
         detail: str,
         finished_at: datetime | None = None,
         clear_lease: bool = False,
+        clear_owner: bool = False,
     ) -> None:
         self._connection.execute(
             """
@@ -504,7 +912,7 @@ class DistributedJobRepository:
             (
                 status.value,
                 self._timestamp(finished_at) if finished_at else None,
-                clear_lease,
+                clear_owner,
                 clear_lease,
                 self._timestamp(now),
                 row["job_id"],
@@ -549,8 +957,18 @@ class DistributedJobRepository:
             raise DistributedJobConflictError(
                 f"job is not running (current status: {status.value})"
             )
+        self._require_attempt_owner(row, worker_id, attempt)
+
+    @staticmethod
+    def _require_attempt_owner(row: sqlite3.Row, worker_id: str, attempt: int) -> None:
         if row["worker_id"] != worker_id or int(row["attempt"]) != attempt:
             raise DistributedJobConflictError("worker does not own this job attempt")
+
+    def _touch_worker_locked(self, worker_id: str, now: datetime) -> None:
+        self._connection.execute(
+            "UPDATE distributed_workers SET last_seen_at = ? WHERE worker_id = ?",
+            (self._timestamp(now), worker_id),
+        )
 
     @staticmethod
     def _validate_parameters(job_type: str, value: dict[str, Any]) -> dict[str, Any]:
@@ -619,6 +1037,9 @@ class DistributedJobRepository:
                 self._parse_timestamp(row["lease_expires_at"])
                 if row["lease_expires_at"]
                 else None
+            ),
+            progress=(
+                json.loads(row["progress_json"]) if row["progress_json"] else None
             ),
         )
 

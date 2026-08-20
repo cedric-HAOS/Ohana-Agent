@@ -6,6 +6,29 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.16.0] — Appairage Katsuyu et jobs déterministes — 2026-08-20
+
+## Ajouté
+
+- Agent enregistre les workers Katsuyu, expose leurs capacités à Tsunade et
+  persiste une progression bornée pendant le renouvellement du bail.
+- Les contrats stricts `backup.compress`, `backup.encrypt` et `backup.verify`
+  complètent `system.health`, avec tailles et SHA-256 vérifiables.
+- Le worker et l'installation Windows sont extraits dans le projet autonome
+  Ohana-Katsuyu afin de ne pas installer Agent sur Bubule.
+- Agent expose un appairage temporaire approuvé par Tsunade/Vision et lie le
+  jeton délivré à l'identité du worker.
+
+## Sécurité
+
+- Le Bearer worker existant reste l'unique mécanisme d'authentification. Le
+  jeton global demeure compatible, tandis que les nouvelles installations
+  reçoivent un jeton individuel stocké uniquement sous forme de SHA-256.
+- Le secret d'appairage expire, n'est jamais visible dans Vision et le jeton
+  individuel n'est délivré qu'une seule fois après approbation explicite.
+- Un heartbeat terminal n'est retourné qu'au worker et à la tentative qui
+  possédaient effectivement le job.
+
 # [1.15.2] — Arrêt Agent sans faux incident DHCP — 2026-08-20
 
 ## Corrigé

@@ -63,25 +63,15 @@ Le contrat et le modèle de sécurité sont détaillés dans
 [`docs/Administration.md`](docs/Administration.md).
 
 Cette API porte aussi, lorsqu'il est explicitement activé, le protocole de jobs
-durables Tsunade vers Katsuyu. Son premier type, `system.health`, collecte un
-état de ressources strictement borné sur l'hôte Katsuyu, sans paramètre libre.
+durables Tsunade vers Katsuyu. Les types déterministes `system.health`,
+`backup.compress`, `backup.encrypt` et `backup.verify` constituent le MVP.
 Katsuyu dispose d'un jeton worker distinct et ne peut ni administrer Agent ni
 exécuter une commande arbitraire. Les jobs expirés sont repris sans traitement
 périodique permanent.
 
-La version 1.15.1 fournit le premier processus worker dans ce même dépôt. La
-commande suivante s'exécute sur Bubule, joint l'API Agent à travers le réseau
-protégé existant et ne déclare que le handler `system.health` :
-
-```bash
-ohana-katsuyu \
-  --base-url http://infra-01.ohana.lan:8765 \
-  --token-file /etc/ohana-agent/katsuyu.token \
-  --worker-id katsuyu-bubule
-```
-
-La commande n'est ni activée ni lancée sur INFRA-01 lors de l'installation
-d'Agent.
+Le worker Windows, ses handlers, ses journaux et son installation sont livrés
+séparément par le projet **Ohana-Katsuyu**. Le paquet Agent n'installe et ne
+lance aucun worker sur INFRA-01.
 
 ---
 

@@ -89,7 +89,12 @@ administration:
     assert agent.administration_runtime.worker_token == "worker-secret"
     repository = agent.administration_runtime.service.job_repository
     assert repository is not None
-    assert repository.supported_types == ("system.health",)
+    assert repository.supported_types == (
+        "system.health",
+        "backup.compress",
+        "backup.encrypt",
+        "backup.verify",
+    )
     assert jobs_database.is_file()
     repository.close()
 

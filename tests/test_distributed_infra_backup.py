@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import io
+import sqlite3
 import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -158,3 +160,57 @@ def test_source_archive_is_uncompressed_and_contains_only_allowlisted_sources(
         names = archive.getnames()
     assert "ohana-backup/descriptor.json" in names
     assert any(name.endswith("agent.yaml") for name in names)
+
+
+def test_source_snapshot_fits_when_database_contains_many_free_pages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _claimed_repository(tmp_path)
+    source = tmp_path / "etc" / "ohana-agent"
+    source.mkdir(parents=True)
+    (source / "agent.yaml").write_text("version: 1\n", encoding="utf-8")
+    database = tmp_path / "vision.db"
+    connection = sqlite3.connect(database)
+    connection.execute("CREATE TABLE observations(value BLOB)")
+    connection.execute("INSERT INTO observations VALUES (zeroblob(25165824))")
+    connection.commit()
+    connection.execute("DELETE FROM observations")
+    connection.commit()
+    connection.close()
+    temporary = tmp_path / "tmpfs"
+    config = BackupConfig(
+        temporary_directory=str(temporary),
+        infra_01=InfraBackupConfig(enabled=True),
+    )
+    monkeypatch.setattr(
+        "plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
+        lambda _path: None,
+    )
+    transfer = DistributedInfraBackupTransfer(
+        config,
+        repository,
+        sources=(source,),
+        vision_database=database,
+        uploader=FakeUploader(),  # type: ignore[arg-type]
+        version_resolver=lambda _name: "1.0.0",
+    )
+    compact_size = transfer.local._compact_database_size()
+    available = compact_size + 17 * 1024 * 1024
+    assert database.stat().st_size > available
+    monkeypatch.setattr(
+        "plugins.backup.distributed_infra_backup.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=available),
+    )
+    output = io.BytesIO()
+    try:
+        transfer.stream_source(
+            "11111111-1111-4111-8111-111111111111", "bubule", 1, output
+        )
+    finally:
+        repository.close()
+
+    output.seek(0)
+    with tarfile.open(fileobj=output, mode="r:") as archive:
+        snapshot = archive.extractfile("var/lib/ohana-vision/vision.db")
+        assert snapshot is not None
+        assert len(snapshot.read()) < available

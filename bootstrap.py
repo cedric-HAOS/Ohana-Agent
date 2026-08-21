@@ -1881,6 +1881,7 @@ def build_production_agent(
             wake_sender=wake_sender,
         )
         if job_repository is not None and backup_config.infra_01.use_katsuyu:
+
             def distributed_backup_factory(
                 current_backup_config: BackupConfig,
             ) -> DistributedInfraBackupCoordinator:

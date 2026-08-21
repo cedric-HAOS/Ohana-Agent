@@ -7,7 +7,8 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic, sleep
@@ -65,6 +66,14 @@ class DistributedInfraBackupTransfer:
         self, job_id: str, worker_id: str, attempt: int, output: BinaryIO
     ) -> None:
         """Stream an uncompressed deterministic source archive without staging it."""
+        with self.open_source(job_id, worker_id, attempt) as stream:
+            stream(output)
+
+    @contextmanager
+    def open_source(
+        self, job_id: str, worker_id: str, attempt: int
+    ) -> Iterator[Callable[[BinaryIO], None]]:
+        """Prepare bounded source files before allowing HTTP streaming to start."""
         job = self.repository.authorize_job_transfer(
             job_id, worker_id=worker_id, attempt=attempt
         )
@@ -79,9 +88,7 @@ class DistributedInfraBackupTransfer:
             runtime = Path(directory)
             snapshot = runtime / "vision.db"
             self._snapshot_vision(snapshot)
-            current = datetime.strptime(backup_id, "%Y%m%dT%H%M%SZ").replace(
-                tzinfo=UTC
-            )
+            current = datetime.strptime(backup_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
             descriptor = runtime / "descriptor.json"
             descriptor.write_bytes(
                 self.local._descriptor(
@@ -91,27 +98,31 @@ class DistributedInfraBackupTransfer:
                     vision_version=self.local._installed_version("ohana-vision"),
                 )
             )
-            with tarfile.open(fileobj=output, mode="w|") as archive:
-                for source in self.sources:
+
+            def stream(output: BinaryIO) -> None:
+                with tarfile.open(fileobj=output, mode="w|") as archive:
+                    for source in self.sources:
+                        archive.add(
+                            source,
+                            arcname=source.as_posix().lstrip("/"),
+                            recursive=True,
+                            filter=self.local._regular_member,
+                        )
+                    if snapshot.is_file():
+                        archive.add(
+                            snapshot,
+                            arcname="var/lib/ohana-vision/vision.db",
+                            recursive=False,
+                            filter=self.local._regular_member,
+                        )
                     archive.add(
-                        source,
-                        arcname=source.as_posix().lstrip("/"),
-                        recursive=True,
-                        filter=self.local._regular_member,
-                    )
-                if snapshot.is_file():
-                    archive.add(
-                        snapshot,
-                        arcname="var/lib/ohana-vision/vision.db",
+                        descriptor,
+                        arcname="ohana-backup/descriptor.json",
                         recursive=False,
                         filter=self.local._regular_member,
                     )
-                archive.add(
-                    descriptor,
-                    arcname="ohana-backup/descriptor.json",
-                    recursive=False,
-                    filter=self.local._regular_member,
-                )
+
+            yield stream
 
     def receive_artifact(
         self,
@@ -207,11 +218,14 @@ class DistributedInfraBackupTransfer:
         source = sqlite3.connect(
             f"file:{self.vision_database.as_posix()}?mode=ro", uri=True
         )
-        target = sqlite3.connect(destination)
         try:
-            source.backup(target, pages=128, sleep=0.01)
+            source.execute("VACUUM INTO ?", (destination.as_posix(),))
+        except sqlite3.Error as error:
+            stage = "storage" if "full" in str(error).lower() else "snapshot"
+            raise BackupExecutionError(
+                stage, f"Unable to create the compact Vision snapshot: {error}"
+            ) from error
         finally:
-            target.close()
             source.close()
 
 

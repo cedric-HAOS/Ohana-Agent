@@ -402,12 +402,10 @@ class AdministrationService:
             raise LookupError("Distributed INFRA backup transfer is unavailable")
         return self.backup_transfer.authorize(job_id, worker_id, attempt)
 
-    def stream_backup_source(
-        self, job_id: str, worker_id: str, attempt: int, output: object
-    ) -> None:
+    def open_backup_source(self, job_id: str, worker_id: str, attempt: int) -> object:
         if self.backup_transfer is None:
             raise LookupError("Distributed INFRA backup transfer is unavailable")
-        self.backup_transfer.stream_source(job_id, worker_id, attempt, output)
+        return self.backup_transfer.open_source(job_id, worker_id, attempt)
 
     def receive_backup_artifact(
         self,
@@ -859,25 +857,45 @@ class AdministrationHTTPServer:
                 if identity is None:
                     return
                 worker_id, attempt = identity
+                response_started = False
                 try:
-                    service.authorize_backup_transfer(job_id, worker_id, attempt)
+                    with service.open_backup_source(
+                        job_id, worker_id, attempt
+                    ) as stream:
+                        self.send_response(HTTPStatus.OK)
+                        self.send_header("Content-Type", "application/x-tar")
+                        self.send_header("Connection", "close")
+                        self.end_headers()
+                        self.close_connection = True
+                        response_started = True
+                        stream(self.wfile)
                 except LookupError as error:
-                    self._write_error(HTTPStatus.NOT_FOUND, str(error))
+                    if response_started:
+                        LOGGER.exception("Distributed backup source stream failed")
+                    else:
+                        self._write_error(HTTPStatus.NOT_FOUND, str(error))
                     return
                 except DistributedJobConflictError as error:
-                    self._write_error(HTTPStatus.CONFLICT, str(error))
+                    if response_started:
+                        LOGGER.exception("Distributed backup source stream failed")
+                    else:
+                        self._write_error(HTTPStatus.CONFLICT, str(error))
                     return
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/x-tar")
-                self.send_header("Connection", "close")
-                self.end_headers()
-                self.close_connection = True
-                try:
-                    service.stream_backup_source(
-                        job_id, worker_id, attempt, self.wfile
-                    )
                 except (BrokenPipeError, ConnectionError, OSError):
                     LOGGER.exception("Distributed backup source stream failed")
+                except RuntimeError as error:
+                    if response_started:
+                        LOGGER.exception("Distributed backup source stream failed")
+                    else:
+                        status = (
+                            HTTPStatus.INSUFFICIENT_STORAGE
+                            if getattr(error, "stage", None) == "storage"
+                            else HTTPStatus.INTERNAL_SERVER_ERROR
+                        )
+                        self._write_error(
+                            status,
+                            f"Distributed backup source preparation failed: {error}",
+                        )
 
             def _upload_backup_artifact(self, job_id: str) -> None:
                 identity = self._worker_transfer_identity()

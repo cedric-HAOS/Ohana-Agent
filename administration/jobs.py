@@ -372,9 +372,7 @@ class DistributedJobRepository:
             availability=DistributedWorkerAvailability.AVAILABLE,
             woken_by_ohana=woken_by_ohana,
             wake_requested_at=(
-                self._parse_timestamp(wake_requested_at)
-                if wake_requested_at
-                else None
+                self._parse_timestamp(wake_requested_at) if wake_requested_at else None
             ),
             wake_deadline_at=(
                 self._parse_timestamp(wake_deadline_at) if wake_deadline_at else None

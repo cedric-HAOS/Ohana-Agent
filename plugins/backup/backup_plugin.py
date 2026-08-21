@@ -125,10 +125,7 @@ class BackupPlugin(Plugin):
             raise ValueError("Backup target is disabled: 'infra-01'.")
         started_at = perf_counter()
         try:
-            if (
-                self.config.infra_01.use_katsuyu
-                and self._distributed_factory is None
-            ):
+            if self.config.infra_01.use_katsuyu and self._distributed_factory is None:
                 raise BackupExecutionError(
                     "katsuyu",
                     "Distributed jobs are unavailable; refusing local compression "

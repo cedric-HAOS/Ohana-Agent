@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.error import HTTPError
@@ -20,6 +21,7 @@ from administration import (
     InfrastructureConfigurationRepository,
 )
 from administration.models import DistributedJobStatus
+from plugins.backup.backup_coordinator import BackupExecutionError
 
 JOB_ID = "11111111-1111-4111-8111-111111111111"
 INFRASTRUCTURE_YAML = """\
@@ -874,3 +876,83 @@ def test_worker_listener_exposes_only_worker_routes(
     assert capabilities.value.code == 404
     assert create_job.value.code == 404
     assert shared_worker_token.value.code == 401
+
+
+def test_worker_backup_source_preparation_fails_before_http_200(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    class FailingBackupTransfer:
+        @contextmanager
+        def open_source(self, _job_id: str, _worker_id: str, _attempt: int) -> object:
+            raise BackupExecutionError("storage", "database or disk is full")
+            yield  # pragma: no cover
+
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["backup.infra"],
+            "platform": "Windows 11",
+            "worker_version": "0.3.1",
+        }
+    )
+    repository.create(
+        job_payload(
+            clock,
+            type="backup.infra",
+            parameters={
+                "backup_id": "20260821T074700Z",
+                "recipient": "age1" + "q" * 58,
+                "compression_level": 6,
+            },
+            timeout=600,
+        )
+    )
+    claimed = repository.claim(
+        {
+            "worker_id": "katsuyu-bubule",
+            "supported_types": ["backup.infra"],
+        }
+    )
+    assert claimed.job is not None
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            job_repository=repository,
+            backup_transfer=FailingBackupTransfer(),
+        ),
+        token="tsunade-secret",
+        worker_token="katsuyu-secret",
+        worker_only=True,
+        port=0,
+    )
+    server.start()
+    assert server.address is not None
+    host, port = server.address
+    request = Request(
+        f"http://{host}:{port}/v1/jobs/{JOB_ID}/input",
+        headers={
+            "Authorization": "Bearer katsuyu-secret",
+            "X-Ohana-Worker-Id": "katsuyu-bubule",
+            "X-Ohana-Attempt": "1",
+        },
+    )
+    try:
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=2)
+        detail = json.loads(error.value.read())
+    finally:
+        server.stop()
+        repository.close()
+
+    assert error.value.code == 507
+    assert detail == {
+        "detail": (
+            "Distributed backup source preparation failed: database or disk is full"
+        )
+    }

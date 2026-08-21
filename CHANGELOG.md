@@ -6,6 +6,19 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.18.1] — Instantané SQLite compact et erreurs fiables — 2026-08-21
+
+## Corrigé
+
+- La sauvegarde distribuée crée maintenant un instantané Vision compact avec
+  `VACUUM INTO`, sans modifier la base source ni recopier ses pages libres dans
+  le tmpfs limité d'INFRA-01.
+- La préparation de la source est terminée avant l'envoi de la réponse HTTP ;
+  un manque d'espace retourne désormais une erreur structurée au lieu d'un
+  flux vide trompeur pour Katsuyu.
+- Le contrôle de capacité et les tests couvrent une base SQLite contenant une
+  forte proportion de pages libres.
+
 # [1.18.0] — Sauvegarde distribuée et réveil Katsuyu — 2026-08-20
 
 ## Ajouté

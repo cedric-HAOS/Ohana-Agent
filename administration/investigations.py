@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from pydantic import Field
 
+from administration.jobs import DistributedJobRepository
 from administration.models import AdministrationModel
 from administration.plugins import PluginAdministrationRepository
 
@@ -53,9 +54,11 @@ class InvestigationExecutor:
         *,
         plugins: PluginAdministrationRepository,
         host_health_reader: Callable[[], dict[str, Any]],
+        jobs: DistributedJobRepository | None = None,
     ) -> None:
         self.plugins = plugins
         self.host_health_reader = host_health_reader
+        self.jobs = jobs
         self._operations: dict[str, tuple[str, int, Callable[[], dict[str, Any]]]] = {
             "network.ping": (
                 "Test configured network presence",
@@ -171,12 +174,19 @@ class InvestigationExecutor:
 
     def _backup_status(self) -> dict[str, Any]:
         state = self.plugins.read("backup")
-        return {
+        result: dict[str, Any] = {
             "status": state.status,
             "enabled": state.enabled,
             "last_execution_at": state.last_execution_at,
             "last_error": state.last_error,
         }
+        latest = self.jobs.latest("backup.infra") if self.jobs is not None else None
+        if latest is not None:
+            result["latest_distributed_job"] = latest.model_dump(mode="json")
+            result["status"] = latest.status.value
+            if latest.error is not None:
+                result["last_error"] = latest.error.message
+        return result
 
     def _host(self, section: str) -> dict[str, Any]:
         snapshot = self.host_health_reader()

@@ -86,7 +86,7 @@ def test_incident_is_deduplicated_escalated_resolved_and_recurrent(
         assert resolved is not None
         assert resolved.state == "resolved"
         assert resolved.workflow_state == "resolved"
-        assert resolved.final_result == "Capability returned to healthy state."
+        assert resolved.final_result == "La capacité est revenue à un état sain."
 
         recurrent = repository.process(
             _observation(ObservationStatus.DEGRADED, started + timedelta(minutes=5))
@@ -135,6 +135,7 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
         "severity": "error",
         "summary": "Node 17 transmission failed",
         "occurrences": 38,
+        "reference_occurrences": 3,
         "first_at": "2026-08-24T02:41:00+00:00",
         "last_at": "2026-08-24T17:52:00+00:00",
         "trend": "new",
@@ -157,6 +158,7 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
         assert len(active) == 1
         assert active[0].capability_id == "logs.health"
         assert active[0].severity == "critical"
+        assert active[0].context["findings"][0]["reference_occurrences"] == 3
 
         repository.record_log_health(
             uuid4(),
@@ -168,6 +170,69 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
         resolved = repository.list(state="resolved")
         assert len(resolved) == 1
         assert resolved[0].workflow_state == "resolved"
-        assert "no significant anomaly" in (resolved[0].final_result or "")
+        assert "aucune anomalie significative" in (resolved[0].final_result or "")
+    finally:
+        repository.close()
+
+
+def test_repair_requires_authorization_and_experience_requires_confirmation(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    started = datetime.now(UTC)
+    try:
+        incident = repository.process(
+            _observation(ObservationStatus.UNHEALTHY, started)
+        )
+        assert incident is not None
+        repository.append_record(
+            incident.incident_id,
+            {
+                "kind": "diagnostic",
+                "summary": "dnsmasq est arrêté.",
+                "payload": {"epistemic_status": "confirmed_by_probe"},
+            },
+        )
+        repair = repository.propose_repair(
+            incident.incident_id, {"operation": "restart_service"}
+        )
+        assert repair.status == "proposed"
+        assert repair.authorized_at is None
+        assert "résolution DNS" in repair.consequences[0]
+
+        authorized = repository.authorize_repair(
+            incident.incident_id,
+            {
+                "repair_id": str(repair.repair_id),
+                "source": "vision",
+                "authorized_by": "Cédric",
+            },
+        )
+        assert authorized.authorization_source == "vision"
+        repository.mark_repair_executed(repair.repair_id)
+        resolved = repository.process(
+            _observation(ObservationStatus.HEALTHY, started + timedelta(seconds=2))
+        )
+        assert resolved is not None
+        details = repository.get(incident.incident_id)
+        assert details.repairs[0].status == "succeeded"
+        assert details.experience_candidate is not None
+        assert repository.matching_experiences(details) == []
+
+        experience = repository.confirm_experience(
+            incident.incident_id,
+            {"confirm": True, "source": "vision", "confirmed_by": "Cédric"},
+        )
+        assert experience.success_count == 1
+        assert experience.validated_diagnostic == "dnsmasq est arrêté."
+        assert experience.symptoms == ["DNS is unhealthy"]
+        assert experience.context["server"] == "192.168.1.10"
+        assert experience.observations[-1]["status"] == "healthy"
+        assert repository.get(incident.incident_id).experience_candidate is None
+        statistics = repository.statistics()
+        assert statistics["incident_count"] == 1
+        assert statistics["resolved_incident_count"] == 1
+        assert statistics["learned_repair_count"] == 1
+        assert statistics["repair_success_rate"] == 100.0
     finally:
         repository.close()

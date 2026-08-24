@@ -4,6 +4,13 @@
 
 Ohana-Agent est le moteur d'observation de l'écosystème Ohana. Il charge une infrastructure déclarative, exécute les plugins de capacité, produit des observations normalisées et les transmet à Ohana-Vision.
 
+Le nom **Ohana-Agent** désigne le runtime technique, ses contrats et sa
+frontière de sécurité. Ce runtime héberge deux rôles fonctionnels distincts :
+**Shikamaru** observe, évalue l'état des capacités et vérifie les résultats ;
+**Tsunade** gère les incidents, coordonne les investigations et propose les
+décisions. Ces rôles ne remplacent ni le package, ni le service, ni les API
+existantes d'Ohana-Agent.
+
 Depuis la version 1.1.0, l'Agent est la source de vérité de la topologie :
 nœuds, services, équipements, liens et positions logiques sur la grille. La
 version 1.2.0 ajoute leur administration graphique sécurisée depuis Vision.
@@ -76,6 +83,24 @@ Le LLM local ne reçoit que le contexte utile et retourne des hypothèses,
 éléments concordants ou contradictoires et investigations proposées. Agent
 conserve ces éléments comme propositions : Tsunade reste responsable de la
 décision et aucune action n'est autorisée automatiquement.
+
+Depuis l’administration Vision, un opérateur peut demander à Tsunade le
+contrôle déterministe immédiat des journaux configurés. Si ce contrôle ouvre un
+incident `logs.health`, une analyse approfondie peut ensuite être autorisée
+avec un motif texte borné. Agent choisit toujours la source, la fenêtre, le
+timeout et le type de job ; Vision ne crée jamais directement un job Katsuyu.
+
+La mémoire Tsunade réutilise la même base de contrôle et n’enregistre une
+réparation connue qu’après diagnostic déterministe, réussite vérifiée par
+Shikamaru et confirmation humaine. Le premier exécuteur supervisé est limité au
+redémarrage de `dnsmasq.service` via le mécanisme privilégié déjà installé ; la
+provenance Vision ou Shizune de chaque autorisation est auditée.
+
+La collection d’incidents expose également une synthèse compacte destinée au
+cockpit Vision : dernier contrôle des journaux, état de HA-01, LINKY-01 et
+ZWAVE-01, interventions, réparations apprises et taux de réussite. Cette
+extension réutilise `/v1/incidents`, reste compatible avec les clients
+existants et ne contient aucun journal brut.
 
 Le worker Windows, ses handlers, ses journaux et son installation sont livrés
 séparément par le projet **Ohana-Katsuyu**. Le paquet Agent n'installe et ne

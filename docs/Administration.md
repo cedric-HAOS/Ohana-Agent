@@ -66,6 +66,11 @@ avec l'Agent sur la boucle locale.
 | `POST` | `/v1/jobs/claim` | Attribuer un job compatible à Katsuyu |
 | `POST` | `/v1/jobs/{job_id}/heartbeat` | Renouveler le bail de l'exécution courante |
 | `POST` | `/v1/jobs/{job_id}/complete` | Publier le résultat terminal vérifié |
+| `POST` | `/v1/incidents/logs/check` | Demander le contrôle déterministe des journaux configurés |
+| `POST` | `/v1/incidents/{incident_id}/logs/investigate` | Autoriser un suivi ciblé d’un incident de journaux |
+| `POST` | `/v1/incidents/{incident_id}/repairs` | Proposer une réparation finie et autorisée par Agent |
+| `POST` | `/v1/incidents/{incident_id}/repairs/authorize` | Enregistrer la validation Vision/Shizune puis exécuter |
+| `POST` | `/v1/incidents/{incident_id}/experience` | Confirmer manuellement une réparation connue |
 
 Les opérations sont annoncées explicitement par `/v1/capabilities` :
 
@@ -141,6 +146,13 @@ Deux extensions conservent les mêmes règles de contrôle :
   fenêtre à quarante-huit heures et le volume à quatre Mio par cible ;
 - `logs.investigate` exige un incident, une cible, un motif littéral et une
   fenêtre maximale de deux heures.
+
+`GET /v1/incidents` conserve la collection version 1 et ajoute une synthèse
+compatible : compteurs historiques, dernier job `logs.health_check` sans
+journal brut, état compact des trois sources et taux de réussite des
+réparations confirmées. Chaque constat de journal peut inclure
+`reference_occurrences`, valeur utilisée par Katsuyu pour qualifier son
+évolution.
 
 Les trois résultats de sauvegarde publient SHA-256 et tailles. Une divergence
 de vérification est un succès technique avec `valid: false`, afin que Tsunade
@@ -386,8 +398,29 @@ authentifiées existantes exposent :
 - `GET /v1/incidents/{incident_id}` pour l'évolution bornée ;
 - `POST /v1/incidents/{incident_id}/records` pour une investigation, un
   diagnostic, une action proposée ou un résultat final.
+- `POST /v1/incidents/logs/check` pour lancer manuellement le contrôle borné
+  des sources configurées ; Agent construit lui-même le job Katsuyu ;
+- `POST /v1/incidents/{incident_id}/logs/investigate` avec un unique `pattern`
+  texte pour autoriser une analyse complémentaire d’un incident `logs.health`.
+- `POST /v1/incidents/{incident_id}/repairs` pour créer une proposition finie ;
+- `POST /v1/incidents/{incident_id}/repairs/authorize` pour enregistrer la
+  provenance `vision` ou `shizune`, puis demander l’exécution à Agent ;
+- `POST /v1/incidents/{incident_id}/experience` pour confirmer manuellement
+  une réparation connue après succès vérifié.
 
-Un enregistrement d'action documente une décision mais ne l'exécute jamais.
+Un simple enregistrement d'action documente une décision mais ne l'exécute
+jamais. La phase initiale des réparations accepte uniquement
+`restart_service` sur `dnsmasq.service`. Elle réutilise le oneshot privilégié
+installé par Installer, sans shell ni nom d’unité fourni librement. Toute
+exécution exige une validation humaine. Après l’action, seule une nouvelle
+observation `healthy` de Shikamaru marque la réparation comme réussie ; une
+nouvelle observation dégradée la marque en échec.
+
+Une expérience n’est proposée que si le diagnostic a été confirmé par une
+investigation déterministe, si une réparation autorisée a réussi et si
+Shikamaru a résolu l’incident. Elle n’est enregistrée qu’après confirmation
+explicite depuis Vision ou Shizune. Une hypothèse LLM, une corrélation ou une
+disparition spontanée ne peuvent donc pas devenir une réparation connue.
 
 ## Investigations déterministes
 

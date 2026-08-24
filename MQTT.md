@@ -167,7 +167,9 @@ Les mécanismes de transport (QoS, conservation des messages, reconnexions, etc.
 
 Ils ne modifient jamais les principes d'architecture du système.
 
-La garantie d'une capacité repose toujours sur les observations et les décisions de Shikamaru.
+La garantie d'une capacité repose toujours sur les observations et l'évaluation
+de Shikamaru. Une décision coordonnée par Tsunade ne remplace jamais cette
+preuve observable.
 
 ---
 
@@ -227,7 +229,11 @@ MQTT respecte les principes suivants :
 
 MQTT est une interface de communication.
 
-Shikamaru reste le seul moteur de décision.
+Shikamaru observe et évalue l'état des capacités.
+
+Tsunade coordonne les incidents et propose les décisions.
+
+Ohana-Agent contrôle l'autorisation des opérations.
 
 Les plugins produisent les observations et exécutent les commandes.
 

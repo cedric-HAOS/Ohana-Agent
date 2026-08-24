@@ -926,40 +926,12 @@ def build_production_agent(
     def queue_log_health_job(arguments: dict[str, object], now: datetime) -> object:
         if administration_service is None:
             raise RuntimeError("Tsunade administration is unavailable")
-        window_hours = int(arguments["window_hours"])
-        baseline: list[dict[str, object]] = []
-        if job_repository is not None:
-            previous = job_repository.latest_successful_result("logs.health_check")
-            for source in (previous or {}).get("sources", []):
-                if not isinstance(source, dict):
-                    continue
-                for finding in source.get("findings", []):
-                    if isinstance(finding, dict) and len(baseline) < 192:
-                        baseline.append(
-                            {
-                                "source": source.get("source"),
-                                "signature": finding.get("signature"),
-                                "occurrences": finding.get("occurrences"),
-                            }
-                        )
-        return administration_service.create_job(
-            {
-                "protocol_version": 1,
-                "job_id": str(uuid4()),
-                "type": "logs.health_check",
-                "created_at": now.astimezone(UTC).isoformat(),
-                "parameters": {
-                    "sources": arguments["sources"],
-                    "window_started_at": (
-                        now.astimezone(UTC) - timedelta(hours=window_hours)
-                    ).isoformat(),
-                    "window_ended_at": now.astimezone(UTC).isoformat(),
-                    "max_bytes_per_source": arguments["max_bytes_per_source"],
-                    "baseline": baseline,
-                    "incident_id": None,
-                },
-                "timeout": arguments["timeout_seconds"],
-            }
+        return administration_service.request_log_health_check(
+            now=now,
+            sources=arguments["sources"],
+            window_hours=int(arguments["window_hours"]),
+            max_bytes=int(arguments["max_bytes_per_source"]),
+            timeout_seconds=int(arguments["timeout_seconds"]),
         )
 
     scheduler = Scheduler(
@@ -1914,6 +1886,7 @@ def build_production_agent(
         investigation_executor = InvestigationExecutor(
             plugins=plugin_repository,
             host_health_reader=lambda: host_health_monitor.collect().to_dict(),
+            jobs=job_repository,
         )
         expertise_service = TsunadeExpertiseService(
             incidents=incident_repository,
@@ -1980,6 +1953,14 @@ def build_production_agent(
                 else None
             ),
             expertise_service=expertise_service,
+            log_sources=(
+                administration_config.jobs.logs.sources
+                if administration_config.jobs.logs.enabled
+                else ()
+            ),
+            log_window_hours=administration_config.jobs.logs.window_hours,
+            log_max_bytes=administration_config.jobs.logs.max_bytes_per_source,
+            log_timeout_seconds=administration_config.jobs.logs.timeout_seconds,
         )
 
         def dispatch_ai_job(payload: dict[str, object]) -> object | None:

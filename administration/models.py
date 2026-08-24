@@ -671,6 +671,20 @@ class LogsInvestigateParameters(AdministrationModel):
         return self
 
 
+class LogsInvestigationAuthorization(AdministrationModel):
+    """One explicit operator authorization for a bounded log follow-up."""
+
+    pattern: str = Field(min_length=1, max_length=160)
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_plain_pattern(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or any(character in normalized for character in "\r\n\0"):
+            raise ValueError("log investigation pattern must be plain single-line text")
+        return normalized
+
+
 class LogFinding(AdministrationModel):
     """One normalized and grouped deterministic anomaly."""
 
@@ -690,6 +704,7 @@ class LogFinding(AdministrationModel):
     severity: Literal["warning", "error", "critical"]
     summary: str = Field(min_length=1, max_length=500)
     occurrences: int = Field(ge=1, le=1_000_000)
+    reference_occurrences: int | None = Field(default=None, ge=0, le=1_000_000)
     first_at: datetime | None = None
     last_at: datetime | None = None
     trend: Literal["new", "known", "stable", "increasing", "decreasing", "disappeared"]

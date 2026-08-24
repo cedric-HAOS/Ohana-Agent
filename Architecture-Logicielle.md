@@ -22,13 +22,18 @@ L'architecture logicielle garantit que les implémentations peuvent évoluer san
 
 # Vue d'ensemble
 
-Ohana-Agent est organisé autour de trois grands ensembles :
+Ohana-Agent est le runtime technique et la frontière de sécurité qui héberge
+plusieurs rôles fonctionnels. Il est organisé autour de quatre grands
+ensembles :
 
 ```text
 Ohana-Agent
 │
 ├── Shikamaru
-│   Moteur de décision
+│   Observation et évaluation de l'état
+│
+├── Tsunade
+│   Incidents, expertise et coordination
 │
 ├── Plugins
 │   Fournisseurs de capacités
@@ -41,16 +46,13 @@ Ohana-Agent
 
 # Shikamaru
 
-Shikamaru est le moteur de décision d'Ohana-Agent.
+Shikamaru est le rôle de supervision et d'observation hébergé par Ohana-Agent.
 
 Il est responsable de :
 
 * recevoir les observations ;
 * évaluer les capacités ;
 * déterminer les états ;
-* prendre les décisions ;
-* envoyer les commandes ;
-* orchestrer les réparations ;
 * publier les événements.
 
 Shikamaru ne connaît aucune technologie externe.
@@ -58,6 +60,26 @@ Shikamaru ne connaît aucune technologie externe.
 Il ne connaît ni DNS, ni DHCP, ni MQTT, ni Home Assistant.
 
 Il manipule uniquement les concepts fondamentaux du système.
+
+---
+
+# Tsunade
+
+Tsunade est le rôle de coordination et d'expertise hébergé par Ohana-Agent.
+
+Il est responsable de :
+
+* transformer les évolutions anormales en incidents ;
+* coordonner les investigations déterministes ;
+* solliciter Katsuyu lorsque le traitement doit être déporté ;
+* construire un diagnostic à partir de preuves bornées ;
+* proposer une décision ou une réparation ;
+* recueillir et tracer les validations humaines ;
+* superviser l'exécution d'une opération autorisée.
+
+Tsunade ne transforme jamais une hypothèse en fait. Ohana-Agent contrôle les
+permissions et les contrats d'exécution. Shikamaru vérifie ensuite, par une
+nouvelle observation, si la capacité est réellement revenue à l'état attendu.
 
 ---
 
@@ -121,20 +143,23 @@ Shikamaru
   ▼
 État
   │
-  ▼
-Décision
-  │
-  ▼
-Commande
-  │
-  ▼
-Plugin
-  │
-  ▼
-Action
-  │
-  ▼
-Nouvelle observation
+  ├── sain ────────────────────────────────┐
+  │                                        │
+  └── anomalie                             │
+       │                                   │
+       ▼                                   │
+     Tsunade                               │
+       │                                   │
+       ▼                                   │
+  Diagnostic / proposition                 │
+       │                                   │
+       ▼                                   │
+  Validation éventuelle                    │
+       │                                   │
+       ▼                                   │
+  Exécution autorisée                      │
+       │                                   │
+       └──────────► Nouvelle observation ◄─┘
 ```
 
 La réussite d'une action n'est jamais supposée.
@@ -145,16 +170,30 @@ Elle est toujours confirmée par une nouvelle observation.
 
 # Séparation des responsabilités
 
-## Shikamaru décide
+## Shikamaru observe et qualifie
 
-Shikamaru porte la logique centrale du système.
+Shikamaru porte la logique d'évaluation des capacités.
 
-Il décide :
+Il détermine :
 
 * si une capacité est disponible ;
 * si une capacité est dégradée ;
-* si une réparation doit être tentée ;
-* si une intervention humaine est nécessaire.
+* si une évolution d'état doit être publiée.
+
+---
+
+## Tsunade coordonne et propose
+
+Tsunade explique les anomalies, orchestre les investigations et propose les
+suites possibles. Il ne peut pas contourner les autorisations d'Ohana-Agent.
+Au départ, toute réparation exige une validation humaine explicite.
+
+---
+
+## Ohana-Agent autorise et exécute
+
+Le runtime valide les schémas, les permissions et les délais. Il n'expose aucun
+shell arbitraire et n'exécute que les opérations explicitement déclarées.
 
 ---
 
@@ -266,6 +305,7 @@ Chaque composant doit pouvoir être testé indépendamment.
 En particulier :
 
 * Shikamaru doit pouvoir être testé sans plugins réels ;
+* Tsunade doit pouvoir être testé sans exécution réelle ni LLM ;
 * un plugin doit pouvoir être testé sans infrastructure réelle ;
 * les règles d'évaluation doivent pouvoir être testées avec des observations simulées ;
 * les commandes doivent pouvoir être vérifiées sans action destructive.
@@ -276,10 +316,14 @@ La testabilité est une propriété fondamentale de l'architecture.
 
 # Résumé
 
-Ohana-Agent repose sur une séparation simple :
+Ohana-Agent repose sur une séparation explicite :
 
 ```text
-Shikamaru décide.
+Shikamaru observe, évalue et vérifie.
+
+Tsunade coordonne, diagnostique et propose.
+
+Ohana-Agent autorise et exécute les opérations permises.
 
 Les plugins observent et agissent.
 

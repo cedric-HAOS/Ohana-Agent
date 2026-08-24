@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import UTC, datetime
@@ -28,6 +29,65 @@ IncidentExpertiseState = Literal[
     "insufficient_context",
 ]
 IncidentRecordKind = Literal["investigation", "diagnostic", "action", "result"]
+RepairStatus = Literal["proposed", "verifying", "succeeded", "failed"]
+ValidationSource = Literal["vision", "shizune"]
+
+
+class TsunadeRepair(AdministrationModel):
+    """One finite repair proposal and its human authorization audit."""
+
+    repair_id: UUID
+    incident_id: UUID
+    operation: Literal["restart_service"]
+    target: Literal["dnsmasq.service"]
+    risk: Literal["low"] = "low"
+    consequences: list[str] = Field(
+        default_factory=lambda: [
+            "Interruption brève de la résolution DNS locale.",
+            "Aucune configuration réseau n’est modifiée.",
+            "Shikamaru vérifie le retour de la capacité après l’action.",
+        ],
+        max_length=8,
+    )
+    status: RepairStatus
+    proposed_at: datetime
+    authorized_at: datetime | None = None
+    authorization_source: ValidationSource | None = None
+    authorized_by: str | None = None
+    executed_at: datetime | None = None
+    verified_at: datetime | None = None
+    result: str | None = None
+
+
+class TsunadeExperience(AdministrationModel):
+    """A manually confirmed diagnostic and repair experience."""
+
+    experience_id: UUID
+    signature: str
+    equipment_id: str
+    capability_id: str
+    symptoms: list[str] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+    observations: list[dict[str, Any]] = Field(default_factory=list)
+    anomalies: list[dict[str, Any]] = Field(default_factory=list)
+    validated_diagnostic: str
+    action: dict[str, Any]
+    result: str
+    occurrence_count: int = Field(ge=1)
+    success_count: int = Field(ge=0)
+    failure_count: int = Field(ge=0)
+    last_used_at: datetime
+    confidence: float = Field(ge=0, le=1)
+
+
+class TsunadeExperienceCandidate(AdministrationModel):
+    """A repair outcome that still requires explicit human confirmation."""
+
+    incident_id: UUID
+    prompt: str
+    diagnostic: str
+    action: dict[str, Any]
+    result: str
 
 
 class TsunadeIncidentEvent(AdministrationModel):
@@ -64,6 +124,8 @@ class TsunadeIncident(AdministrationModel):
     context: dict[str, Any] = Field(default_factory=dict)
     final_result: str | None = None
     events: list[TsunadeIncidentEvent] = Field(default_factory=list)
+    repairs: list[TsunadeRepair] = Field(default_factory=list)
+    experience_candidate: TsunadeExperienceCandidate | None = None
 
 
 class TsunadeIncidentRecordRequest(AdministrationModel):
@@ -72,6 +134,22 @@ class TsunadeIncidentRecordRequest(AdministrationModel):
     kind: IncidentRecordKind
     summary: str = Field(min_length=1, max_length=1000)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TsunadeRepairProposalRequest(AdministrationModel):
+    operation: Literal["restart_service"]
+
+
+class TsunadeRepairAuthorizationRequest(AdministrationModel):
+    repair_id: UUID
+    source: ValidationSource
+    authorized_by: str = Field(default="utilisateur", min_length=1, max_length=120)
+
+
+class TsunadeExperienceConfirmationRequest(AdministrationModel):
+    confirm: Literal[True]
+    source: ValidationSource
+    confirmed_by: str = Field(default="utilisateur", min_length=1, max_length=120)
 
 
 class TsunadeIncidentRepository:
@@ -111,6 +189,8 @@ class TsunadeIncidentRepository:
             severity = self._FAULTS.get(observation.status)
             incident: TsunadeIncident | None = None
             if severity is not None:
+                if current is not None:
+                    self._verify_pending_repair(current, observation, succeeded=False)
                 incident = (
                     self._open(
                         observation,
@@ -123,6 +203,7 @@ class TsunadeIncidentRepository:
             elif (
                 observation.status is ObservationStatus.HEALTHY and current is not None
             ):
+                self._verify_pending_repair(current, observation, succeeded=True)
                 incident = self._resolve(current, observation)
             self._write_state(observation)
             self._mark_processed(observation.id)
@@ -146,6 +227,56 @@ class TsunadeIncidentRepository:
                 (limit,),
             ).fetchall()
         return [self._incident(row, include_events=False) for row in rows]
+
+    def statistics(self) -> dict[str, int | float | None]:
+        """Return compact history counters without loading incident rows."""
+        with self._lock:
+            incident_count = int(
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM tsunade_incidents"
+                ).fetchone()[0]
+            )
+            resolved_incident_count = int(
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM tsunade_incidents WHERE ended_at IS NOT NULL"
+                ).fetchone()[0]
+            )
+            investigation_count = int(
+                self._connection.execute(
+                    """SELECT COUNT(*) FROM tsunade_incident_events
+                    WHERE kind='investigation'"""
+                ).fetchone()[0]
+            )
+            intervention_count = int(
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM tsunade_incident_events WHERE kind='action'"
+                ).fetchone()[0]
+            )
+            learned_repair_count = int(
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM tsunade_experiences"
+                ).fetchone()[0]
+            )
+            repair_rows = self._connection.execute(
+                """SELECT status, COUNT(*) AS total FROM tsunade_repairs
+                WHERE status IN ('succeeded','failed') GROUP BY status"""
+            ).fetchall()
+        repair_counts = {str(row["status"]): int(row["total"]) for row in repair_rows}
+        succeeded = repair_counts.get("succeeded", 0)
+        failed = repair_counts.get("failed", 0)
+        verified = succeeded + failed
+        return {
+            "incident_count": incident_count,
+            "resolved_incident_count": resolved_incident_count,
+            "investigation_count": investigation_count,
+            "intervention_count": intervention_count,
+            "learned_repair_count": learned_repair_count,
+            "repair_succeeded_count": succeeded,
+            "repair_failed_count": failed,
+            "repair_success_rate": round((succeeded / verified) * 100, 1)
+            if verified
+            else None,
+        }
 
     def get(self, incident_id: UUID | str) -> TsunadeIncident:
         """Return one incident with its complete bounded evolution."""
@@ -183,6 +314,278 @@ class TsunadeIncidentRepository:
                 )
         return self.get(incident.incident_id)
 
+    def propose_repair(
+        self, incident_id: UUID | str, payload: dict[str, Any]
+    ) -> TsunadeRepair:
+        """Persist one allowlisted proposal without executing it."""
+        request = TsunadeRepairProposalRequest.model_validate(payload)
+        incident = self.get(incident_id)
+        if incident.state != "active":
+            raise ValueError("Une réparation exige un incident actif")
+        identity = " ".join(
+            (
+                incident.node_id,
+                incident.service_id,
+                incident.capability_id,
+                incident.message,
+            )
+        ).casefold()
+        if request.operation != "restart_service" or not any(
+            token in identity for token in ("dns", "dnsmasq")
+        ):
+            raise ValueError("Aucune réparation autorisée ne correspond à cet incident")
+        now = datetime.now(UTC)
+        with self._lock, self._connection:
+            existing = self._connection.execute(
+                """SELECT * FROM tsunade_repairs WHERE incident_id=?
+                AND status IN ('proposed','verifying')
+                ORDER BY proposed_at DESC LIMIT 1""",
+                (str(incident.incident_id),),
+            ).fetchone()
+            if existing is not None:
+                return self._repair(existing)
+            repair_id = uuid4()
+            self._connection.execute(
+                """INSERT INTO tsunade_repairs
+                (repair_id,incident_id,operation,target,risk,status,proposed_at)
+                VALUES (?,?,?,?,?,'proposed',?)""",
+                (
+                    str(repair_id),
+                    str(incident.incident_id),
+                    request.operation,
+                    "dnsmasq.service",
+                    "low",
+                    now.isoformat(),
+                ),
+            )
+            self._event(
+                incident.incident_id,
+                kind="action",
+                occurred_at=now,
+                summary="Tsunade propose le redémarrage supervisé de dnsmasq.",
+                payload={
+                    "repair_id": str(repair_id),
+                    "operation": request.operation,
+                    "target": "dnsmasq.service",
+                    "risk": "low",
+                    "status": "proposed",
+                    "authorized": False,
+                },
+            )
+            row = self._connection.execute(
+                "SELECT * FROM tsunade_repairs WHERE repair_id=?", (str(repair_id),)
+            ).fetchone()
+        return self._repair(row)
+
+    def authorize_repair(
+        self, incident_id: UUID | str, payload: dict[str, Any]
+    ) -> TsunadeRepair:
+        """Record authorization provenance before a concrete executor runs."""
+        request = TsunadeRepairAuthorizationRequest.model_validate(payload)
+        incident = self.get(incident_id)
+        now = datetime.now(UTC)
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT * FROM tsunade_repairs WHERE repair_id=? AND incident_id=?",
+                (str(request.repair_id), str(incident.incident_id)),
+            ).fetchone()
+            if row is None:
+                raise LookupError("Proposition de réparation inconnue")
+            if row["status"] != "proposed":
+                raise ValueError("Cette réparation n’attend plus de validation")
+            self._connection.execute(
+                """UPDATE tsunade_repairs SET authorized_at=?,
+                authorization_source=?,authorized_by=? WHERE repair_id=?""",
+                (
+                    now.isoformat(),
+                    request.source,
+                    request.authorized_by,
+                    str(request.repair_id),
+                ),
+            )
+            self._event(
+                incident.incident_id,
+                kind="action",
+                occurred_at=now,
+                summary=f"Réparation autorisée depuis {request.source.capitalize()}.",
+                payload={
+                    "repair_id": str(request.repair_id),
+                    "authorized": True,
+                    "authorization_source": request.source,
+                    "authorized_by": request.authorized_by,
+                },
+            )
+        return self.get_repair(request.repair_id)
+
+    def mark_repair_executed(self, repair_id: UUID | str) -> TsunadeRepair:
+        """Move an authorized repair to Shikamaru verification."""
+        now = datetime.now(UTC)
+        with self._lock, self._connection:
+            row = self._required_repair(repair_id)
+            if row["authorized_at"] is None or row["status"] != "proposed":
+                raise ValueError("La réparation n’est pas autorisée")
+            self._connection.execute(
+                """UPDATE tsunade_repairs SET status='verifying',executed_at=?
+                WHERE repair_id=?""",
+                (now.isoformat(), str(repair_id)),
+            )
+            self._event(
+                UUID(row["incident_id"]),
+                kind="action",
+                occurred_at=now,
+                summary=(
+                    "Réparation exécutée ; Shikamaru doit maintenant "
+                    "vérifier la capacité."
+                ),
+                payload={"repair_id": str(repair_id), "status": "verifying"},
+            )
+        return self.get_repair(repair_id)
+
+    def mark_repair_execution_failed(
+        self, repair_id: UUID | str, error: object
+    ) -> TsunadeRepair:
+        now = datetime.now(UTC)
+        detail = str(error)[:1000]
+        with self._lock, self._connection:
+            row = self._required_repair(repair_id)
+            self._connection.execute(
+                """UPDATE tsunade_repairs SET status='failed',executed_at=?,
+                verified_at=?,result=? WHERE repair_id=?""",
+                (now.isoformat(), now.isoformat(), detail, str(repair_id)),
+            )
+            self._event(
+                UUID(row["incident_id"]),
+                kind="result",
+                occurred_at=now,
+                summary=f"Échec de l’exécution de la réparation : {detail}",
+                payload={"repair_id": str(repair_id), "status": "failed"},
+            )
+        return self.get_repair(repair_id)
+
+    def get_repair(self, repair_id: UUID | str) -> TsunadeRepair:
+        with self._lock:
+            return self._repair(self._required_repair(repair_id))
+
+    def confirm_experience(
+        self, incident_id: UUID | str, payload: dict[str, Any]
+    ) -> TsunadeExperience:
+        """Learn only after an explicit user confirmation of a verified repair."""
+        request = TsunadeExperienceConfirmationRequest.model_validate(payload)
+        incident = self.get(incident_id)
+        candidate = self._experience_candidate(incident)
+        if candidate is None:
+            raise ValueError(
+                "Cet incident ne fournit aucune réparation validée à mémoriser"
+            )
+        signature = hashlib.sha256(
+            "\0".join(
+                (
+                    incident.node_id,
+                    incident.service_id,
+                    incident.capability_id,
+                    candidate.diagnostic,
+                    str(candidate.action.get("operation", "")),
+                    str(candidate.action.get("target", "")),
+                )
+            ).encode("utf-8")
+        ).hexdigest()
+        now = datetime.now(UTC)
+        anomalies = self._bounded_anomalies(incident.context)
+        observations = [
+            {
+                "observation_id": str(event.observation_id),
+                "status": event.status,
+                "observed_at": event.occurred_at,
+                "summary": event.summary,
+            }
+            for event in incident.events
+            if event.observation_id is not None
+        ][-32:]
+        symptoms = [
+            event.summary
+            for event in incident.events
+            if event.kind in {"opened", "observed", "escalated"}
+        ][:32] or [incident.message]
+        with self._lock, self._connection:
+            existing = self._connection.execute(
+                "SELECT * FROM tsunade_experiences WHERE signature=?", (signature,)
+            ).fetchone()
+            if existing is None:
+                experience_id = uuid4()
+                self._connection.execute(
+                    """INSERT INTO tsunade_experiences
+                    (experience_id,signature,equipment_id,capability_id,
+                    symptoms_json,context_json,observations_json,anomalies_json,
+                    validated_diagnostic,action_json,result,occurrence_count,
+                    success_count,failure_count,last_used_at,confidence,confirmed_by,
+                    confirmation_source,incident_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,1,0,?,1,?,?,?)""",
+                    (
+                        str(experience_id),
+                        signature,
+                        incident.equipment_id,
+                        incident.capability_id,
+                        json.dumps(symptoms, ensure_ascii=False),
+                        json.dumps(incident.context, ensure_ascii=False, default=str),
+                        json.dumps(observations, ensure_ascii=False, default=str),
+                        json.dumps(anomalies, ensure_ascii=False),
+                        candidate.diagnostic,
+                        json.dumps(candidate.action, ensure_ascii=False),
+                        candidate.result,
+                        now.isoformat(),
+                        request.confirmed_by,
+                        request.source,
+                        str(incident.incident_id),
+                    ),
+                )
+            else:
+                experience_id = UUID(existing["experience_id"])
+                self._connection.execute(
+                    """UPDATE tsunade_experiences
+                    SET occurrence_count=occurrence_count+1,
+                    success_count=success_count+1,last_used_at=?,confidence=1,
+                    confirmed_by=?,confirmation_source=?,incident_id=?
+                    WHERE signature=?""",
+                    (
+                        now.isoformat(),
+                        request.confirmed_by,
+                        request.source,
+                        str(incident.incident_id),
+                        signature,
+                    ),
+                )
+            self._event(
+                incident.incident_id,
+                kind="result",
+                occurred_at=now,
+                summary=(
+                    "Réparation enregistrée comme expérience connue "
+                    "après validation humaine."
+                ),
+                payload={
+                    "experience_id": str(experience_id),
+                    "confirmation_source": request.source,
+                    "confirmed_by": request.confirmed_by,
+                },
+            )
+            row = self._connection.execute(
+                "SELECT * FROM tsunade_experiences WHERE experience_id=?",
+                (str(experience_id),),
+            ).fetchone()
+        return self._experience(row)
+
+    def matching_experiences(
+        self, incident: TsunadeIncident
+    ) -> list[TsunadeExperience]:
+        """Return only manually confirmed experiences for the same capability."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT * FROM tsunade_experiences WHERE equipment_id=?
+                AND capability_id=? ORDER BY last_used_at DESC LIMIT 5""",
+                (incident.equipment_id, incident.capability_id),
+            ).fetchall()
+        return [self._experience(row) for row in rows]
+
     def record_log_health(
         self,
         job_id: UUID | str,
@@ -197,7 +600,8 @@ class TsunadeIncidentRepository:
                 {
                     "kind": "investigation",
                     "summary": (
-                        f"Katsuyu log health check: {result.get('status', 'KO')}"
+                        "Contrôle des journaux par Katsuyu : "
+                        f"{result.get('status', 'KO')}"
                     ),
                     "payload": result,
                 },
@@ -208,6 +612,12 @@ class TsunadeIncidentRepository:
             for source in result.get("sources", []):
                 if not isinstance(source, dict):
                     continue
+                source = {
+                    **source,
+                    "analyzed_at": result.get("analyzed_at"),
+                    "window_started_at": result.get("window_started_at"),
+                    "window_ended_at": result.get("window_ended_at"),
+                }
                 source_id = str(source.get("source", ""))
                 if source_id not in {"ha-01", "linky-01", "zwave-01"}:
                     continue
@@ -227,7 +637,10 @@ class TsunadeIncidentRepository:
                     )
                     else "degraded"
                 )
-                message = f"{source_id}: {len(findings)} grouped log anomaly(s)"
+                message = (
+                    f"{source_id} : {len(findings)} anomalie(s) "
+                    "de journaux regroupée(s)"
+                )
                 if current is None:
                     recurrence = int(
                         self._connection.execute(
@@ -291,8 +704,8 @@ class TsunadeIncidentRepository:
             {
                 "kind": "investigation",
                 "summary": (
-                    f"Katsuyu targeted log investigation: "
-                    f"{result.get('matched_lines', 0)} matching line(s)"
+                    f"Investigation ciblée des journaux par Katsuyu : "
+                    f"{result.get('matched_lines', 0)} ligne(s) correspondante(s)"
                 ),
                 "payload": {"job_id": str(job_id), "result": result},
             },
@@ -340,6 +753,8 @@ class TsunadeIncidentRepository:
             );
             CREATE INDEX IF NOT EXISTS tsunade_events_incident
             ON tsunade_incident_events(incident_id, event_id);
+            CREATE INDEX IF NOT EXISTS tsunade_events_kind
+            ON tsunade_incident_events(kind);
             CREATE TABLE IF NOT EXISTS tsunade_capability_state (
                 node_id TEXT NOT NULL,
                 service_id TEXT NOT NULL,
@@ -352,6 +767,46 @@ class TsunadeIncidentRepository:
             CREATE TABLE IF NOT EXISTS tsunade_processed_observations (
                 observation_id TEXT PRIMARY KEY
             );
+            CREATE TABLE IF NOT EXISTS tsunade_repairs (
+                repair_id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                target TEXT NOT NULL,
+                risk TEXT NOT NULL,
+                status TEXT NOT NULL,
+                proposed_at TEXT NOT NULL,
+                authorized_at TEXT,
+                authorization_source TEXT,
+                authorized_by TEXT,
+                executed_at TEXT,
+                verified_at TEXT,
+                result TEXT
+            );
+            CREATE INDEX IF NOT EXISTS tsunade_repairs_incident
+            ON tsunade_repairs(incident_id, proposed_at);
+            CREATE TABLE IF NOT EXISTS tsunade_experiences (
+                experience_id TEXT PRIMARY KEY,
+                signature TEXT NOT NULL UNIQUE,
+                equipment_id TEXT NOT NULL,
+                capability_id TEXT NOT NULL,
+                symptoms_json TEXT NOT NULL,
+                context_json TEXT NOT NULL,
+                observations_json TEXT NOT NULL,
+                anomalies_json TEXT NOT NULL,
+                validated_diagnostic TEXT NOT NULL,
+                action_json TEXT NOT NULL,
+                result TEXT NOT NULL,
+                occurrence_count INTEGER NOT NULL,
+                success_count INTEGER NOT NULL,
+                failure_count INTEGER NOT NULL,
+                last_used_at TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                confirmed_by TEXT NOT NULL,
+                confirmation_source TEXT NOT NULL,
+                incident_id TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS tsunade_experiences_capability
+            ON tsunade_experiences(equipment_id, capability_id, last_used_at);
             """
         )
         self._connection.commit()
@@ -438,7 +893,7 @@ class TsunadeIncidentRepository:
     def _resolve(
         self, incident: TsunadeIncident, observation: Observation
     ) -> TsunadeIncident:
-        result = "Capability returned to healthy state."
+        result = "La capacité est revenue à un état sain."
         self._connection.execute(
             """UPDATE tsunade_incidents SET ended_at=?,last_observed_at=?,
             last_observation_id=?,message=?,final_result=? WHERE incident_id=?""",
@@ -461,6 +916,46 @@ class TsunadeIncidentRepository:
         )
         return self.get(incident.incident_id)
 
+    def _verify_pending_repair(
+        self,
+        incident: TsunadeIncident,
+        observation: Observation,
+        *,
+        succeeded: bool,
+    ) -> None:
+        row = self._connection.execute(
+            """SELECT * FROM tsunade_repairs WHERE incident_id=?
+            AND status='verifying' ORDER BY executed_at DESC LIMIT 1""",
+            (str(incident.incident_id),),
+        ).fetchone()
+        if row is None or observation.timestamp <= datetime.fromisoformat(
+            row["executed_at"]
+        ):
+            return
+        status = "succeeded" if succeeded else "failed"
+        result = (
+            "Shikamaru confirme que la capacité est redevenue saine."
+            if succeeded
+            else "Shikamaru observe encore une capacité dégradée après la réparation."
+        )
+        self._connection.execute(
+            """UPDATE tsunade_repairs SET status=?,verified_at=?,result=?
+            WHERE repair_id=?""",
+            (status, observation.timestamp.isoformat(), result, row["repair_id"]),
+        )
+        self._event(
+            incident.incident_id,
+            kind="result",
+            occurred_at=observation.timestamp,
+            observation=observation,
+            summary=result,
+            payload={
+                "repair_id": row["repair_id"],
+                "status": status,
+                "verified_by": "shikamaru",
+            },
+        )
+
     def _resolve_log_incident(
         self,
         incident: TsunadeIncident,
@@ -468,7 +963,9 @@ class TsunadeIncidentRepository:
         occurred_at: datetime,
         source: dict[str, Any],
     ) -> None:
-        result = "Katsuyu found no significant anomaly in the analyzed window."
+        result = (
+            "Katsuyu n’a trouvé aucune anomalie significative dans la période analysée."
+        )
         self._connection.execute(
             """UPDATE tsunade_incidents SET ended_at=?,last_observed_at=?,
             last_observation_id=?,message=?,final_result=? WHERE incident_id=?""",
@@ -565,6 +1062,12 @@ class TsunadeIncidentRepository:
 
     def _incident(self, row: sqlite3.Row, *, include_events: bool) -> TsunadeIncident:
         events: list[TsunadeIncidentEvent] = []
+        repair_rows = self._connection.execute(
+            """SELECT * FROM tsunade_repairs WHERE incident_id=?
+            ORDER BY proposed_at DESC LIMIT 20""",
+            (row["incident_id"],),
+        ).fetchall()
+        repairs = [self._repair(repair) for repair in repair_rows]
         handled = False
         if include_events:
             rows = self._connection.execute(
@@ -632,7 +1135,7 @@ class TsunadeIncidentRepository:
             "ai_failed": "insufficient_context",
             "insufficient_context": "insufficient_context",
         }.get(cycle_status or "", "investigating" if handled else "idle")
-        return TsunadeIncident(
+        incident = TsunadeIncident(
             incident_id=row["incident_id"],
             state="resolved" if row["ended_at"] else "active",
             workflow_state=workflow_state,
@@ -654,7 +1157,118 @@ class TsunadeIncidentRepository:
             context=json.loads(row["context_json"]),
             final_result=row["final_result"],
             events=events,
+            repairs=repairs,
         )
+        if include_events:
+            incident.experience_candidate = self._experience_candidate(incident)
+        return incident
+
+    def _required_repair(self, repair_id: UUID | str) -> sqlite3.Row:
+        row = self._connection.execute(
+            "SELECT * FROM tsunade_repairs WHERE repair_id=?", (str(repair_id),)
+        ).fetchone()
+        if row is None:
+            raise LookupError("Réparation inconnue")
+        return row
+
+    @staticmethod
+    def _repair(row: sqlite3.Row) -> TsunadeRepair:
+        return TsunadeRepair(
+            repair_id=row["repair_id"],
+            incident_id=row["incident_id"],
+            operation=row["operation"],
+            target=row["target"],
+            risk=row["risk"],
+            status=row["status"],
+            proposed_at=datetime.fromisoformat(row["proposed_at"]),
+            authorized_at=(
+                datetime.fromisoformat(row["authorized_at"])
+                if row["authorized_at"]
+                else None
+            ),
+            authorization_source=row["authorization_source"],
+            authorized_by=row["authorized_by"],
+            executed_at=(
+                datetime.fromisoformat(row["executed_at"])
+                if row["executed_at"]
+                else None
+            ),
+            verified_at=(
+                datetime.fromisoformat(row["verified_at"])
+                if row["verified_at"]
+                else None
+            ),
+            result=row["result"],
+        )
+
+    def _experience_candidate(
+        self, incident: TsunadeIncident
+    ) -> TsunadeExperienceCandidate | None:
+        if incident.state != "resolved":
+            return None
+        repair = next(
+            (
+                candidate
+                for candidate in incident.repairs
+                if candidate.status == "succeeded"
+            ),
+            None,
+        )
+        if repair is None:
+            return None
+        already_saved = self._connection.execute(
+            "SELECT 1 FROM tsunade_experiences WHERE incident_id=? LIMIT 1",
+            (str(incident.incident_id),),
+        ).fetchone()
+        if already_saved is not None:
+            return None
+        diagnostic = next(
+            (
+                event.summary
+                for event in reversed(incident.events)
+                if event.kind == "diagnostic"
+                and event.payload.get("epistemic_status") == "confirmed_by_probe"
+            ),
+            None,
+        )
+        if diagnostic is None:
+            return None
+        return TsunadeExperienceCandidate(
+            incident_id=incident.incident_id,
+            prompt=(
+                "Cette intervention semble avoir résolu l’incident. "
+                "Enregistrer comme réparation connue ?"
+            ),
+            diagnostic=diagnostic,
+            action={"operation": repair.operation, "target": repair.target},
+            result=repair.result or incident.final_result or "Capacité saine",
+        )
+
+    @staticmethod
+    def _experience(row: sqlite3.Row) -> TsunadeExperience:
+        return TsunadeExperience(
+            experience_id=row["experience_id"],
+            signature=row["signature"],
+            equipment_id=row["equipment_id"],
+            capability_id=row["capability_id"],
+            symptoms=json.loads(row["symptoms_json"]),
+            context=json.loads(row["context_json"]),
+            observations=json.loads(row["observations_json"]),
+            anomalies=json.loads(row["anomalies_json"]),
+            validated_diagnostic=row["validated_diagnostic"],
+            action=json.loads(row["action_json"]),
+            result=row["result"],
+            occurrence_count=int(row["occurrence_count"]),
+            success_count=int(row["success_count"]),
+            failure_count=int(row["failure_count"]),
+            last_used_at=datetime.fromisoformat(row["last_used_at"]),
+            confidence=float(row["confidence"]),
+        )
+
+    @staticmethod
+    def _bounded_anomalies(context: dict[str, Any]) -> list[dict[str, Any]]:
+        findings = context.get("findings", []) if isinstance(context, dict) else []
+        return [finding for finding in findings[:16] if isinstance(finding, dict)]
 
     @staticmethod
     def _context(metadata: dict[str, Any]) -> dict[str, Any]:

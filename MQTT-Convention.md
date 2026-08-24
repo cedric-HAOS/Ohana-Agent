@@ -171,4 +171,8 @@ MQTT transporte.
 
 Le Message Model décrit.
 
-Shikamaru décide.
+Shikamaru observe et évalue.
+
+Tsunade coordonne et propose.
+
+Ohana-Agent autorise les opérations.

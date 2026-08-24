@@ -228,6 +228,73 @@ class DistributedJobRepository:
             ).fetchone()
         return json.loads(row["result_json"]) if row is not None else None
 
+    def latest(self, job_type: str) -> DistributedJobDocument | None:
+        """Return the latest bounded job document for one declared type."""
+        if job_type not in JOB_TYPE_MODELS:
+            raise ValueError(f"unsupported distributed job type: {job_type}")
+        with self._lock, self._connection:
+            self._recover_locked(self._now())
+            row = self._connection.execute(
+                """SELECT * FROM distributed_jobs WHERE type = ?
+                ORDER BY created_at DESC, job_id DESC LIMIT 1""",
+                (job_type,),
+            ).fetchone()
+        return self._document(row) if row is not None else None
+
+    def latest_for_incident(
+        self, job_type: str, incident_id: str | None
+    ) -> DistributedJobDocument | None:
+        """Return the latest job whose bounded parameters target one incident."""
+        if job_type not in JOB_TYPE_MODELS:
+            raise ValueError(f"unsupported distributed job type: {job_type}")
+        with self._lock, self._connection:
+            self._recover_locked(self._now())
+            rows = self._connection.execute(
+                """SELECT * FROM distributed_jobs WHERE type = ?
+                ORDER BY created_at DESC, job_id DESC LIMIT 100""",
+                (job_type,),
+            ).fetchall()
+        for row in rows:
+            parameters = json.loads(row["parameters_json"])
+            if parameters.get("incident_id") == incident_id:
+                return self._document(row)
+        return None
+
+    def count(self, job_type: str) -> int:
+        """Count durable jobs of one declared type without loading their payloads."""
+        if job_type not in JOB_TYPE_MODELS:
+            raise ValueError(f"unsupported distributed job type: {job_type}")
+        with self._lock:
+            return int(
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM distributed_jobs WHERE type = ?",
+                    (job_type,),
+                ).fetchone()[0]
+            )
+
+    def active_for_incident(
+        self, job_type: str, incident_id: str | None
+    ) -> DistributedJobDocument | None:
+        """Return an equivalent active control-plane job, if one exists."""
+        if job_type not in JOB_TYPE_MODELS:
+            raise ValueError(f"unsupported distributed job type: {job_type}")
+        with self._lock, self._connection:
+            self._recover_locked(self._now())
+            rows = self._connection.execute(
+                """SELECT * FROM distributed_jobs
+                WHERE type = ? AND status NOT IN (?, ?, ?, ?)
+                ORDER BY created_at ASC""",
+                (
+                    job_type,
+                    *(status.value for status in TERMINAL_STATUSES),
+                ),
+            ).fetchall()
+            for row in rows:
+                parameters = json.loads(row["parameters_json"])
+                if parameters.get("incident_id") == incident_id:
+                    return self._document(row)
+        return None
+
     def has_worker_capability(self, job_type: str) -> bool:
         """Return whether a previously authenticated worker declared this type."""
         if job_type not in JOB_TYPE_MODELS:
@@ -838,6 +905,12 @@ class DistributedJobRepository:
                 """
                 CREATE INDEX IF NOT EXISTS idx_distributed_jobs_dispatch
                 ON distributed_jobs(status, created_at)
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_distributed_jobs_type_created
+                ON distributed_jobs(type, created_at DESC)
                 """
             )
             self._connection.execute(

@@ -127,6 +127,38 @@ def test_artifact_is_authorized_by_job_owner_and_streamed_to_remote(
         repository.close()
 
 
+def test_artifact_metadata_is_resolved_before_remote_upload(tmp_path: Path) -> None:
+    repository = _claimed_repository(tmp_path)
+    uploader = FakeUploader()
+
+    def unavailable(distribution: str) -> str:
+        if distribution == "ohana-vision":
+            raise OSError("Vision timeout")
+        return "1.0.0"
+
+    transfer = DistributedInfraBackupTransfer(
+        BackupConfig(infra_01=InfraBackupConfig(enabled=True)),
+        repository,
+        sources=(tmp_path,),
+        uploader=uploader,  # type: ignore[arg-type]
+        version_resolver=unavailable,
+    )
+    artifact = b"age encrypted artifact"
+    try:
+        with pytest.raises(OSError, match="Vision timeout"):
+            transfer.receive_artifact(
+                "11111111-1111-4111-8111-111111111111",
+                "bubule",
+                1,
+                io.BytesIO(artifact),
+                size_bytes=len(artifact),
+                expected_sha256=hashlib.sha256(artifact).hexdigest(),
+            )
+        assert uploader.objects == {}
+    finally:
+        repository.close()
+
+
 def test_source_archive_is_uncompressed_and_contains_only_allowlisted_sources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

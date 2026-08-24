@@ -8,6 +8,7 @@ import json
 import logging
 import ssl
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,7 @@ from importlib.metadata import version as package_version
 from pathlib import Path
 from threading import Thread
 from typing import Any
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -40,6 +42,7 @@ from administration.log_sources import LogSourceBroker
 from administration.models import (
     AdministrationCapabilities,
     DHCPConfiguration,
+    LogsInvestigationAuthorization,
 )
 from administration.network import (
     NetworkAdministrationError,
@@ -47,6 +50,7 @@ from administration.network import (
 )
 from administration.plugins import PluginAdministrationRepository
 from configuration.infrastructure import InfrastructureConfig
+from plugins.backup.backup_coordinator import BackupExecutionError
 
 LOGGER = logging.getLogger(__name__)
 MAXIMUM_REQUEST_BYTES = 1024 * 1024
@@ -93,6 +97,10 @@ class AdministrationService:
         investigation_executor: InvestigationExecutor | None = None,
         log_source_broker: LogSourceBroker | None = None,
         expertise_service: TsunadeExpertiseService | None = None,
+        log_sources: tuple[str, ...] = (),
+        log_window_hours: int = 24,
+        log_max_bytes: int = 2 * 1024 * 1024,
+        log_timeout_seconds: int = 900,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -115,6 +123,10 @@ class AdministrationService:
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
         self.expertise_service = expertise_service
+        self.log_sources = tuple(log_sources)
+        self.log_window_hours = log_window_hours
+        self.log_max_bytes = log_max_bytes
+        self.log_timeout_seconds = log_timeout_seconds
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -172,9 +184,21 @@ class AdministrationService:
             )
 
         if self.incident_repository is not None:
-            operations.extend(["incidents.read", "incidents.records.write"])
+            operations.extend(
+                [
+                    "incidents.read",
+                    "incidents.records.write",
+                    "incidents.experiences.confirm",
+                ]
+            )
+            if self.dhcp_repository is not None:
+                operations.extend(
+                    ["incidents.repairs.propose", "incidents.repairs.authorize"]
+                )
         if self.expertise_service is not None:
             operations.append("incidents.diagnose")
+        if self.job_repository is not None and self.log_sources:
+            operations.extend(["incidents.logs.check", "incidents.logs.investigate"])
         if self.investigation_executor is not None:
             operations.extend(["investigations.read", "investigations.execute"])
 
@@ -297,9 +321,33 @@ class AdministrationService:
     def list_incidents(self, state: str = "active") -> object:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
+        summary = self.incident_repository.statistics()
+        latest_log_health = None
+        if self.job_repository is not None:
+            summary["log_control_count"] = self.job_repository.count(
+                "logs.health_check"
+            )
+            latest = self.job_repository.latest_for_incident("logs.health_check", None)
+            if latest is not None:
+                latest_log_health = {
+                    "job_id": str(latest.job_id),
+                    "status": latest.status.value,
+                    "created_at": latest.created_at.isoformat(),
+                    "finished_at": latest.finished_at.isoformat()
+                    if latest.finished_at
+                    else None,
+                    "result": latest.result,
+                    "error": latest.error.model_dump(mode="json")
+                    if latest.error
+                    else None,
+                }
+        else:
+            summary["log_control_count"] = 0
         return {
             "schema_version": 1,
             "state": state,
+            "summary": summary,
+            "log_health": latest_log_health,
             "incidents": [
                 incident.model_dump(mode="json")
                 for incident in self.incident_repository.list(state=state)
@@ -323,6 +371,148 @@ class AdministrationService:
         if self.expertise_service is None:
             raise LookupError("Tsunade expertise is unavailable")
         return self.expertise_service.diagnose(incident_id)
+
+    def propose_incident_repair(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        if self.incident_repository is None or self.dhcp_repository is None:
+            raise LookupError("Les réparations supervisées sont indisponibles")
+        return self.incident_repository.propose_repair(incident_id, payload)
+
+    def authorize_incident_repair(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Audit authorization, invoke one concrete helper, then await Shikamaru."""
+        if self.incident_repository is None or self.dhcp_repository is None:
+            raise LookupError("Les réparations supervisées sont indisponibles")
+        repair = self.incident_repository.authorize_repair(incident_id, payload)
+        try:
+            self.dhcp_repository.request_supervised_restart()
+        except Exception as error:
+            return self.incident_repository.mark_repair_execution_failed(
+                repair.repair_id, error
+            )
+        return self.incident_repository.mark_repair_executed(repair.repair_id)
+
+    def confirm_incident_experience(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        if self.incident_repository is None:
+            raise LookupError("La mémoire des diagnostics est indisponible")
+        return self.incident_repository.confirm_experience(incident_id, payload)
+
+    def request_log_health_check(
+        self,
+        *,
+        now: datetime | None = None,
+        sources: list[str] | tuple[str, ...] | None = None,
+        window_hours: int | None = None,
+        max_bytes: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> object:
+        """Ask Katsuyu for one bounded deterministic control chosen by Tsunade."""
+        if self.job_repository is None or not self.log_sources:
+            raise LookupError("Tsunade log analysis is unavailable")
+        selected_sources = list(sources or self.log_sources)
+        if not selected_sources or any(
+            source not in self.log_sources for source in selected_sources
+        ):
+            raise ValueError("log source is not enabled by Tsunade")
+        active = self.job_repository.active_for_incident("logs.health_check", None)
+        if active is not None:
+            raise DistributedJobConflictError(
+                f"log health check is already active as job {active.job_id}"
+            )
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        selected_window = window_hours or self.log_window_hours
+        baseline: list[dict[str, object]] = []
+        previous = self.job_repository.latest_successful_result("logs.health_check")
+        for source in (previous or {}).get("sources", []):
+            if not isinstance(source, dict):
+                continue
+            for finding in source.get("findings", []):
+                if isinstance(finding, dict) and len(baseline) < 192:
+                    baseline.append(
+                        {
+                            "source": source.get("source"),
+                            "signature": finding.get("signature"),
+                            "occurrences": finding.get("occurrences"),
+                        }
+                    )
+        return self.create_job(
+            {
+                "protocol_version": 1,
+                "job_id": str(uuid4()),
+                "type": "logs.health_check",
+                "created_at": current.isoformat(),
+                "parameters": {
+                    "sources": selected_sources,
+                    "window_started_at": (
+                        current - timedelta(hours=selected_window)
+                    ).isoformat(),
+                    "window_ended_at": current.isoformat(),
+                    "max_bytes_per_source": max_bytes or self.log_max_bytes,
+                    "baseline": baseline,
+                    "incident_id": None,
+                },
+                "timeout": timeout_seconds or self.log_timeout_seconds,
+            }
+        )
+
+    def request_log_investigation(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Queue an operator-authorized follow-up for one log incident."""
+        if self.job_repository is None or not self.log_sources:
+            raise LookupError("Tsunade log analysis is unavailable")
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        authorization = LogsInvestigationAuthorization.model_validate(payload)
+        incident = self.incident_repository.get(incident_id)
+        if incident.state != "active" or incident.capability_id != "logs.health":
+            raise ValueError(
+                "log investigation requires an active logs.health incident"
+            )
+        if incident.node_id not in self.log_sources:
+            raise ValueError("incident log source is not enabled by Tsunade")
+        active = self.job_repository.active_for_incident(
+            "logs.investigate", str(incident.incident_id)
+        )
+        if active is not None:
+            raise DistributedJobConflictError(
+                f"log investigation is already active as job {active.job_id}"
+            )
+        current = datetime.now(UTC)
+        job = self.create_job(
+            {
+                "protocol_version": 1,
+                "job_id": str(uuid4()),
+                "type": "logs.investigate",
+                "created_at": current.isoformat(),
+                "parameters": {
+                    "source": incident.node_id,
+                    "window_started_at": (current - timedelta(hours=2)).isoformat(),
+                    "window_ended_at": current.isoformat(),
+                    "pattern": authorization.pattern,
+                    "max_bytes": self.log_max_bytes,
+                    "incident_id": str(incident.incident_id),
+                },
+                "timeout": self.log_timeout_seconds,
+            }
+        )
+        self.incident_repository.append_record(
+            incident.incident_id,
+            {
+                "kind": "investigation",
+                "summary": "Analyse approfondie des journaux autorisée",
+                "payload": {
+                    "job_id": str(job.job_id),
+                    "source": incident.node_id,
+                    "pattern": authorization.pattern,
+                },
+            },
+        )
+        return job
 
     def list_investigations(self) -> object:
         if self.investigation_executor is None:
@@ -890,9 +1080,71 @@ class AdministrationHTTPServer:
                         self._execute(lambda: service.execute_investigation(payload))
                     return
 
+                if path == "/v1/incidents/logs/check":
+                    self._execute(service.request_log_health_check)
+                    return
+
                 incident_prefix = "/v1/incidents/"
                 record_suffix = "/records"
                 diagnose_suffix = "/diagnose"
+                logs_investigate_suffix = "/logs/investigate"
+                repair_authorize_suffix = "/repairs/authorize"
+                repairs_suffix = "/repairs"
+                experience_suffix = "/experience"
+                if path.startswith(incident_prefix) and path.endswith(
+                    logs_investigate_suffix
+                ):
+                    incident_id = path[
+                        len(incident_prefix) : -len(logs_investigate_suffix)
+                    ]
+                    if incident_id and "/" not in incident_id:
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.request_log_investigation(
+                                    incident_id, payload
+                                )
+                            )
+                    return
+                if path.startswith(incident_prefix) and path.endswith(
+                    repair_authorize_suffix
+                ):
+                    incident_id = path[
+                        len(incident_prefix) : -len(repair_authorize_suffix)
+                    ]
+                    if incident_id and "/" not in incident_id:
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.authorize_incident_repair(
+                                    incident_id, payload
+                                )
+                            )
+                    return
+                if path.startswith(incident_prefix) and path.endswith(repairs_suffix):
+                    incident_id = path[len(incident_prefix) : -len(repairs_suffix)]
+                    if incident_id and "/" not in incident_id:
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.propose_incident_repair(
+                                    incident_id, payload
+                                )
+                            )
+                    return
+                if path.startswith(incident_prefix) and path.endswith(
+                    experience_suffix
+                ):
+                    incident_id = path[len(incident_prefix) : -len(experience_suffix)]
+                    if incident_id and "/" not in incident_id:
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.confirm_incident_experience(
+                                    incident_id, payload
+                                )
+                            )
+                    return
                 if path.startswith(incident_prefix) and path.endswith(diagnose_suffix):
                     incident_id = path[len(incident_prefix) : -len(diagnose_suffix)]
                     if incident_id and "/" not in incident_id:
@@ -1176,6 +1428,7 @@ class AdministrationHTTPServer:
                 except (
                     DHCPConfigurationError,
                     NetworkAdministrationError,
+                    BackupExecutionError,
                     ValidationError,
                     ValueError,
                 ) as error:

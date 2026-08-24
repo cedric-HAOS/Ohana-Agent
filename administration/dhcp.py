@@ -168,6 +168,14 @@ class DnsmasqDHCPRepository:
 
         return leases
 
+    def request_supervised_restart(self) -> None:
+        """Trigger the installed restricted dnsmasq helper without changing config."""
+        if self.reload_request_path is None:
+            raise DHCPConfigurationError(
+                "Le mécanisme privilégié de redémarrage dnsmasq n’est pas installé"
+            )
+        self._request_reload([])
+
     def read_settings(self) -> DHCPSettings:
         """Read the supported dnsmasq settings without reservations."""
         if not self.main_config_path.is_file():

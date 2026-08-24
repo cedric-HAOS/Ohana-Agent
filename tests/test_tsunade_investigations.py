@@ -80,3 +80,24 @@ def test_timeout_returns_without_waiting_for_the_bounded_probe() -> None:
     )
     assert result.status == "TIMEOUT"
     assert monotonic() - started < 1.5
+
+
+def test_backup_status_exposes_latest_distributed_failure() -> None:
+    failed_job = SimpleNamespace(
+        status=SimpleNamespace(value="FAILED"),
+        error=SimpleNamespace(message="Vision indisponible avant le transfert"),
+        model_dump=lambda **_kwargs: {
+            "type": "backup.infra",
+            "status": "FAILED",
+            "error": {"message": "Vision indisponible avant le transfert"},
+        },
+    )
+    executor = InvestigationExecutor(
+        plugins=FakePlugins(),  # type: ignore[arg-type]
+        host_health_reader=lambda: {},
+        jobs=SimpleNamespace(latest=lambda job_type: failed_job),  # type: ignore[arg-type]
+    )
+    result = executor.execute({"operation": "backup.status", "timeout_seconds": 5})
+    assert result.result["status"] == "FAILED"
+    assert result.result["last_error"] == "Vision indisponible avant le transfert"
+    assert result.result["latest_distributed_job"]["type"] == "backup.infra"

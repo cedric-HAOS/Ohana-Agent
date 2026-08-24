@@ -13,7 +13,11 @@ from uuid import UUID, uuid4
 
 from pydantic import Field
 
-from administration.incidents import TsunadeIncident, TsunadeIncidentRepository
+from administration.incidents import (
+    TsunadeExperience,
+    TsunadeIncident,
+    TsunadeIncidentRepository,
+)
 from administration.investigations import InvestigationExecutor, InvestigationResult
 from administration.models import (
     AdministrationModel,
@@ -42,50 +46,53 @@ KNOWN_PROCEDURES = (
     KnownProcedure(
         ("dns",),
         ("dns.query", "network.ping"),
-        "The configured DNS or its network path is failing a deterministic probe.",
-        ("Verify the configured resolver and its upstream connectivity.",),
+        "Le DNS configuré ou son chemin réseau échoue à une vérification déterministe.",
+        ("Vérifier le résolveur configuré et sa connectivité amont.",),
     ),
     KnownProcedure(
         ("mqtt",),
         ("mqtt.status", "network.ping"),
-        "The configured MQTT path is failing a deterministic probe.",
-        ("Verify broker availability, authentication and network reachability.",),
+        "Le chemin MQTT configuré échoue à une vérification déterministe.",
+        ("Vérifier la disponibilité du broker, l’authentification et le réseau.",),
     ),
     KnownProcedure(
         ("memory", "swap"),
         ("memory.status",),
-        "The host reports deterministic memory or swap pressure.",
-        ("Identify the largest resident services before considering a restart.",),
+        "L’hôte signale une pression déterministe sur la mémoire ou le swap.",
+        ("Identifier les services les plus consommateurs avant tout redémarrage.",),
     ),
     KnownProcedure(
         ("cpu", "temperature"),
         ("cpu.status",),
-        "The host reports deterministic CPU load or thermal pressure.",
-        ("Identify the active workload and verify cooling before intervening.",),
+        "L’hôte signale une charge CPU ou une contrainte thermique déterministe.",
+        (
+            "Identifier la charge active et vérifier le refroidissement "
+            "avant d’intervenir.",
+        ),
     ),
     KnownProcedure(
         ("disk", "storage"),
         ("disk.usage",),
-        "The root filesystem reports deterministic capacity pressure.",
-        ("Inspect bounded disk usage and retention before deleting any data.",),
+        "Le système de fichiers racine signale une pression de capacité déterministe.",
+        ("Examiner l’usage borné et la rétention avant toute suppression.",),
     ),
     KnownProcedure(
         ("backup",),
         ("backup.status",),
-        "The backup runtime reports a deterministic failure state.",
-        ("Verify the last backup error and remote validation before retrying.",),
+        "Le moteur de sauvegarde signale un échec déterministe.",
+        ("Vérifier la dernière erreur et la validation distante avant de réessayer.",),
     ),
     KnownProcedure(
         ("network", "connectivity"),
         ("network.ping",),
-        "The configured network presence test is failing.",
-        ("Verify the target interface and route without changing configuration.",),
+        "Le test de présence réseau configuré échoue.",
+        ("Vérifier l’interface cible et la route sans modifier la configuration.",),
     ),
     KnownProcedure(
         ("service", "systemd"),
         ("service.status",),
-        "A monitored systemd unit is deterministically failed or inactive.",
-        ("Inspect the specific unit status and bounded logs before any restart.",),
+        "Une unité systemd supervisée est en échec ou inactive.",
+        ("Examiner son état et ses journaux bornés avant tout redémarrage.",),
     ),
 )
 
@@ -167,6 +174,7 @@ class TsunadeExpertiseService:
                     "Katsuyu AI is already queued for this incident"
                 )
             procedure = self._known_procedure(incident)
+            experiences = self.incidents.matching_experiences(incident)
             investigation_results = self._run_investigations(incident, procedure)
             facts = self._facts(incident, investigation_results, log_result)
             failures = [
@@ -181,7 +189,10 @@ class TsunadeExpertiseService:
                     known_procedure=True,
                     diagnosis=procedure.diagnosis,
                     facts=facts,
-                    proposals=list(procedure.proposals),
+                    proposals=[
+                        *procedure.proposals,
+                        *self._experience_proposals(experiences),
+                    ][:16],
                 )
                 self._record_deterministic(outcome, failures)
                 return outcome
@@ -191,6 +202,7 @@ class TsunadeExpertiseService:
                 procedure,
                 investigation_results,
                 log_result,
+                experiences,
             )
             job = (
                 self.ai_dispatcher(parameters)
@@ -204,11 +216,16 @@ class TsunadeExpertiseService:
                     status="INSUFFICIENT_CONTEXT",
                     known_procedure=procedure is not None,
                     diagnosis=(
-                        "Deterministic evidence does not yet explain the anomaly, "
-                        "and no compatible Katsuyu AI worker is available."
+                        "Les éléments déterministes n’expliquent pas encore l’anomalie "
+                        "et aucun worker Katsuyu AI compatible n’est disponible."
                     ),
                     facts=facts,
-                    proposals=list(procedure.proposals) if procedure else [],
+                    proposals=(
+                        [
+                            *(procedure.proposals if procedure else ()),
+                            *self._experience_proposals(experiences),
+                        ][:16]
+                    ),
                 )
                 self.incidents.append_record(
                     incident.incident_id,
@@ -229,10 +246,14 @@ class TsunadeExpertiseService:
                 status="AI_QUEUED",
                 known_procedure=procedure is not None,
                 diagnosis=(
-                    "Deterministic evidence is insufficient; Katsuyu AI was requested."
+                    "Les éléments déterministes sont insuffisants ; "
+                    "une analyse Katsuyu AI a été demandée."
                 ),
                 facts=facts,
-                proposals=list(procedure.proposals) if procedure else [],
+                proposals=[
+                    *(procedure.proposals if procedure else ()),
+                    *self._experience_proposals(experiences),
+                ][:16],
                 ai_job_id=job_id,
             )
             self.incidents.append_record(
@@ -269,8 +290,8 @@ class TsunadeExpertiseService:
             {
                 "kind": "diagnostic",
                 "summary": (
-                    f"Katsuyu AI proposed {len(hypotheses)} hypothesis(es); "
-                    "Tsunade decision is pending."
+                    f"Katsuyu AI propose {len(hypotheses)} hypothèse(s) ; "
+                    "la décision de Tsunade reste en attente."
                 ),
                 "payload": {
                     "cycle_status": "ai_completed",
@@ -296,7 +317,7 @@ class TsunadeExpertiseService:
                 incident_id,
                 {
                     "kind": "action",
-                    "summary": "Katsuyu AI suggested additional investigations.",
+                    "summary": "Katsuyu AI suggère des investigations complémentaires.",
                     "payload": {
                         "status": "proposed",
                         "authorized": False,
@@ -318,7 +339,8 @@ class TsunadeExpertiseService:
             {
                 "kind": "diagnostic",
                 "summary": (
-                    "Optional Katsuyu AI inference failed; no decision was made."
+                    "L’analyse Katsuyu AI facultative a échoué ; "
+                    "aucune décision n’a été prise."
                 ),
                 "payload": {
                     "cycle_status": "ai_failed",
@@ -363,6 +385,7 @@ class TsunadeExpertiseService:
         procedure: KnownProcedure | None,
         results: list[InvestigationResult],
         log_result: dict[str, Any] | None,
+        experiences: list[TsunadeExperience],
     ) -> dict[str, Any]:
         evidence: list[dict[str, str]] = [
             {
@@ -422,12 +445,32 @@ class TsunadeExpertiseService:
                     "content": self._bounded_json(list(procedure.proposals)),
                 }
             )
+        if experiences:
+            evidence.append(
+                {
+                    "source": "repairs.validated_by_user",
+                    "content": self._bounded_json(
+                        [
+                            {
+                                "diagnostic": experience.validated_diagnostic,
+                                "action": experience.action,
+                                "result": experience.result,
+                                "successes": experience.success_count,
+                                "failures": experience.failure_count,
+                                "confidence": experience.confidence,
+                            }
+                            for experience in experiences
+                        ]
+                    ),
+                }
+            )
         request = AiInferenceParameters(
             incident_id=incident.incident_id,
             question=(
-                "Explain only what the bounded evidence supports. Return uncertain "
-                "causes as hypotheses with supporting and contradicting evidence. "
-                "Propose investigations; do not decide or authorize an action."
+                "Explique uniquement ce que démontrent les éléments bornés. Présente "
+                "les causes incertaines comme des hypothèses avec leurs éléments "
+                "concordants et contradictoires. Propose des investigations, sans "
+                "décider ni autoriser une action. Réponds intégralement en français."
             ),
             evidence=evidence[:8],
             max_output_tokens=1_024,
@@ -464,7 +507,10 @@ class TsunadeExpertiseService:
             outcome.incident_id,
             {
                 "kind": "action",
-                "summary": "Tsunade prepared a proposal; no action was authorized.",
+                "summary": (
+                    "Tsunade a préparé une proposition ; "
+                    "aucune action n’a été autorisée."
+                ),
                 "payload": {
                     "status": "proposed",
                     "authorized": False,
@@ -493,6 +539,17 @@ class TsunadeExpertiseService:
         return {"mqtt.status": 20, "network.ping": 15, "dns.query": 15}.get(
             operation, 5
         )
+
+    @staticmethod
+    def _experience_proposals(experiences: list[TsunadeExperience]) -> list[str]:
+        return [
+            "Réparation connue validée : "
+            f"{experience.action.get('operation')} sur "
+            f"{experience.action.get('target')} "
+            f"({experience.success_count} réussite(s), "
+            f"{experience.failure_count} échec(s))."
+            for experience in experiences[:5]
+        ]
 
     @staticmethod
     def _concrete_failure(operation: str, result: InvestigationResult) -> bool:
@@ -529,15 +586,15 @@ class TsunadeExpertiseService:
         log_result: dict[str, Any] | None,
     ) -> list[str]:
         facts = [
-            f"Shikamaru observed {incident.severity}: {incident.message}",
-            f"Occurrence count: {incident.occurrence_count}",
-            f"Recurrence count: {incident.recurrence_count}",
+            f"Shikamaru a observé l’état {incident.severity} : {incident.message}",
+            f"Nombre d’occurrences : {incident.occurrence_count}",
+            f"Nombre de récurrences : {incident.recurrence_count}",
         ]
         facts.extend(f"{result.operation}: {result.status}" for result in results)
         findings = TsunadeExpertiseService._compact_logs(log_result or incident.context)
         facts.extend(
             f"{finding.get('source', incident.node_id)}: "
-            f"{finding.get('signature', 'grouped anomaly')} "
+            f"{finding.get('signature', 'anomalie regroupée')} "
             f"({finding.get('occurrences', 0)} occurrence(s))"
             for finding in findings[:16]
         )

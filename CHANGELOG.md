@@ -6,6 +6,44 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.23.0] — Mémoire, réparations et cockpit Tsunade — 2026-08-24
+
+## Ajouté
+
+- Tsunade conserve les diagnostics déterministes et réparations réussies dans
+  sa base de contrôle uniquement après confirmation explicite depuis Vision ou
+  Shizune, avec compteurs de réussite, d’échec et niveau de confiance.
+- Le premier contrat de réparation supervisée propose uniquement
+  `restart_service` pour `dnsmasq.service`. Agent enregistre la provenance de
+  l’autorisation, réutilise le helper privilégié existant, puis attend la
+  vérification de Shikamaru avant de conclure.
+- L’administration peut demander à Tsunade un contrôle déterministe immédiat
+  des sources de journaux configurées, sans construire le job dans Vision.
+- Une investigation complémentaire `logs.investigate` exige désormais un
+  incident `logs.health` actif et un motif explicite, borné et validé fourni
+  par l’opérateur ; Agent choisit la source, la fenêtre et les limites.
+
+## Modifié
+
+- La documentation distingue désormais le runtime technique Ohana-Agent des
+  rôles fonctionnels qu’il héberge : Shikamaru observe et vérifie, Tsunade
+  coordonne et propose, puis Agent autorise les opérations déclarées.
+- Le contrat existant de collection d’incidents fournit une synthèse bornée de
+  l’historique, du dernier contrôle des journaux et du taux de réussite des
+  réparations, sans ajouter de route ni stocker de journaux bruts.
+- Les anomalies de journaux conservent le nombre d’occurrences de référence et
+  les réparations déclarent leurs conséquences avant validation.
+
+## Corrigé
+
+- La sauvegarde distribuée résout désormais les versions Agent/Vision avant
+  d’accepter l’archive, afin qu’un timeout Vision ne laisse plus une archive
+  distante sans manifeste.
+- `backup.status` tient compte du dernier job `backup.infra` et expose son
+  erreur structurée au diagnostic Tsunade.
+- Les diagnostics, propositions, faits et résultats Tsunade sont produits en
+  français.
+
 # [1.22.0] — Expertise Tsunade et analyses IA avancées — 2026-08-24
 
 ## Ajouté

@@ -207,10 +207,12 @@ Les commandes respectent les principes suivants :
 
 # Résumé
 
-Shikamaru décide.
+Tsunade propose une opération lorsqu'un diagnostic le justifie.
+
+Ohana-Agent valide son autorisation et sa conformité au contrat.
 
 Les commandes expriment une intention.
 
 Les plugins agissent.
 
-Les observations valident le résultat.
+Shikamaru observe et valide le résultat.

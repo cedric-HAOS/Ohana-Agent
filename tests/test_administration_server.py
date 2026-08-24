@@ -13,8 +13,10 @@ import pytest
 from administration import (
     AdministrationHTTPServer,
     AdministrationService,
+    DistributedJobRepository,
     InfrastructureConfigurationRepository,
 )
+from administration.dhcp import DnsmasqDHCPRepository
 from administration.expertise import TsunadeExpertiseConflictError
 from administration.incidents import TsunadeIncidentRepository
 from observer import Observation, ObservationStatus
@@ -148,6 +150,27 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
         )
     )
     assert incident is not None
+    log_incident = incidents.process(
+        Observation(
+            node="ha-01",
+            service="home-assistant",
+            capability="logs.health",
+            status=ObservationStatus.DEGRADED,
+            success=False,
+            message="Log anomaly detected",
+            source="logs.health",
+            timestamp=datetime(2026, 8, 24, 12, 5, tzinfo=UTC),
+        )
+    )
+    assert log_incident is not None
+    jobs = DistributedJobRepository(tmp_path / "jobs.db")
+    reload_request = tmp_path / "run" / "dhcp-reload.request"
+    dhcp = DnsmasqDHCPRepository(
+        main_config_path=tmp_path / "dnsmasq.conf",
+        reservation_paths={},
+        leases_path=tmp_path / "leases",
+        reload_request_path=reload_request,
+    )
 
     class FakeExpertise:
         calls = 0
@@ -171,8 +194,11 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
             infrastructure_repository=InfrastructureConfigurationRepository(
                 infrastructure_path
             ),
+            dhcp_repository=dhcp,
             incident_repository=incidents,
             expertise_service=FakeExpertise(),  # type: ignore[arg-type]
+            job_repository=jobs,
+            log_sources=("ha-01", "linky-01", "zwave-01"),
         ),
         token="test-secret",
         port=0,
@@ -180,9 +206,13 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
     server.start()
     try:
         collection = request_json(server, "/v1/incidents")
-        assert collection["incidents"][0]["incident_id"] == str(  # type: ignore[index]
-            incident.incident_id
-        )
+        assert collection["summary"]["incident_count"] == 2  # type: ignore[index]
+        assert collection["summary"]["log_control_count"] == 0  # type: ignore[index]
+        assert collection["log_health"] is None
+        assert str(incident.incident_id) in {
+            item["incident_id"]
+            for item in collection["incidents"]  # type: ignore[union-attr]
+        }
         detailed = request_json(server, f"/v1/incidents/{incident.incident_id}")
         assert detailed["events"][0]["kind"] == "opened"  # type: ignore[index]
         recorded = request_json(
@@ -198,6 +228,55 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
             method="POST",
         )
         assert diagnosis["status"] == "AI_QUEUED"
+        proposal = request_json(
+            server,
+            f"/v1/incidents/{incident.incident_id}/repairs",
+            method="POST",
+            payload={"operation": "restart_service"},
+        )
+        assert proposal["status"] == "proposed"
+        assert not reload_request.exists()
+        repair = request_json(
+            server,
+            f"/v1/incidents/{incident.incident_id}/repairs/authorize",
+            method="POST",
+            payload={
+                "repair_id": proposal["repair_id"],
+                "source": "vision",
+                "authorized_by": "Cédric",
+            },
+        )
+        assert repair["status"] == "verifying"
+        assert repair["authorization_source"] == "vision"
+        assert reload_request.exists()
+        log_check = request_json(
+            server,
+            "/v1/incidents/logs/check",
+            method="POST",
+        )
+        assert log_check["type"] == "logs.health_check"
+        assert log_check["parameters"]["sources"] == [  # type: ignore[index]
+            "ha-01",
+            "linky-01",
+            "zwave-01",
+        ]
+        collection_after_log_check = request_json(server, "/v1/incidents")
+        assert (
+            collection_after_log_check["summary"]["log_control_count"] == 1  # type: ignore[index]
+        )
+        assert collection_after_log_check["log_health"]["status"] == "QUEUED"  # type: ignore[index]
+        with pytest.raises(HTTPError) as duplicate_log_check:
+            request_json(server, "/v1/incidents/logs/check", method="POST")
+        assert duplicate_log_check.value.code == 409
+        log_investigation = request_json(
+            server,
+            f"/v1/incidents/{log_incident.incident_id}/logs/investigate",
+            method="POST",
+            payload={"pattern": "Node 17"},
+        )
+        assert log_investigation["type"] == "logs.investigate"
+        assert log_investigation["parameters"]["source"] == "ha-01"  # type: ignore[index]
+        assert log_investigation["parameters"]["pattern"] == "Node 17"  # type: ignore[index]
         with pytest.raises(HTTPError) as conflict:
             request_json(
                 server,
@@ -207,6 +286,7 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
         assert conflict.value.code == 409
     finally:
         server.stop()
+        jobs.close()
         incidents.close()
 
 

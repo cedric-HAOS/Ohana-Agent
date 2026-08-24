@@ -144,6 +144,10 @@ class DistributedInfraBackupTransfer:
         job = self.repository.authorize_job_transfer(
             job_id, worker_id=worker_id, attempt=attempt
         )
+        # Resolve metadata before accepting the payload. A slow/unavailable Vision
+        # must never turn an already uploaded archive into an orphaned backup.
+        agent_version = self.local._installed_version("ohana-agent")
+        vision_version = self.local._installed_version("ohana-vision")
         if size_bytes < 1 or size_bytes > self.config.infra_01.max_artifact_bytes:
             raise ValueError("distributed backup artifact size is invalid")
         if len(expected_sha256) != 64 or any(
@@ -171,8 +175,8 @@ class DistributedInfraBackupTransfer:
             filename=filename,
             size_bytes=receipt.size_bytes,
             sha256=receipt.sha256,
-            agent_version=self.local._installed_version("ohana-agent"),
-            vision_version=self.local._installed_version("ohana-vision"),
+            agent_version=agent_version,
+            vision_version=vision_version,
         )
         self.uploader.upload(
             io.BytesIO(manifest),

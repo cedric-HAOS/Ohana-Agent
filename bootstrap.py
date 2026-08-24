@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from administration import (
     AdministrationHTTPServer,
@@ -18,6 +19,10 @@ from administration import (
     PluginAdministrationRepository,
     certificate_sha256,
 )
+from administration.expertise import TsunadeExpertiseService
+from administration.incidents import TsunadeIncidentRepository
+from administration.investigations import InvestigationExecutor
+from administration.log_sources import LogSourceBroker
 from administration.wake_on_lan import WakeOnLanSender
 from builder import (
     BackupConfigurationBuilder,
@@ -32,6 +37,7 @@ from builder import (
     WireGuardConfigurationBuilder,
     ZWaveConfigurationBuilder,
 )
+from configuration.administration import DistributedJobsConfig
 from configuration.backup import BackupPluginConfig
 from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
@@ -539,6 +545,30 @@ def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
     return tasks
 
 
+def _build_log_analysis_tasks(*, jobs_config: DistributedJobsConfig) -> list[Task]:
+    """Build the single configurable daily Tsunade log-control task."""
+    if not jobs_config.logs.enabled:
+        return []
+    return [
+        Task(
+            id="tsunade.logs.health_check",
+            name="Check Konoha logs with Katsuyu",
+            command="jobs.logs.health_check",
+            trigger=CronTrigger(jobs_config.logs.schedule),
+            arguments={
+                "sources": list(jobs_config.logs.sources),
+                "window_hours": jobs_config.logs.window_hours,
+                "max_bytes_per_source": jobs_config.logs.max_bytes_per_source,
+                "timeout_seconds": jobs_config.logs.timeout_seconds,
+            },
+            metadata={
+                "managed_by": "tsunade-logs",
+                "schedule": jobs_config.logs.schedule,
+            },
+        )
+    ]
+
+
 def _replace_plugin_tasks(
     scheduler: Scheduler,
     tasks: list[Task],
@@ -766,8 +796,9 @@ def build_production_agent(
         infrastructure=infrastructure_config,
     )
     host_health_observation_mapper = HostHealthObservationMapper()
+    host_health_monitor = HostHealthMonitor(SystemHostProbe())
     host_health_reporter = HostHealthReporter(
-        HostHealthMonitor(SystemHostProbe()),
+        host_health_monitor,
         sinks=(
             mqtt_home_assistant_publisher.publish_host_health,
             lambda snapshot: vision_observation_exporter.export(
@@ -889,12 +920,54 @@ def build_production_agent(
     )
 
     resolved_clock = clock or SystemClock()
+    administration_service: AdministrationService | None = None
+    job_repository: DistributedJobRepository | None = None
+
+    def queue_log_health_job(arguments: dict[str, object], now: datetime) -> object:
+        if administration_service is None:
+            raise RuntimeError("Tsunade administration is unavailable")
+        window_hours = int(arguments["window_hours"])
+        baseline: list[dict[str, object]] = []
+        if job_repository is not None:
+            previous = job_repository.latest_successful_result("logs.health_check")
+            for source in (previous or {}).get("sources", []):
+                if not isinstance(source, dict):
+                    continue
+                for finding in source.get("findings", []):
+                    if isinstance(finding, dict) and len(baseline) < 192:
+                        baseline.append(
+                            {
+                                "source": source.get("source"),
+                                "signature": finding.get("signature"),
+                                "occurrences": finding.get("occurrences"),
+                            }
+                        )
+        return administration_service.create_job(
+            {
+                "protocol_version": 1,
+                "job_id": str(uuid4()),
+                "type": "logs.health_check",
+                "created_at": now.astimezone(UTC).isoformat(),
+                "parameters": {
+                    "sources": arguments["sources"],
+                    "window_started_at": (
+                        now.astimezone(UTC) - timedelta(hours=window_hours)
+                    ).isoformat(),
+                    "window_ended_at": now.astimezone(UTC).isoformat(),
+                    "max_bytes_per_source": arguments["max_bytes_per_source"],
+                    "baseline": baseline,
+                    "incident_id": None,
+                },
+                "timeout": arguments["timeout_seconds"],
+            }
+        )
 
     scheduler = Scheduler(
         clock=resolved_clock,
         executor=DispatcherTaskExecutor(
             dispatcher=dispatcher,
             monitoring_registry=monitoring_registry,
+            job_runner=queue_log_health_job,
         ),
         event_bus=event_bus,
     )
@@ -1460,6 +1533,11 @@ def build_production_agent(
         )
         backup_plugin_config = configuration
         backup_config = updated_config
+        if (
+            administration_service is not None
+            and administration_service.log_source_broker is not None
+        ):
+            administration_service.log_source_broker.config = updated_config
 
     def test_dhcp_plugin() -> ObserverResult:
         servers = [server for server in dhcp_plugin.config.servers if server.enabled]
@@ -1649,7 +1727,6 @@ def build_production_agent(
             ) from error
 
         dhcp_repository = None
-        job_repository = None
         network_repository = None
         worker_token = None
 
@@ -1675,6 +1752,11 @@ def build_production_agent(
                 worker_available_seconds=(
                     jobs_config.wake_on_lan.available_for_seconds
                 ),
+            )
+            _replace_plugin_tasks(
+                scheduler,
+                _build_log_analysis_tasks(jobs_config=jobs_config),
+                plugin_name="tsunade-logs",
             )
 
         if administration_config.network.enabled:
@@ -1826,6 +1908,17 @@ def build_production_agent(
                 ),
             ),
         )
+        incident_repository = TsunadeIncidentRepository(
+            administration_config.jobs.database_path
+        )
+        investigation_executor = InvestigationExecutor(
+            plugins=plugin_repository,
+            host_health_reader=lambda: host_health_monitor.collect().to_dict(),
+        )
+        expertise_service = TsunadeExpertiseService(
+            incidents=incident_repository,
+            investigations=investigation_executor,
+        )
 
         worker_ca_certificate_pem = None
         worker_ca_sha256 = None
@@ -1879,7 +1972,55 @@ def build_production_agent(
             wake_worker_id=wake_worker_id,
             wake_timeout_seconds=wake_timeout_seconds,
             wake_sender=wake_sender,
+            incident_repository=incident_repository,
+            investigation_executor=investigation_executor,
+            log_source_broker=(
+                LogSourceBroker(backup_config, job_repository)
+                if job_repository is not None
+                else None
+            ),
+            expertise_service=expertise_service,
         )
+
+        def dispatch_ai_job(payload: dict[str, object]) -> object | None:
+            if job_repository is None or not job_repository.has_worker_capability(
+                "ai.inference"
+            ):
+                return None
+            return administration_service.create_job(payload)
+
+        expertise_service.set_ai_dispatcher(dispatch_ai_job)
+
+        def handle_tsunade_observation(event: ObservationPublished) -> None:
+            incident = incident_repository.process(event.observation)
+            logs_config = administration_config.jobs.logs
+            if (
+                incident is None
+                or incident.occurrence_count != 1
+                or not logs_config.enabled
+                or incident.node_id not in logs_config.sources
+            ):
+                return
+            current = datetime.now(UTC)
+            administration_service.create_job(
+                {
+                    "protocol_version": 1,
+                    "job_id": str(uuid4()),
+                    "type": "logs.health_check",
+                    "created_at": current.isoformat(),
+                    "parameters": {
+                        "sources": [incident.node_id],
+                        "window_started_at": (current - timedelta(hours=1)).isoformat(),
+                        "window_ended_at": current.isoformat(),
+                        "max_bytes_per_source": logs_config.max_bytes_per_source,
+                        "baseline": [],
+                        "incident_id": str(incident.incident_id),
+                    },
+                    "timeout": logs_config.timeout_seconds,
+                }
+            )
+
+        event_bus.subscribe(ObservationPublished, handle_tsunade_observation)
         if job_repository is not None and backup_config.infra_01.use_katsuyu:
 
             def distributed_backup_factory(

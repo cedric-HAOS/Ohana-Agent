@@ -45,6 +45,10 @@ from administration.models import (
     DistributedWorkerRegistration,
     InfraBackupParameters,
     InfraBackupResult,
+    LogsHealthCheckParameters,
+    LogsHealthCheckResult,
+    LogsInvestigateParameters,
+    LogsInvestigateResult,
     SystemHealthParameters,
     SystemHealthResult,
 )
@@ -65,6 +69,8 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "backup.encrypt": (BackupEncryptParameters, BackupEncryptResult),
     "backup.verify": (BackupVerifyParameters, BackupVerifyResult),
     "backup.infra": (InfraBackupParameters, InfraBackupResult),
+    "logs.health_check": (LogsHealthCheckParameters, LogsHealthCheckResult),
+    "logs.investigate": (LogsInvestigateParameters, LogsInvestigateResult),
     "ai.inference": (AiInferenceParameters, AiInferenceResult),
 }
 PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -208,6 +214,29 @@ class DistributedJobRepository:
         with self._lock, self._connection:
             self._recover_locked(self._now())
             return self._document(self._select_required_locked(job_id))
+
+    def latest_successful_result(self, job_type: str) -> dict[str, Any] | None:
+        """Return one compact validated result for deterministic comparison."""
+        if job_type not in JOB_TYPE_MODELS:
+            raise ValueError(f"unsupported distributed job type: {job_type}")
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT result_json FROM distributed_jobs
+                WHERE type = ? AND status = ? AND result_json IS NOT NULL
+                ORDER BY finished_at DESC LIMIT 1""",
+                (job_type, DistributedJobStatus.SUCCEEDED.value),
+            ).fetchone()
+        return json.loads(row["result_json"]) if row is not None else None
+
+    def has_worker_capability(self, job_type: str) -> bool:
+        """Return whether a previously authenticated worker declared this type."""
+        if job_type not in JOB_TYPE_MODELS:
+            return False
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT capabilities_json FROM distributed_workers"
+            ).fetchall()
+        return any(job_type in json.loads(row["capabilities_json"]) for row in rows)
 
     def cancel(self, job_id: str) -> DistributedJobDocument:
         """Cancel a non-terminal job; repeated cancellation is idempotent."""
@@ -456,7 +485,7 @@ class DistributedJobRepository:
         *,
         worker_id: str,
         attempt: int,
-        job_type: str = "backup.infra",
+        job_type: str | tuple[str, ...] = "backup.infra",
     ) -> DistributedJobDocument:
         """Authorize a bounded transfer for the worker owning a running job."""
         now = self._now()
@@ -464,7 +493,8 @@ class DistributedJobRepository:
             self._recover_locked(now)
             row = self._select_required_locked(job_id)
             self._require_owner(row, worker_id, attempt)
-            if row["type"] != job_type:
+            permitted_types = (job_type,) if isinstance(job_type, str) else job_type
+            if row["type"] not in permitted_types:
                 raise DistributedJobConflictError(
                     f"job type does not permit this transfer: {row['type']}"
                 )

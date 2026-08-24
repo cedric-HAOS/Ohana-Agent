@@ -1,0 +1,207 @@
+"""Tests for Tsunade's deterministic-first, optional-AI expertise cycle."""
+
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from uuid import UUID, uuid4
+
+from administration.expertise import TsunadeExpertiseService
+from administration.incidents import TsunadeIncidentRepository
+from administration.investigations import InvestigationResult
+from observer import Observation, ObservationStatus
+
+
+def _incident(
+    repository: TsunadeIncidentRepository,
+    *,
+    node: str = "infra-01",
+    service: str = "dns",
+    capability: str = "dns.resolve",
+):
+    return repository.process(
+        Observation(
+            node=node,
+            service=service,
+            capability=capability,
+            status=ObservationStatus.UNHEALTHY,
+            success=False,
+            message=f"{service} is unhealthy",
+            source=capability,
+            id=uuid4(),
+            timestamp=datetime(2026, 8, 24, 12, tzinfo=UTC),
+            metadata={"device_id": node},
+        )
+    )
+
+
+class FakeInvestigations:
+    def __init__(self, result: dict[str, object] | None = None) -> None:
+        self.result = result or {}
+        self.operations: list[str] = []
+
+    def execute(self, payload):
+        self.operations.append(payload["operation"])
+        now = datetime(2026, 8, 24, 12, tzinfo=UTC)
+        return InvestigationResult(
+            investigation_id=uuid4(),
+            operation=payload["operation"],
+            status="OK",
+            started_at=now,
+            finished_at=now,
+            duration_seconds=0,
+            result=self.result,
+        )
+
+
+def test_known_procedure_stays_deterministic_when_probe_confirms_failure(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = _incident(repository)
+    assert incident is not None
+    investigations = FakeInvestigations({"success": False})
+    dispatched: list[dict[str, object]] = []
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=investigations,  # type: ignore[arg-type]
+        ai_dispatcher=lambda payload: dispatched.append(payload),
+    )
+    try:
+        outcome = service.diagnose(incident.incident_id)
+        updated = repository.get(incident.incident_id)
+    finally:
+        repository.close()
+
+    assert outcome.status == "DETERMINISTIC"
+    assert outcome.known_procedure is True
+    assert investigations.operations == ["dns.query", "network.ping"]
+    assert dispatched == []
+    assert updated.final_result is None
+    assert updated.events[-2].payload["epistemic_status"] == "confirmed_by_probe"
+    assert updated.events[-1].payload["authorized"] is False
+
+
+def test_unexplained_logs_queue_only_bounded_ai_evidence(tmp_path: Path) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = _incident(
+        repository,
+        node="zwave-01",
+        service="zwave-js",
+        capability="node.health",
+    )
+    assert incident is not None
+    dispatched: list[dict[str, object]] = []
+    job_id = UUID("22222222-2222-4222-8222-222222222222")
+
+    def dispatch(payload):
+        dispatched.append(payload)
+        return SimpleNamespace(job_id=job_id)
+
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=FakeInvestigations(),  # type: ignore[arg-type]
+        ai_dispatcher=dispatch,
+    )
+    try:
+        outcome = service.diagnose(
+            incident.incident_id,
+            log_result={
+                "sources": [
+                    {
+                        "source": "zwave-01",
+                        "findings": [
+                            {
+                                "source": "zwave-01",
+                                "signature": "node <value> transmission failed",
+                                "category": "zwave",
+                                "severity": "error",
+                                "occurrences": 47,
+                                "trend": "increasing",
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        updated = repository.get(incident.incident_id)
+    finally:
+        repository.close()
+
+    assert outcome.status == "AI_QUEUED"
+    assert outcome.ai_job_id == job_id
+    parameters = dispatched[0]["parameters"]
+    assert parameters["incident_id"] == str(incident.incident_id)
+    sources = {entry["source"] for entry in parameters["evidence"]}
+    assert sources == {
+        "architecture.concerned",
+        "shikamaru.observation",
+        "history.relevant",
+        "logs.anomalies",
+    }
+    assert "topology" not in str(parameters).casefold()
+    assert updated.events[-1].payload["decision"] == "pending"
+
+
+def test_ai_hypotheses_remain_proposals_until_tsunade_decides(tmp_path: Path) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = _incident(
+        repository,
+        node="zwave-01",
+        service="zwave-js",
+        capability="node.health",
+    )
+    assert incident is not None
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=FakeInvestigations(),  # type: ignore[arg-type]
+    )
+    try:
+        service.record_ai_result(
+            incident.incident_id,
+            uuid4(),
+            {
+                "analysis_version": 2,
+                "verdict": "KO",
+                "generated_at": "2026-08-24T12:05:00Z",
+                "model_id": "local-model",
+                "model_sha256": "f" * 64,
+                "interpretation": "Communication dégradée avec le nœud ciblé.",
+                "summary": "Une hypothèse principale nécessite confirmation.",
+                "findings": [
+                    {
+                        "code": "ZWAVE.TRANSMISSION",
+                        "evidence": "47 occurrences groupées sur 24 h",
+                        "confidence": 1,
+                    }
+                ],
+                "hypotheses": [
+                    {
+                        "statement": "La route Z-Wave du nœud est dégradée.",
+                        "confidence": 0.87,
+                        "possible_causes": ["route radio instable"],
+                        "supporting_evidence": ["47 échecs ciblés"],
+                        "contradicting_evidence": ["autres nœuds normaux"],
+                    }
+                ],
+                "missing_context": ["table des voisins"],
+                "recommended_investigation": ["Inspecter les voisins du nœud"],
+                "metrics": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 80,
+                    "ttft_ms": 100,
+                    "tokens_per_second": 70,
+                    "duration_seconds": 2,
+                },
+            },
+        )
+        updated = repository.get(incident.incident_id)
+    finally:
+        repository.close()
+
+    assert updated.final_result is None
+    diagnostic = updated.events[-2]
+    proposal = updated.events[-1]
+    assert diagnostic.payload["epistemic_status"] == "hypothesis"
+    assert diagnostic.payload["analysis_version"] == 2
+    assert diagnostic.payload["decision"] == "pending"
+    assert proposal.payload["authorized"] is False

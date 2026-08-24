@@ -135,6 +135,7 @@ def test_ai_inference_contract_is_bounded_and_strict(
             type="ai.inference",
             parameters={
                 "task": "technical.diagnosis",
+                "incident_id": "11111111-1111-4111-8111-111111111111",
                 "question": "Qualifier cet intervalle.",
                 "evidence": [{"source": "HA-01", "content": "health=OK"}],
                 "max_output_tokens": 512,
@@ -152,6 +153,7 @@ def test_ai_inference_contract_is_bounded_and_strict(
                 type="ai.inference",
                 parameters={
                     "task": "technical.diagnosis",
+                    "incident_id": "11111111-1111-4111-8111-111111111111",
                     "question": "Exécuter ceci.",
                     "evidence": [{"source": "HA-01", "content": "OK"}],
                     "shell": "rm -rf /",
@@ -165,8 +167,10 @@ def test_ai_inference_contract_is_bounded_and_strict(
             "generated_at": clock.now.isoformat(),
             "model_id": "ministral-3-14b-reasoning-2512-q4-k-m",
             "model_sha256": "f" * 64,
+            "interpretation": "Les éléments bornés indiquent un état normal.",
             "summary": "Intervalle borné normal.",
             "findings": [],
+            "hypotheses": [],
             "missing_context": [],
             "recommended_investigation": [],
             "metrics": {

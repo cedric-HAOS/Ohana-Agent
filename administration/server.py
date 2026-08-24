@@ -23,13 +23,20 @@ from administration.dhcp import (
     DHCPConfigurationError,
     DnsmasqDHCPRepository,
 )
+from administration.expertise import (
+    TsunadeExpertiseConflictError,
+    TsunadeExpertiseService,
+)
+from administration.incidents import TsunadeIncidentRepository
 from administration.infrastructure import (
     InfrastructureConfigurationRepository,
 )
+from administration.investigations import InvestigationExecutor, InvestigationRequest
 from administration.jobs import (
     DistributedJobConflictError,
     DistributedJobRepository,
 )
+from administration.log_sources import LogSourceBroker
 from administration.models import (
     AdministrationCapabilities,
     DHCPConfiguration,
@@ -82,6 +89,10 @@ class AdministrationService:
         wake_timeout_seconds: int = 180,
         wake_sender: Callable[[], None] | None = None,
         backup_transfer: Any | None = None,
+        incident_repository: TsunadeIncidentRepository | None = None,
+        investigation_executor: InvestigationExecutor | None = None,
+        log_source_broker: LogSourceBroker | None = None,
+        expertise_service: TsunadeExpertiseService | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -100,6 +111,10 @@ class AdministrationService:
         self.wake_timeout_seconds = wake_timeout_seconds
         self.wake_sender = wake_sender
         self.backup_transfer = backup_transfer
+        self.incident_repository = incident_repository
+        self.investigation_executor = investigation_executor
+        self.log_source_broker = log_source_broker
+        self.expertise_service = expertise_service
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -155,6 +170,13 @@ class AdministrationService:
                     "jobs.worker.complete",
                 ]
             )
+
+        if self.incident_repository is not None:
+            operations.extend(["incidents.read", "incidents.records.write"])
+        if self.expertise_service is not None:
+            operations.append("incidents.diagnose")
+        if self.investigation_executor is not None:
+            operations.extend(["investigations.read", "investigations.execute"])
 
         return AdministrationCapabilities(
             agent_version=self.agent_version,
@@ -271,6 +293,65 @@ class AdministrationService:
         if self.plugin_repository is None:
             raise LookupError("Plugin administration is unavailable")
         return self.plugin_repository.run_backup(target_id)
+
+    def list_incidents(self, state: str = "active") -> object:
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        return {
+            "schema_version": 1,
+            "state": state,
+            "incidents": [
+                incident.model_dump(mode="json")
+                for incident in self.incident_repository.list(state=state)
+            ],
+        }
+
+    def read_incident(self, incident_id: str) -> object:
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        return self.incident_repository.get(incident_id)
+
+    def append_incident_record(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        return self.incident_repository.append_record(incident_id, payload)
+
+    def diagnose_incident(self, incident_id: str) -> object:
+        """Run Tsunade's bounded deterministic-first expertise cycle."""
+        if self.expertise_service is None:
+            raise LookupError("Tsunade expertise is unavailable")
+        return self.expertise_service.diagnose(incident_id)
+
+    def list_investigations(self) -> object:
+        if self.investigation_executor is None:
+            raise LookupError("Tsunade investigations are unavailable")
+        return {
+            "schema_version": 1,
+            "operations": [
+                operation.model_dump(mode="json")
+                for operation in self.investigation_executor.catalog()
+            ],
+        }
+
+    def execute_investigation(self, payload: dict[str, Any]) -> object:
+        if self.investigation_executor is None:
+            raise LookupError("Tsunade investigations are unavailable")
+        request = InvestigationRequest.model_validate(payload)
+        result = self.investigation_executor.execute(payload)
+        if request.incident_id is not None:
+            if self.incident_repository is None:
+                raise LookupError("Tsunade incidents are unavailable")
+            self.incident_repository.append_record(
+                request.incident_id,
+                {
+                    "kind": "investigation",
+                    "summary": f"{result.operation}: {result.status}",
+                    "payload": result.model_dump(mode="json"),
+                },
+            )
+        return result
 
     def create_job(self, payload: dict[str, Any]) -> object:
         """Validate and queue one explicitly typed distributed job."""
@@ -393,7 +474,49 @@ class AdministrationService:
         """Record a verified result from the current Katsuyu attempt."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        return self.job_repository.complete(job_id, payload)
+        job = self.job_repository.complete(job_id, payload)
+        if (
+            job.status.value == "SUCCEEDED"
+            and job.result is not None
+            and self.incident_repository is not None
+        ):
+            incident_id = job.parameters.get("incident_id")
+            if job.type == "logs.health_check":
+                self.incident_repository.record_log_health(
+                    job.job_id,
+                    job.result,
+                    incident_id=incident_id,
+                )
+                if incident_id is not None and self.expertise_service is not None:
+                    self.expertise_service.start(
+                        incident_id,
+                        log_result=job.result,
+                    )
+            elif job.type == "logs.investigate" and incident_id is not None:
+                self.incident_repository.record_log_investigation(
+                    job.job_id,
+                    incident_id,
+                    job.result,
+                )
+            elif job.type == "ai.inference" and incident_id is not None:
+                if self.expertise_service is not None:
+                    self.expertise_service.record_ai_result(
+                        incident_id,
+                        job.job_id,
+                        job.result,
+                    )
+        elif (
+            job.type == "ai.inference"
+            and job.parameters.get("incident_id") is not None
+            and self.expertise_service is not None
+            and job.status.value == "FAILED"
+        ):
+            self.expertise_service.record_ai_failure(
+                job.parameters["incident_id"],
+                job.job_id,
+                job.error.message if job.error is not None else "unknown failure",
+            )
+        return job
 
     def authorize_backup_transfer(
         self, job_id: str, worker_id: str, attempt: int
@@ -426,6 +549,18 @@ class AdministrationService:
             size_bytes=size_bytes,
             expected_sha256=sha256,
         )
+
+    def read_log_source(
+        self,
+        job_id: str,
+        worker_id: str,
+        attempt: int,
+        source_id: str,
+    ) -> object:
+        """Return one short-lived job-bound descriptor, never raw journals."""
+        if self.log_source_broker is None:
+            raise LookupError("Distributed log sources are unavailable")
+        return self.log_source_broker.descriptor(job_id, worker_id, attempt, source_id)
 
 
 class AdministrationHTTPServer:
@@ -544,10 +679,32 @@ class AdministrationHTTPServer:
                 path = self.path.split("?", 1)[0]
                 if worker_only:
                     input_suffix = "/input"
+                    log_source_marker = "/log-source/"
                     if path.startswith("/v1/jobs/") and path.endswith(input_suffix):
                         job_id = path[len("/v1/jobs/") : -len(input_suffix)]
                         if job_id and "/" not in job_id:
                             self._download_backup_source(job_id)
+                        else:
+                            self._write_error(
+                                HTTPStatus.NOT_FOUND, "Worker endpoint not found"
+                            )
+                    elif path.startswith("/v1/jobs/") and log_source_marker in path:
+                        remainder = path[len("/v1/jobs/") :]
+                        job_id, separator, source_id = remainder.partition(
+                            log_source_marker
+                        )
+                        if separator and job_id and source_id and "/" not in source_id:
+                            identity = self._worker_transfer_identity()
+                            if identity is not None:
+                                worker_id, attempt = identity
+                                self._execute(
+                                    lambda: service.read_log_source(
+                                        job_id,
+                                        worker_id,
+                                        attempt,
+                                        source_id,
+                                    )
+                                )
                         else:
                             self._write_error(
                                 HTTPStatus.NOT_FOUND, "Worker endpoint not found"
@@ -571,6 +728,12 @@ class AdministrationHTTPServer:
                     "/v1/system/network": service.read_network,
                     "/v1/jobs/workers": service.list_workers,
                     "/v1/jobs/workers/pairings": service.list_worker_pairings,
+                    "/v1/incidents": service.list_incidents,
+                    "/v1/incidents/resolved": partial(
+                        service.list_incidents, "resolved"
+                    ),
+                    "/v1/incidents/all": partial(service.list_incidents, "all"),
+                    "/v1/investigations": service.list_investigations,
                 }
                 operation = routes.get(path)
 
@@ -587,6 +750,11 @@ class AdministrationHTTPServer:
                     job_id = path.removeprefix("/v1/jobs/")
                     if job_id and "/" not in job_id:
                         operation = partial(service.read_job, job_id)
+
+                if operation is None and path.startswith("/v1/incidents/"):
+                    incident_id = path.removeprefix("/v1/incidents/")
+                    if incident_id and "/" not in incident_id:
+                        operation = partial(service.read_incident, incident_id)
 
                 if operation is None:
                     self._write_error(
@@ -715,6 +883,32 @@ class AdministrationHTTPServer:
                     if payload is not None:
                         self._execute(lambda: service.create_job(payload))
                     return
+
+                if path == "/v1/investigations":
+                    payload = self._read_json()
+                    if payload is not None:
+                        self._execute(lambda: service.execute_investigation(payload))
+                    return
+
+                incident_prefix = "/v1/incidents/"
+                record_suffix = "/records"
+                diagnose_suffix = "/diagnose"
+                if path.startswith(incident_prefix) and path.endswith(diagnose_suffix):
+                    incident_id = path[len(incident_prefix) : -len(diagnose_suffix)]
+                    if incident_id and "/" not in incident_id:
+                        self._execute(partial(service.diagnose_incident, incident_id))
+                    return
+                if path.startswith(incident_prefix) and path.endswith(record_suffix):
+                    incident_id = path[len(incident_prefix) : -len(record_suffix)]
+                    if incident_id and "/" not in incident_id:
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.append_incident_record(
+                                    incident_id, payload
+                                )
+                            )
+                        return
 
                 for action, operation in (
                     ("approve", service.approve_worker_pairing),
@@ -970,7 +1164,10 @@ class AdministrationHTTPServer:
                         str(error),
                     )
                     return
-                except DistributedJobConflictError as error:
+                except (
+                    DistributedJobConflictError,
+                    TsunadeExpertiseConflictError,
+                ) as error:
                     self._write_error(
                         HTTPStatus.CONFLICT,
                         str(error),

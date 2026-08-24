@@ -95,6 +95,8 @@ administration:
         "backup.encrypt",
         "backup.verify",
         "backup.infra",
+        "logs.health_check",
+        "logs.investigate",
         "ai.inference",
     )
     assert jobs_database.is_file()

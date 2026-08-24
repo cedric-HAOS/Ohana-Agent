@@ -71,6 +71,12 @@ Katsuyu dispose d'un jeton worker distinct et ne peut ni administrer Agent ni
 exécuter une commande arbitraire. Les jobs expirés sont repris sans traitement
 périodique permanent.
 
+Tsunade applique aux incidents un cycle déterministe avant tout recours à l'IA.
+Le LLM local ne reçoit que le contexte utile et retourne des hypothèses,
+éléments concordants ou contradictoires et investigations proposées. Agent
+conserve ces éléments comme propositions : Tsunade reste responsable de la
+décision et aucune action n'est autorisée automatiquement.
+
 Le worker Windows, ses handlers, ses journaux et son installation sont livrés
 séparément par le projet **Ohana-Katsuyu**. Le paquet Agent n'installe et ne
 lance aucun worker sur INFRA-01.

@@ -6,6 +6,89 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.22.0] — Expertise Tsunade et analyses IA avancées — 2026-08-24
+
+## Ajouté
+
+- Tsunade exécute un cycle déterministe borné sur chaque incident demandé :
+  procédure connue, investigations autorisées, évaluation de leur suffisance,
+  puis recours facultatif à Katsuyu AI uniquement si nécessaire.
+- Le contexte IA est limité à l'architecture concernée, l'observation,
+  l'historique pertinent, les investigations, les anomalies groupées et les
+  réparations connues ; aucun journal brut, historique global ou topologie
+  complète n'est envoyé.
+- Le résultat avancé distingue interprétation, hypothèses, causes possibles,
+  éléments concordants et contradictoires, investigations proposées et niveau
+  de confiance.
+- L'API d'administration authentifiée permet à Vision de demander le diagnostic
+  d'un incident, tandis que les résultats `ai.inference` sont automatiquement
+  rattachés à sa chronologie.
+
+## Sécurité
+
+- Une proposition IA reste marquée comme hypothèse et décision en attente ; elle
+  ne renseigne jamais le résultat final et n'autorise aucune action.
+- Agent ne crée le job IA que si un worker authentifié annonce explicitement la
+  capacité `ai.inference`. L'absence d'IA produit un diagnostic de contexte
+  insuffisant sans bloquer Tsunade.
+- Le contrat d'analyse version 2 conserve la lecture des anciens résultats
+  version 1 afin de permettre un déploiement progressif.
+
+# [1.21.0] — Analyse distribuée des journaux — 2026-08-24
+
+## Ajouté
+
+- Tsunade planifie un contrôle configurable `logs.health_check` et déclenche le
+  même contrôle immédiatement lors d'un nouvel incident HA-01, LINKY-01 ou
+  ZWAVE-01.
+- Le contrat `logs.investigate` borne une investigation complémentaire à une
+  cible, une fenêtre de deux heures, un motif littéral et quatre Mio.
+- Les secrets Home Assistant existants sont remis uniquement au worker qui
+  possède le job courant, via le listener HTTPS Katsuyu ; ils ne sont jamais
+  persistés dans les paramètres du job.
+- Les synthèses Katsuyu ouvrent, mettent à jour ou résolvent des incidents
+  Tsunade sans conserver les journaux bruts sur INFRA-01.
+
+## Sécurité
+
+- Les sources sont limitées à HA-01, LINKY-01 et ZWAVE-01, à quatre Mio par
+  cible et à quarante-huit heures maximum.
+- Agent reste l'unique autorité de création, d'annulation et de validation des
+  jobs ; aucun shell ni URL arbitraire n'est accepté.
+
+# [1.20.0] — Incidents Tsunade et investigations sûres — 2026-08-24
+
+## Ajouté
+
+- Tsunade transforme les observations Shikamaru dégradées ou critiques en
+  incidents persistants, dédupliqués par équipement, service et capacité.
+- Le cycle conserve l'évolution, les références d'observation, le contexte,
+  les récurrences, les investigations, diagnostics, actions proposées et le
+  résultat final sans recopier l'historique complet de Vision.
+- L'API d'administration authentifiée expose un catalogue fini
+  d'investigations déterministes : présence réseau, DNS, MQTT, sauvegarde,
+  mémoire, CPU, disque et état des unités supervisées.
+- Chaque investigation valide son schéma, refuse les paramètres arbitraires,
+  applique un timeout, journalise son exécution et retourne un résultat
+  structuré. Aucun shell ni lecteur générique de journaux n'est exposé.
+
+## Corrigé
+
+- Agent exclut explicitement du flux Katsuyu les secrets TLS root `ca.key` et
+  `ca.srl`, sans modifier leurs permissions, au lieu d'interrompre silencieusement
+  le tar au premier fichier illisible.
+- La préparation refuse une source illisible ou l'absence de l'instantané
+  `vision.db`; le descripteur embarque l'inventaire obligatoire de restauration.
+- L'artefact distant reprend le suffixe public historique `.tar.age`, déjà pris
+  en charge par Installer, tout en conservant la compression gzip interne.
+
+# [1.19.0] — Inférence Katsuyu structurée — 2026-08-24
+
+## Ajouté
+
+- Le contrat de jobs accepte `ai.inference` avec des paramètres bornés et un
+  résultat structuré, sans rendre le LLM obligatoire pour les autres capacités.
+
 # [1.18.1] — Instantané SQLite compact et erreurs fiables — 2026-08-21
 
 ## Corrigé

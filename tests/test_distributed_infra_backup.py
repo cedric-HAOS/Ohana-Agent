@@ -15,6 +15,7 @@ import pytest
 from administration.jobs import DistributedJobConflictError, DistributedJobRepository
 from plugins.backup.backup_config import BackupConfig, InfraBackupConfig
 from plugins.backup.distributed_infra_backup import DistributedInfraBackupTransfer
+from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
 from plugins.backup.rclone_uploader import UploadReceipt
 
 
@@ -118,6 +119,9 @@ def test_artifact_is_authorized_by_job_owner_and_streamed_to_remote(
         )
         assert receipt["sha256"] == sha256
         assert receipt["deleted_remote_backups"] == 2
+        assert any(
+            path.endswith("/20260820T120000Z.tar.age") for path in uploader.objects
+        )
         assert any(path.endswith("manifest.json") for path in uploader.objects)
     finally:
         repository.close()
@@ -130,6 +134,11 @@ def test_source_archive_is_uncompressed_and_contains_only_allowlisted_sources(
     source = tmp_path / "etc" / "ohana-agent"
     source.mkdir(parents=True)
     (source / "agent.yaml").write_text("version: 1\n", encoding="utf-8")
+    database = tmp_path / "vision.db"
+    connection = sqlite3.connect(database)
+    connection.execute("CREATE TABLE observations(value TEXT)")
+    connection.commit()
+    connection.close()
     temporary = tmp_path / "tmpfs"
     config = BackupConfig(
         temporary_directory=str(temporary),
@@ -143,7 +152,7 @@ def test_source_archive_is_uncompressed_and_contains_only_allowlisted_sources(
         config,
         repository,
         sources=(source,),
-        vision_database=tmp_path / "missing.db",
+        vision_database=database,
         uploader=FakeUploader(),  # type: ignore[arg-type]
         version_resolver=lambda _name: "1.0.0",
     )
@@ -159,7 +168,52 @@ def test_source_archive_is_uncompressed_and_contains_only_allowlisted_sources(
     with tarfile.open(fileobj=output, mode="r:") as archive:
         names = archive.getnames()
     assert "ohana-backup/descriptor.json" in names
+    assert "var/lib/ohana-vision/vision.db" in names
     assert any(name.endswith("agent.yaml") for name in names)
+
+
+def test_root_only_worker_ca_material_is_excluded() -> None:
+    ca_key = tarfile.TarInfo("etc/ohana-agent/tls/ca.key")
+    ca_key.type = tarfile.REGTYPE
+    ca_serial = tarfile.TarInfo("etc/ohana-agent/tls/ca.srl")
+    ca_serial.type = tarfile.REGTYPE
+    worker_key = tarfile.TarInfo("etc/ohana-agent/tls/worker.key")
+    worker_key.type = tarfile.REGTYPE
+
+    assert InfraBackupCoordinator._regular_member(ca_key) is None
+    assert InfraBackupCoordinator._regular_member(ca_serial) is None
+    assert InfraBackupCoordinator._regular_member(worker_key) is worker_key
+
+
+def test_source_archive_requires_vision_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _claimed_repository(tmp_path)
+    source = tmp_path / "etc" / "ohana-agent"
+    source.mkdir(parents=True)
+    temporary = tmp_path / "tmpfs"
+    monkeypatch.setattr(
+        "plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
+        lambda _path: None,
+    )
+    transfer = DistributedInfraBackupTransfer(
+        BackupConfig(
+            temporary_directory=str(temporary),
+            infra_01=InfraBackupConfig(enabled=True),
+        ),
+        repository,
+        sources=(source,),
+        vision_database=tmp_path / "missing.db",
+        uploader=FakeUploader(),  # type: ignore[arg-type]
+        version_resolver=lambda _name: "1.0.0",
+    )
+    try:
+        with pytest.raises(RuntimeError, match="Missing INFRA-01 backup source"):
+            transfer.stream_source(
+                "11111111-1111-4111-8111-111111111111", "bubule", 1, io.BytesIO()
+            )
+    finally:
+        repository.close()
 
 
 def test_source_snapshot_fits_when_database_contains_many_free_pages(

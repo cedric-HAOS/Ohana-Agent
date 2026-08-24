@@ -1,6 +1,7 @@
 """Configuration of the authenticated Agent administration API."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, IPvAnyAddress, field_validator, model_validator
 
@@ -88,6 +89,30 @@ class WakeOnLanConfig(Config):
         return self
 
 
+class DistributedLogAnalysisConfig(Config):
+    """Bounded periodic Tsunade log-control policy."""
+
+    enabled: bool = False
+    schedule: str = "0 5 * * *"
+    sources: tuple[Literal["ha-01", "linky-01", "zwave-01"], ...] = (
+        "ha-01",
+        "linky-01",
+        "zwave-01",
+    )
+    window_hours: int = Field(default=24, ge=1, le=48)
+    max_bytes_per_source: int = Field(
+        default=2 * 1024 * 1024, ge=1024, le=4 * 1024 * 1024
+    )
+    timeout_seconds: int = Field(default=900, ge=60, le=3600)
+
+    @field_validator("sources")
+    @classmethod
+    def validate_sources(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value or len(value) > 3 or len(set(value)) != len(value):
+            raise ValueError("log sources must contain one to three unique targets")
+        return value
+
+
 class DistributedJobsConfig(Config):
     """Durable Tsunade-to-Katsuyu job protocol configuration."""
 
@@ -102,12 +127,17 @@ class DistributedJobsConfig(Config):
         default_factory=DistributedWorkerTLSConfig
     )
     wake_on_lan: WakeOnLanConfig = Field(default_factory=WakeOnLanConfig)
+    logs: DistributedLogAnalysisConfig = Field(
+        default_factory=DistributedLogAnalysisConfig
+    )
 
     @model_validator(mode="after")
     def validate_worker_transport(self) -> "DistributedJobsConfig":
         """Do not expose a worker listener when the job protocol is disabled."""
         if self.worker_tls.enabled and not self.enabled:
             raise ValueError("worker TLS requires distributed jobs to be enabled")
+        if self.logs.enabled and not self.enabled:
+            raise ValueError("distributed log analysis requires jobs to be enabled")
         return self
 
 

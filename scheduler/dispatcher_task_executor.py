@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -38,6 +39,7 @@ class DispatcherTaskExecutor:
 
     dispatcher: DispatcherLike
     monitoring_registry: MonitoringScheduleRegistry | None = None
+    job_runner: Callable[[dict[str, object], datetime], object] | None = None
     _suspended_tasks: set[str] = field(default_factory=set, init=False, repr=False)
 
     def execute(self, task: Task, now: datetime) -> TaskExecutionResult:
@@ -70,7 +72,12 @@ class DispatcherTaskExecutor:
             self._suspended_tasks.discard(task.id)
 
         try:
-            self.dispatcher.execute(task.command, task.arguments)
+            if task.command == "jobs.logs.health_check":
+                if self.job_runner is None:
+                    raise RuntimeError("distributed log job runner is unavailable")
+                self.job_runner(task.arguments, now)
+            else:
+                self.dispatcher.execute(task.command, task.arguments)
         except Exception as exc:
             task.mark_failed(now, exc)
 

@@ -28,10 +28,16 @@ La sauvegarde contient :
 - `/etc/chrony/chrony.conf` ;
 - un instantané cohérent de `/var/lib/ohana-vision/vision.db`.
 
+Les secrets de l'autorité TLS locale `tls/ca.key` et `tls/ca.srl`, réservés à
+`root`, sont volontairement exclus du flux vers le worker. Une restauration
+conserve les certificats serveur utiles mais devra recréer l'autorité locale et
+réappairer les workers si cette autorité doit être renouvelée.
+
 Avec `use_katsuyu: true`, Agent crée un job `backup.infra` et diffuse à son
 propriétaire un tar non compressé sur le listener HTTPS Katsuyu. Katsuyu
 compresse, chiffre avec le destinataire public `age`, calcule l'intégrité puis
-renvoie l'artefact. Agent transmet ce retour directement à `rclone rcat` sans
+valide la fin du tar, son descripteur et l'inventaire obligatoire avant de
+renvoyer l'artefact. Agent transmet ce retour directement à `rclone rcat` sans
 le stocker et publie le manifeste JSON en dernier. Ce manifeste permet à
 Ohana-Installer de sélectionner uniquement une sauvegarde complètement publiée
 et de réinstaller la composition Agent/Vision correspondante. Un second

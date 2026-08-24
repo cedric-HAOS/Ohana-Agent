@@ -133,7 +133,14 @@ Deux extensions conservent les mêmes règles de contrôle :
 - `ai.inference` reçoit une question et de courts extraits de preuves identifiés.
   L'ensemble est limité à 48 000 caractères et le résultat strict contient un
   verdict `OK`, `KO` ou `INSUFFICIENT_CONTEXT`, des constats sourcés, le contexte
-  manquant et l'investigation recommandée.
+  manquant et l'investigation recommandée. Le contrat avancé version 2 ajoute
+  une interprétation et des hypothèses explicitement incertaines avec causes
+  possibles, éléments concordants et contradictoires et confiance calibrée ;
+  Agent continue d'accepter le résultat historique version 1.
+- `logs.health_check` limite les cibles à HA-01, LINKY-01 et ZWAVE-01, la
+  fenêtre à quarante-huit heures et le volume à quatre Mio par cible ;
+- `logs.investigate` exige un incident, une cible, un motif littéral et une
+  fenêtre maximale de deux heures.
 
 Les trois résultats de sauvegarde publient SHA-256 et tailles. Une divergence
 de vérification est un succès technique avec `valid: false`, afin que Tsunade
@@ -144,8 +151,10 @@ ce qui évite de refaire une opération terminée après une perte de connexion.
 Tous les chemins sont confinés dans un espace de travail configuré sur Bubule.
 Les chemins absolus, `..`, les liens symboliques et les fichiers non réguliers
 sont refusés. Aucun job ne transporte de commande, d'URL, de clé privée ou de
-chemin d'exécutable. La collecte directe et ciblée de journaux reste confiée à
-un handler dédié. `ai.inference` ne collecte rien et ne crée aucune
+chemin d'exécutable. Les paramètres de journaux ne contiennent ni URL ni jeton :
+Agent remet au seul worker propriétaire un descripteur éphémère sur le listener
+HTTPS, puis Katsuyu contacte directement la cible HAOS. `ai.inference` ne
+collecte rien et ne crée aucune
 centralisation permanente : il traite seulement les extraits bornés joints au
 job, soumis à la rétention normale du magasin de jobs.
 
@@ -176,6 +185,21 @@ journal sont purgés après 30 jours. Ces limites sont configurables. Le protoco
 ses transitions et ses décisions restent déterministes. Un LLM optionnel peut
 seulement produire le résultat borné d'un job `ai.inference` ; l'absence d'un
 worker doté de cette capacité laisse le job en attente sans affecter Agent.
+
+### Cycle d'expertise Tsunade
+
+Pour un incident actif, Tsunade cherche d'abord une procédure connue et exécute
+uniquement les investigations du catalogue Agent. Un échec concret suffit à
+produire un diagnostic déterministe et une proposition non autorisée. Si ces
+preuves ne suffisent pas, Tsunade demande `ai.inference` seulement lorsqu'un
+worker authentifié annonce cette capacité.
+
+Le job IA reçoit au maximum huit fragments : architecture strictement concernée,
+observation Shikamaru, historique pertinent, résultats des investigations,
+anomalies de journaux déjà groupées et réparations connues. Il ne reçoit ni
+topologie complète, ni historique global, ni journaux bruts. Son résultat est
+conservé comme hypothèse avec une décision Tsunade en attente ; il ne devient ni
+fait, ni résultat final, ni autorisation d'action.
 
 ### Worker Katsuyu minimal
 
@@ -344,6 +368,58 @@ Lorsqu'un job compatible arrive après expiration de la fraîcheur du worker,
 Agent émet un paquet magique, expose le worker en `WAKING`, puis conserve
 `woken_by_ohana: true` lorsque Katsuyu s'enregistre. Une arrivée spontanée reste
 `woken_by_ohana: false`. Cette version n'implémente aucune extinction de Bubule.
+
+## Incidents Tsunade
+
+Tsunade réutilise directement l'événement `ObservationPublished` déjà produit
+par Shikamaru. Il ne crée ni nouveau bus ni copie permanente de l'historique
+Vision. La base de contrôle existante conserve seulement l'état courant par
+capacité, les incidents et les références nécessaires à leur évolution.
+
+Un incident est ouvert sur `degraded` ou `unhealthy`, mis à jour sans être
+recréé pour les observations suivantes, escaladé de dégradé à critique et
+résolu uniquement par une observation `healthy`. Les états `unknown` et
+`suspended` ne provoquent ni incident ni résolution artificielle. Les routes
+authentifiées existantes exposent :
+
+- `GET /v1/incidents`, `/resolved` ou `/all` ;
+- `GET /v1/incidents/{incident_id}` pour l'évolution bornée ;
+- `POST /v1/incidents/{incident_id}/records` pour une investigation, un
+  diagnostic, une action proposée ou un résultat final.
+
+Un enregistrement d'action documente une décision mais ne l'exécute jamais.
+
+## Investigations déterministes
+
+`GET /v1/investigations` retourne le catalogue réellement disponible et
+`POST /v1/investigations` exécute une opération avec le jeton d'administration.
+La première liste réutilise les contrôles et métriques déjà présents :
+
+- `network.ping`, `dns.query`, `mqtt.status` ;
+- `backup.status` ;
+- `memory.status`, `cpu.status`, `disk.usage`, `service.status`.
+
+Ces opérations travaillent exclusivement sur la configuration Agent existante
+et n'acceptent encore aucun paramètre de cible. Chaque appel a un timeout borné,
+un résultat structuré et une trace dans le journal Agent. `service.logs` reste
+absent tant qu'un lecteur strictement borné, filtré et audité n'a pas été ajouté.
+Un LLM peut recommander une opération, mais seul Agent peut accepter cet appel.
+
+## Contrôle distribué des journaux
+
+`administration.jobs.logs` active une tâche Cron quotidienne, désactivée par
+défaut. La valeur recommandée `0 5 * * *` produit un contrôle par vingt-quatre
+heures. La tâche réutilise la file distribuée et Wake-on-LAN ; elle n'ajoute ni
+daemon d'analyse ni indexation sur INFRA-01. Un nouvel incident Shikamaru sur
+l'une des trois cibles déclenche aussi un contrôle immédiat d'une heure.
+
+Katsuyu utilise le jeton Home Assistant déjà configuré pour les sauvegardes. Ce
+jeton doit appartenir à un administrateur pour que le proxy WebSocket
+`supervisor/api` autorise `/core/logs/latest`, `/addons` et les logs des add-ons
+ciblés. `/api/error_log` sert de repli explicite lorsque Supervisor est
+indisponible. Seuls résultats, compteurs, tendances et corrélations temporelles
+sont conservés dans le job et l'incident ; une corrélation n'est jamais déclarée
+comme causalité.
 
 Le job `backup.infra` étend le même listener HTTPS avec deux flux liés au job :
 `GET /v1/jobs/{job_id}/input` et `POST /v1/jobs/{job_id}/artifact`. Le jeton

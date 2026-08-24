@@ -29,6 +29,19 @@ INFRA_SOURCES = (
     Path("/etc/chrony/chrony.conf"),
 )
 VISION_DATABASE = Path("/var/lib/ohana-vision/vision.db")
+INFRA_EXCLUDED_MEMBERS = frozenset(
+    {
+        "etc/ohana-agent/tls/ca.key",
+        "etc/ohana-agent/tls/ca.srl",
+    }
+)
+INFRA_REQUIRED_MEMBERS = (
+    "etc/ohana-agent",
+    "etc/ohana-vision",
+    "etc/dnsmasq.d",
+    "etc/chrony/chrony.conf",
+    "var/lib/ohana-vision/vision.db",
+)
 VISION_VERSION_URL = "http://127.0.0.1:8000/api/version"
 VISION_VERSION_TIMEOUT_SECONDS = 5.0
 MINIMUM_ARCHIVE_HEADROOM_BYTES = 16 * 1024 * 1024
@@ -319,6 +332,9 @@ class InfraBackupCoordinator:
         for source in self._sources:
             candidates = source.rglob("*") if source.is_dir() else (source,)
             for candidate in candidates:
+                archive_name = candidate.as_posix().lstrip("/")
+                if archive_name in INFRA_EXCLUDED_MEMBERS:
+                    continue
                 try:
                     if candidate.is_file() and not candidate.is_symlink():
                         total += candidate.stat().st_size
@@ -328,6 +344,8 @@ class InfraBackupCoordinator:
 
     @staticmethod
     def _regular_member(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        if member.name.rstrip("/") in INFRA_EXCLUDED_MEMBERS:
+            return None
         if member.isfile() or member.isdir():
             return member
         return None
@@ -380,6 +398,7 @@ class InfraBackupCoordinator:
             "platform_version": None,
             "agent_version": agent_version,
             "vision_version": vision_version,
+            "contents": list(INFRA_REQUIRED_MEMBERS),
         }
         return (
             json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"

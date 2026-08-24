@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -14,6 +15,9 @@ from administration import (
     AdministrationService,
     InfrastructureConfigurationRepository,
 )
+from administration.expertise import TsunadeExpertiseConflictError
+from administration.incidents import TsunadeIncidentRepository
+from observer import Observation, ObservationStatus
 
 INFRASTRUCTURE_YAML = """\
 infrastructure:
@@ -123,6 +127,87 @@ def test_administration_server_declares_available_operations(
         "infrastructure.read",
         "infrastructure.write",
     ]
+
+
+def test_administration_server_exposes_authenticated_tsunade_incidents(
+    tmp_path: Path,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = incidents.process(
+        Observation(
+            node="infra-01",
+            service="dns",
+            capability="dns.resolve",
+            status=ObservationStatus.DEGRADED,
+            success=False,
+            message="DNS degraded",
+            source="dns.resolve",
+            timestamp=datetime(2026, 8, 24, 12, tzinfo=UTC),
+        )
+    )
+    assert incident is not None
+
+    class FakeExpertise:
+        calls = 0
+
+        def diagnose(self, incident_id):
+            self.calls += 1
+            if self.calls > 1:
+                raise TsunadeExpertiseConflictError("expertise already queued")
+            return {
+                "incident_id": str(incident_id),
+                "status": "AI_QUEUED",
+                "known_procedure": False,
+                "diagnosis": "Deterministic evidence is insufficient.",
+                "facts": [],
+                "proposals": [],
+                "ai_job_id": "22222222-2222-4222-8222-222222222222",
+            }
+
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            incident_repository=incidents,
+            expertise_service=FakeExpertise(),  # type: ignore[arg-type]
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        collection = request_json(server, "/v1/incidents")
+        assert collection["incidents"][0]["incident_id"] == str(  # type: ignore[index]
+            incident.incident_id
+        )
+        detailed = request_json(server, f"/v1/incidents/{incident.incident_id}")
+        assert detailed["events"][0]["kind"] == "opened"  # type: ignore[index]
+        recorded = request_json(
+            server,
+            f"/v1/incidents/{incident.incident_id}/records",
+            method="POST",
+            payload={"kind": "diagnostic", "summary": "Resolver unavailable"},
+        )
+        assert recorded["events"][-1]["kind"] == "diagnostic"  # type: ignore[index]
+        diagnosis = request_json(
+            server,
+            f"/v1/incidents/{incident.incident_id}/diagnose",
+            method="POST",
+        )
+        assert diagnosis["status"] == "AI_QUEUED"
+        with pytest.raises(HTTPError) as conflict:
+            request_json(
+                server,
+                f"/v1/incidents/{incident.incident_id}/diagnose",
+                method="POST",
+            )
+        assert conflict.value.code == 409
+    finally:
+        server.stop()
+        incidents.close()
 
 
 def test_administration_server_updates_infrastructure(

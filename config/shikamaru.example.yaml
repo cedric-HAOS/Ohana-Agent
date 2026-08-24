@@ -53,6 +53,16 @@ administration:
     waiting_worker_after_seconds: 30
     retention_days: 30
     max_active_jobs: 1000
+    logs:
+      enabled: false
+      schedule: "0 5 * * *"
+      sources:
+        - ha-01
+        - linky-01
+        - zwave-01
+      window_hours: 24
+      max_bytes_per_source: 2097152
+      timeout_seconds: 900
     wake_on_lan:
       enabled: false
       worker_id: katsuyu-bubule

@@ -20,6 +20,7 @@ from administration.models import DistributedJobStatus
 from plugins.backup.backup_config import BackupConfig
 from plugins.backup.backup_coordinator import BackupExecutionError
 from plugins.backup.infra_backup_coordinator import (
+    INFRA_EXCLUDED_MEMBERS,
     INFRA_SOURCES,
     VISION_DATABASE,
     InfraBackupCoordinator,
@@ -85,9 +86,14 @@ class DistributedInfraBackupTransfer:
         with tempfile.TemporaryDirectory(
             prefix="infra-source-", dir=temporary_root
         ) as directory:
+            self._validate_source_inventory()
             runtime = Path(directory)
             snapshot = runtime / "vision.db"
             self._snapshot_vision(snapshot)
+            if not snapshot.is_file():
+                raise BackupExecutionError(
+                    "snapshot", "The Vision database snapshot was not created."
+                )
             current = datetime.strptime(backup_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
             descriptor = runtime / "descriptor.json"
             descriptor.write_bytes(
@@ -145,7 +151,9 @@ class DistributedInfraBackupTransfer:
         ):
             raise ValueError("distributed backup artifact SHA-256 is invalid")
         backup_id = str(job.parameters["backup_id"])
-        filename = f"{backup_id}.tar.gz.age"
+        # Installer's existing restore contract identifies INFRA archives by this
+        # stable public suffix; the encrypted payload remains a gzip-compressed tar.
+        filename = f"{backup_id}.tar.age"
         remote_directory = f"{self.config.rclone_remote}/infra-01/{backup_id}"
         receipt = self.uploader.upload(
             stream,
@@ -194,6 +202,7 @@ class DistributedInfraBackupTransfer:
                 "Missing INFRA-01 backup source(s): "
                 + ", ".join(str(path) for path in missing),
             )
+        self._validate_source_inventory()
         recipient = self.local._age_recipient()
         temporary_root = Path(self.config.temporary_directory)
         RcloneStreamUploader._require_tmpfs(temporary_root)
@@ -201,6 +210,39 @@ class DistributedInfraBackupTransfer:
         self._ensure_snapshot_capacity(temporary_root)
         self.uploader.check_remote()
         return recipient
+
+    def _validate_source_inventory(self) -> None:
+        """Fail before streaming when one required source cannot be read completely."""
+
+        if not self.vision_database.is_file():
+            raise BackupExecutionError(
+                "inventory",
+                f"Missing INFRA-01 backup source: {self.vision_database}",
+            )
+        unreadable: list[str] = []
+        for source in self.sources:
+            candidates = source.rglob("*") if source.is_dir() else (source,)
+            try:
+                for candidate in candidates:
+                    archive_name = candidate.as_posix().lstrip("/")
+                    if (
+                        archive_name in INFRA_EXCLUDED_MEMBERS
+                        or candidate.is_symlink()
+                        or not candidate.is_file()
+                    ):
+                        continue
+                    try:
+                        with candidate.open("rb") as stream:
+                            stream.read(1)
+                    except OSError:
+                        unreadable.append(str(candidate))
+            except OSError:
+                unreadable.append(str(source))
+        if unreadable:
+            raise BackupExecutionError(
+                "inventory",
+                "Unreadable INFRA-01 backup source(s): " + ", ".join(unreadable),
+            )
 
     def _ensure_snapshot_capacity(self, temporary_root: Path) -> None:
         required = self.local._compact_database_size() + 16 * 1024 * 1024

@@ -6,6 +6,14 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.24.1] — Accès aux journaux HAOS — 2026-08-24
+
+## Corrigé
+
+- Le descripteur temporaire remis à Katsuyu utilise désormais le proxy HTTP
+  Home Assistant `/api/hassio/core/logs/latest` comme repli borné, au lieu de
+  l'ancienne route `/api/error_log` qui peut répondre 404.
+
 # [1.24.0] — Shizune et robustesse des sauvegardes — 2026-08-24
 
 ## Ajouté

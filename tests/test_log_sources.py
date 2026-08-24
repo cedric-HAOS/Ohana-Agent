@@ -61,7 +61,10 @@ def test_log_source_secret_is_job_bound_and_never_persisted_in_parameters(
             str(job_id), "katsuyu-bubule", claimed.attempt, "ha-01"
         )
 
-        assert descriptor["url"] == "http://ha-01.ohana.lan:8123/api/error_log"
+        assert descriptor["url"] == (
+            "http://ha-01.ohana.lan:8123/api/hassio/"
+            "core/logs/latest?lines=10000&no_colors=1"
+        )
         assert descriptor["access_token"] == "home-assistant-secret"
         stored_parameters = repository.get(str(job_id)).parameters
         assert "home-assistant-secret" not in str(stored_parameters)

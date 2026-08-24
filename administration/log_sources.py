@@ -63,7 +63,10 @@ class LogSourceBroker:
             "schema_version": 1,
             "source": source_id,
             "base_url": target.url.rstrip("/"),
-            "url": f"{target.url.rstrip('/')}/api/error_log",
+            "url": (
+                f"{target.url.rstrip('/')}/api/hassio/core/logs/latest"
+                "?lines=10000&no_colors=1"
+            ),
             "access_token": token,
             "verify_tls": target.verify_tls,
             "timeout_seconds": min(max(float(target.timeout), 5.0), 60.0),

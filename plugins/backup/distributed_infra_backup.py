@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import shutil
 import sqlite3
 import tarfile
@@ -28,6 +29,8 @@ from plugins.backup.infra_backup_coordinator import (
 )
 from plugins.backup.rclone_uploader import RcloneStreamUploader
 
+LOGGER = logging.getLogger(__name__)
+
 
 class DistributedInfraBackupTransfer:
     """Serve one allowlisted source tar and accept its encrypted job artifact."""
@@ -42,12 +45,18 @@ class DistributedInfraBackupTransfer:
         uploader: RcloneStreamUploader | None = None,
         version_resolver: Any | None = None,
         vision_version_reader: Any | None = None,
+        snapshot_attempts: int = 3,
+        snapshot_retry_delay_seconds: float = 1.0,
+        wait: Callable[[float], None] = sleep,
     ) -> None:
         self.config = config
         self.repository = repository
         self.sources = sources
         self.vision_database = vision_database
         self.uploader = uploader or RcloneStreamUploader(config)
+        self.snapshot_attempts = max(1, snapshot_attempts)
+        self.snapshot_retry_delay_seconds = max(0.0, snapshot_retry_delay_seconds)
+        self.wait = wait
         arguments: dict[str, Any] = {
             "sources": sources,
             "vision_database": vision_database,
@@ -261,18 +270,36 @@ class DistributedInfraBackupTransfer:
     def _snapshot_vision(self, destination: Path) -> None:
         if not self.vision_database.is_file():
             return
-        source = sqlite3.connect(
-            f"file:{self.vision_database.as_posix()}?mode=ro", uri=True
-        )
-        try:
-            source.execute("VACUUM INTO ?", (destination.as_posix(),))
-        except sqlite3.Error as error:
-            stage = "storage" if "full" in str(error).lower() else "snapshot"
-            raise BackupExecutionError(
-                stage, f"Unable to create the compact Vision snapshot: {error}"
-            ) from error
-        finally:
-            source.close()
+        for attempt in range(1, self.snapshot_attempts + 1):
+            destination.unlink(missing_ok=True)
+            source = sqlite3.connect(
+                f"file:{self.vision_database.as_posix()}?mode=ro",
+                uri=True,
+                timeout=10,
+            )
+            try:
+                source.execute("PRAGMA busy_timeout=10000")
+                source.execute("VACUUM INTO ?", (destination.as_posix(),))
+                return
+            except sqlite3.Error as error:
+                detail = str(error).lower()
+                retryable = "locked" in detail or "busy" in detail
+                if retryable and attempt < self.snapshot_attempts:
+                    LOGGER.warning(
+                        "Vision snapshot attempt %s/%s was busy; retrying",
+                        attempt,
+                        self.snapshot_attempts,
+                    )
+                    self.wait(self.snapshot_retry_delay_seconds)
+                    continue
+                stage = "storage" if "full" in detail else "snapshot"
+                raise BackupExecutionError(
+                    stage,
+                    f"Impossible de créer le snapshot compact de Vision : {error}",
+                ) from error
+            finally:
+                source.close()
+        raise AssertionError("unreachable Vision snapshot retry state")
 
 
 class DistributedInfraBackupCoordinator:

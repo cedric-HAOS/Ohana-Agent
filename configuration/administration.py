@@ -55,6 +55,37 @@ class DistributedWorkerTLSConfig(Config):
     ca_certificate_file: Path = Path("/etc/ohana-agent/tls/ca.crt")
 
 
+class APNsConfig(Config):
+    """Optional direct Apple Push Notification provider configuration."""
+
+    enabled: bool = False
+    environment: Literal["development", "production"] = "production"
+    team_id: str | None = Field(default=None, pattern=r"^[A-Z0-9]{10}$")
+    key_id: str | None = Field(default=None, pattern=r"^[A-Z0-9]{10}$")
+    bundle_id: str = Field(default="fr.ohana.Shizune", min_length=3, max_length=255)
+    private_key_file: Path = Path("/etc/ohana-agent/shizune-apns.p8")
+    timeout_seconds: float = Field(default=5.0, ge=1.0, le=15.0)
+
+    @model_validator(mode="after")
+    def validate_enabled_provider(self) -> "APNsConfig":
+        if self.enabled and (self.team_id is None or self.key_id is None):
+            raise ValueError("enabled APNs requires team_id and key_id")
+        return self
+
+
+class CompanionTLSConfig(Config):
+    """Limited HTTPS listener used only by paired personal companions."""
+
+    enabled: bool = False
+    host: IPvAnyAddress = IPvAnyAddress("0.0.0.0")
+    port: int = Field(default=8767, ge=1, le=65535)
+    certificate_file: Path = Path("/etc/ohana-agent/tls/worker.crt")
+    private_key_file: Path = Path("/etc/ohana-agent/tls/worker.key")
+    ca_certificate_file: Path = Path("/etc/ohana-agent/tls/ca.crt")
+    credential_ttl_days: int = Field(default=90, ge=1, le=365)
+    push: APNsConfig = Field(default_factory=APNsConfig)
+
+
 class WakeOnLanConfig(Config):
     """Optional, bounded Wake-on-LAN policy for one Katsuyu host."""
 
@@ -153,3 +184,4 @@ class AdministrationConfig(Config):
         default_factory=NetworkAdministrationConfig
     )
     jobs: DistributedJobsConfig = Field(default_factory=DistributedJobsConfig)
+    companion: CompanionTLSConfig = Field(default_factory=CompanionTLSConfig)

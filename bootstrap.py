@@ -11,6 +11,7 @@ from administration import (
     AdministrationHTTPServer,
     AdministrationServerGroup,
     AdministrationService,
+    CompanionRepository,
     DistributedJobRepository,
     DnsmasqDHCPRepository,
     InfrastructureConfigurationRepository,
@@ -23,6 +24,7 @@ from administration.expertise import TsunadeExpertiseService
 from administration.incidents import TsunadeIncidentRepository
 from administration.investigations import InvestigationExecutor
 from administration.log_sources import LogSourceBroker
+from administration.notifications import APNsNotificationPublisher
 from administration.wake_on_lan import WakeOnLanSender
 from builder import (
     BackupConfigurationBuilder,
@@ -1883,6 +1885,30 @@ def build_production_agent(
         incident_repository = TsunadeIncidentRepository(
             administration_config.jobs.database_path
         )
+        companion_repository = None
+        companion_tls_config = None
+        companion_ca_sha256 = None
+        companion_ca_certificate_pem = None
+        apns_notification_publisher = None
+        if administration_config.companion.enabled:
+            companion_tls_config = administration_config.companion
+            try:
+                companion_ca_certificate_pem, companion_ca_sha256 = certificate_sha256(
+                    companion_tls_config.ca_certificate_file
+                )
+            except (OSError, UnicodeError, ValueError) as error:
+                raise ValueError(
+                    "Unable to read the companion TLS CA certificate from "
+                    f"{companion_tls_config.ca_certificate_file}."
+                ) from error
+            companion_repository = CompanionRepository(
+                administration_config.jobs.database_path,
+                credential_ttl_days=companion_tls_config.credential_ttl_days,
+            )
+            apns_notification_publisher = APNsNotificationPublisher(
+                config=companion_tls_config.push,
+                companions=companion_repository,
+            )
         investigation_executor = InvestigationExecutor(
             plugins=plugin_repository,
             host_health_reader=lambda: host_health_monitor.collect().to_dict(),
@@ -1961,6 +1987,14 @@ def build_production_agent(
             log_window_hours=administration_config.jobs.logs.window_hours,
             log_max_bytes=administration_config.jobs.logs.max_bytes_per_source,
             log_timeout_seconds=administration_config.jobs.logs.timeout_seconds,
+            companion_repository=companion_repository,
+            companion_ca_sha256=companion_ca_sha256,
+            companion_ca_certificate_pem=companion_ca_certificate_pem,
+            notification_publisher=(
+                apns_notification_publisher.publish
+                if apns_notification_publisher is not None
+                else None
+            ),
         )
 
         def dispatch_ai_job(payload: dict[str, object]) -> object | None:
@@ -1974,6 +2008,50 @@ def build_production_agent(
 
         def handle_tsunade_observation(event: ObservationPublished) -> None:
             incident = incident_repository.process(event.observation)
+            if incident is not None:
+                if (
+                    incident.state == "active"
+                    and incident.severity == "critical"
+                    and incident.occurrence_count == 1
+                ):
+                    if apns_notification_publisher is not None:
+                        apns_notification_publisher.publish(
+                            {
+                                "schema_version": 1,
+                                "notification_id": (
+                                    f"incident-{incident.incident_id}-critical"
+                                ),
+                                "type": "CRITICAL",
+                                "title": "Un incident critique a été détecté",
+                                "message": incident.message,
+                                "incident_id": str(incident.incident_id),
+                                "occurred_at": incident.started_at.isoformat(),
+                            }
+                        )
+                elif incident.state == "resolved":
+                    if apns_notification_publisher is not None:
+                        repair_succeeded = any(
+                            repair.status == "succeeded" for repair in incident.repairs
+                        )
+                        apns_notification_publisher.publish(
+                            {
+                                "schema_version": 1,
+                                "notification_id": (
+                                    f"incident-{incident.incident_id}-resolved"
+                                ),
+                                "type": "RESOLVED",
+                                "title": (
+                                    "La réparation demandée a réussi"
+                                    if repair_succeeded
+                                    else "Konoha est de nouveau sain"
+                                ),
+                                "message": incident.final_result or incident.message,
+                                "incident_id": str(incident.incident_id),
+                                "occurred_at": (
+                                    incident.ended_at or incident.last_observed_at
+                                ).isoformat(),
+                            }
+                        )
             logs_config = administration_config.jobs.logs
             if (
                 incident is None
@@ -2031,9 +2109,8 @@ def build_production_agent(
             host=str(administration_config.host),
             port=administration_config.port,
         )
-        if worker_tls_config is None:
-            agent.administration_runtime = administration_server
-        else:
+        administration_servers = [administration_server]
+        if worker_tls_config is not None:
             worker_server = AdministrationHTTPServer(
                 service=administration_service,
                 token=administration_token,
@@ -2044,9 +2121,23 @@ def build_production_agent(
                 tls_certificate_file=worker_tls_config.certificate_file,
                 tls_private_key_file=worker_tls_config.private_key_file,
             )
-            agent.administration_runtime = AdministrationServerGroup(
-                administration_server,
-                worker_server,
+            administration_servers.append(worker_server)
+        if companion_tls_config is not None:
+            companion_server = AdministrationHTTPServer(
+                service=administration_service,
+                token=administration_token,
+                worker_token=None,
+                host=str(companion_tls_config.host),
+                port=companion_tls_config.port,
+                companion_only=True,
+                tls_certificate_file=companion_tls_config.certificate_file,
+                tls_private_key_file=companion_tls_config.private_key_file,
             )
+            administration_servers.append(companion_server)
+        agent.administration_runtime = (
+            administration_servers[0]
+            if len(administration_servers) == 1
+            else AdministrationServerGroup(*administration_servers)
+        )
 
     return agent

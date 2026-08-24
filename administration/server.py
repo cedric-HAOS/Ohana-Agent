@@ -21,6 +21,10 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from administration.companions import (
+    CompanionConflictError,
+    CompanionRepository,
+)
 from administration.dhcp import (
     DHCPConfigurationError,
     DnsmasqDHCPRepository,
@@ -101,6 +105,10 @@ class AdministrationService:
         log_window_hours: int = 24,
         log_max_bytes: int = 2 * 1024 * 1024,
         log_timeout_seconds: int = 900,
+        companion_repository: CompanionRepository | None = None,
+        companion_ca_sha256: str | None = None,
+        companion_ca_certificate_pem: str | None = None,
+        notification_publisher: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -127,6 +135,14 @@ class AdministrationService:
         self.log_window_hours = log_window_hours
         self.log_max_bytes = log_max_bytes
         self.log_timeout_seconds = log_timeout_seconds
+        self.companion_repository = companion_repository
+        self.companion_ca_sha256 = companion_ca_sha256
+        self.companion_ca_certificate_pem = companion_ca_certificate_pem
+        if (companion_ca_sha256 is None) != (companion_ca_certificate_pem is None):
+            raise ValueError(
+                "Companion CA certificate and fingerprint must be configured together"
+            )
+        self.notification_publisher = notification_publisher
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -195,6 +211,24 @@ class AdministrationService:
                 operations.extend(
                     ["incidents.repairs.propose", "incidents.repairs.authorize"]
                 )
+            operations.extend(
+                [
+                    "incidents.summary.read",
+                    "incidents.requests.read",
+                    "incidents.requests.respond",
+                    "incidents.activity.read",
+                ]
+            )
+        if self.companion_repository is not None:
+            operations.extend(
+                [
+                    "companions.pairings.read",
+                    "companions.pairings.approve",
+                    "companions.pairings.reject",
+                    "companions.devices.read",
+                    "companions.devices.revoke",
+                ]
+            )
         if self.expertise_service is not None:
             operations.append("incidents.diagnose")
         if self.job_repository is not None and self.log_sources:
@@ -359,6 +393,190 @@ class AdministrationService:
             raise LookupError("Tsunade incidents are unavailable")
         return self.incident_repository.get(incident_id)
 
+    def read_companion_summary(self) -> object:
+        """Return the smallest useful Konoha overview for a personal companion."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        incidents = self.incident_repository.list(state="active", limit=20)
+        requests = self.incident_repository.list_user_requests(state="pending").requests
+        severity = (
+            "critical"
+            if any(incident.severity == "critical" for incident in incidents)
+            else "degraded"
+            if incidents
+            else "healthy"
+        )
+        last_checked_at = max(
+            (incident.last_observed_at for incident in incidents),
+            default=None,
+        )
+        latest_log_health = None
+        if self.job_repository is not None:
+            latest_log_health = self.job_repository.latest_for_incident(
+                "logs.health_check", None
+            )
+            if latest_log_health is not None:
+                candidate = (
+                    latest_log_health.finished_at or latest_log_health.created_at
+                )
+                if last_checked_at is None or candidate > last_checked_at:
+                    last_checked_at = candidate
+        pending_count = len(requests)
+        message = (
+            "Aucune intervention requise"
+            if pending_count == 0
+            else f"{pending_count} décision(s) attendent votre réponse"
+        )
+        attention = [
+            {
+                "incident_id": str(incident.incident_id),
+                "equipment": incident.equipment_id,
+                "capability": incident.capability_id,
+                "severity": incident.severity,
+                "message": incident.message,
+                "started_at": incident.started_at.isoformat(),
+            }
+            for incident in incidents[:5]
+        ]
+        return {
+            "schema_version": 1,
+            "konoha_state": severity,
+            "tsunade_message": message,
+            "pending_requests": pending_count,
+            "last_checked_at": last_checked_at.isoformat() if last_checked_at else None,
+            "attention": attention,
+        }
+
+    def read_companion_requests(self, state: str = "pending") -> object:
+        """Expose structured Tsunade questions without technical incident payloads."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        return self.incident_repository.list_user_requests(
+            state="all" if state == "all" else "pending"
+        )
+
+    def read_companion_activity(self) -> object:
+        """Return a bounded human timeline, not Vision's technical history."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        activity = [
+            item.model_dump(mode="json")
+            for item in self.incident_repository.companion_activity(limit=20)
+        ]
+        if self.job_repository is not None:
+            latest = self.job_repository.latest_for_incident("logs.health_check", None)
+            if latest is not None and latest.finished_at is not None:
+                activity.append(
+                    {
+                        "activity_id": f"log-control-{latest.job_id}",
+                        "occurred_at": latest.finished_at.isoformat(),
+                        "kind": "investigation",
+                        "title": "Contrôle quotidien des journaux terminé",
+                        "detail": "Konoha : OK"
+                        if latest.status.value == "SUCCEEDED"
+                        else "Le contrôle nécessite une attention.",
+                        "incident_id": None,
+                    }
+                )
+        activity.sort(key=lambda item: str(item["occurred_at"]), reverse=True)
+        return {"schema_version": 1, "activity": activity[:20]}
+
+    def respond_companion_request(
+        self,
+        request_id: str,
+        device_id: str,
+        payload: dict[str, Any],
+    ) -> object:
+        """Route a structured answer through Tsunade and Agent's existing executor."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        choice = str(payload.get("choice") or "").upper()
+        request = self.incident_repository.get_user_request(request_id)
+        response = {
+            "choice": choice,
+            "source": "shizune",
+            "answered_by": device_id,
+        }
+        if choice == "LATER":
+            return self.incident_repository.defer_user_request(request_id, response)
+        if request.kind != "repair_authorization":
+            return self.incident_repository.answer_user_request(request_id, response)
+        repair_id = self.incident_repository.user_request_action_reference(request_id)
+        if repair_id is None:
+            raise ValueError("La demande ne référence aucune action autorisée")
+        if choice == "AUTHORIZE":
+            self.authorize_incident_repair(
+                str(request.incident_id),
+                {
+                    "repair_id": repair_id,
+                    "source": "shizune",
+                    "authorized_by": device_id,
+                },
+            )
+        elif choice == "REFUSE":
+            self.incident_repository.refuse_repair(
+                request.incident_id,
+                repair_id,
+                source="shizune",
+                answered_by=device_id,
+            )
+        else:
+            raise ValueError("Cette réponse n’est pas valable pour la réparation")
+        return self.incident_repository.get_user_request(request_id)
+
+    def create_companion_pairing(self, payload: dict[str, Any]) -> object:
+        if (
+            self.companion_repository is None
+            or self.companion_ca_sha256 is None
+            or self.companion_ca_certificate_pem is None
+        ):
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.create_pairing(
+            payload,
+            tls_ca_sha256=self.companion_ca_sha256,
+            tls_ca_certificate_pem=self.companion_ca_certificate_pem,
+        )
+
+    def poll_companion_pairing(
+        self, pairing_id: str, payload: dict[str, Any]
+    ) -> object:
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.poll_pairing(pairing_id, payload)
+
+    def list_companion_pairings(self) -> object:
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.list_pairings()
+
+    def approve_companion_pairing(self, pairing_id: str) -> object:
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.approve_pairing(pairing_id)
+
+    def reject_companion_pairing(self, pairing_id: str) -> object:
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.reject_pairing(pairing_id)
+
+    def list_companion_devices(self) -> object:
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.list_devices()
+
+    def revoke_companion_device(self, device_id: str) -> object:
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.revoke(device_id)
+
+    def register_companion_notifications(
+        self, device_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Bind APNs delivery only to the authenticated companion session."""
+        if self.companion_repository is None:
+            raise LookupError("L’association Shizune est indisponible")
+        return self.companion_repository.register_push_token(device_id, payload)
+
     def append_incident_record(
         self, incident_id: str, payload: dict[str, Any]
     ) -> object:
@@ -377,7 +595,19 @@ class AdministrationService:
     ) -> object:
         if self.incident_repository is None or self.dhcp_repository is None:
             raise LookupError("Les réparations supervisées sont indisponibles")
-        return self.incident_repository.propose_repair(incident_id, payload)
+        repair = self.incident_repository.propose_repair(incident_id, payload)
+        self._publish_notification(
+            {
+                "schema_version": 1,
+                "notification_id": f"repair-{repair.repair_id}-decision",
+                "type": "DECISION_REQUIRED",
+                "title": "Tsunade a besoin de votre décision",
+                "message": "Une réparation supervisée attend votre autorisation.",
+                "incident_id": str(repair.incident_id),
+                "occurred_at": repair.proposed_at.isoformat(),
+            }
+        )
+        return repair
 
     def authorize_incident_repair(
         self, incident_id: str, payload: dict[str, Any]
@@ -389,10 +619,33 @@ class AdministrationService:
         try:
             self.dhcp_repository.request_supervised_restart()
         except Exception as error:
-            return self.incident_repository.mark_repair_execution_failed(
+            result = self.incident_repository.mark_repair_execution_failed(
                 repair.repair_id, error
             )
+            self._publish_notification(
+                {
+                    "schema_version": 1,
+                    "notification_id": f"repair-{repair.repair_id}-failed",
+                    "type": "ATTENTION",
+                    "title": "La réparation a échoué",
+                    "message": result.result or "Tsunade n’a pas pu exécuter l’action.",
+                    "incident_id": str(repair.incident_id),
+                    "occurred_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            return result
         return self.incident_repository.mark_repair_executed(repair.repair_id)
+
+    def _publish_notification(self, payload: dict[str, Any]) -> None:
+        """Keep notifications strictly optional for Agent and Tsunade."""
+        if self.notification_publisher is None:
+            return
+        try:
+            self.notification_publisher(payload)
+        except Exception:
+            LOGGER.warning(
+                "Unable to publish an optional Tsunade notification", exc_info=True
+            )
 
     def confirm_incident_experience(
         self, incident_id: str, payload: dict[str, Any]
@@ -765,6 +1018,7 @@ class AdministrationHTTPServer:
         host: str = "127.0.0.1",
         port: int = 8765,
         worker_only: bool = False,
+        companion_only: bool = False,
         tls_certificate_file: Path | None = None,
         tls_private_key_file: Path | None = None,
     ) -> None:
@@ -780,11 +1034,14 @@ class AdministrationHTTPServer:
             raise ValueError("Worker and administration tokens must be different.")
         self.host = host
         self.port = port
+        if worker_only and companion_only:
+            raise ValueError("A listener cannot be worker-only and companion-only")
         if (tls_certificate_file is None) != (tls_private_key_file is None):
             raise ValueError(
                 "TLS certificate and private key must be configured together"
             )
         self.worker_only = worker_only
+        self.companion_only = companion_only
         self.tls_certificate_file = tls_certificate_file
         self.tls_private_key_file = tls_private_key_file
         self._server: ThreadingHTTPServer | None = None
@@ -832,13 +1089,21 @@ class AdministrationHTTPServer:
             name=(
                 "ohana-agent-worker-https"
                 if self.worker_only
+                else "ohana-agent-companion-https"
+                if self.companion_only
                 else "ohana-agent-administration"
             ),
             daemon=True,
         )
         self._thread.start()
         scheme = "https" if self.tls_certificate_file is not None else "http"
-        role = "Katsuyu worker API" if self.worker_only else "Administration API"
+        role = (
+            "Katsuyu worker API"
+            if self.worker_only
+            else "Companion API"
+            if self.companion_only
+            else "Administration API"
+        )
         LOGGER.info("%s listening on %s://%s:%s", role, scheme, *self.address)
 
     def stop(self) -> None:
@@ -858,6 +1123,7 @@ class AdministrationHTTPServer:
         expected_token = self.token
         expected_worker_token = self.worker_token
         worker_only = self.worker_only
+        companion_only = self.companion_only
 
         class AdministrationRequestHandler(BaseHTTPRequestHandler):
             """Handle one administration request."""
@@ -907,6 +1173,44 @@ class AdministrationHTTPServer:
                             "Worker endpoint not found",
                         )
                     return
+                if companion_only:
+                    if path == "/v1/pairings/companions/trust":
+                        if service.companion_ca_sha256 is None:
+                            self._write_error(
+                                HTTPStatus.NOT_FOUND,
+                                "Companion trust is unavailable",
+                            )
+                        else:
+                            self._write_json(
+                                HTTPStatus.OK,
+                                {
+                                    "schema_version": 1,
+                                    "tls_ca_sha256": service.companion_ca_sha256,
+                                    "tls_ca_certificate_pem": (
+                                        service.companion_ca_certificate_pem
+                                    ),
+                                },
+                            )
+                        return
+                    identity = self._companion_identity()
+                    if identity is None:
+                        return
+                    routes: dict[str, Callable[[], object]] = {
+                        "/v1/incidents/summary": service.read_companion_summary,
+                        "/v1/incidents/requests": service.read_companion_requests,
+                        "/v1/incidents/requests/all": partial(
+                            service.read_companion_requests, "all"
+                        ),
+                        "/v1/incidents/activity": service.read_companion_activity,
+                    }
+                    operation = routes.get(path)
+                    if operation is None:
+                        self._write_error(
+                            HTTPStatus.NOT_FOUND, "Companion endpoint not found"
+                        )
+                    else:
+                        self._execute(operation)
+                    return
                 if not self._authorized(expected_token, "administration"):
                     return
 
@@ -918,6 +1222,8 @@ class AdministrationHTTPServer:
                     "/v1/system/network": service.read_network,
                     "/v1/jobs/workers": service.list_workers,
                     "/v1/jobs/workers/pairings": service.list_worker_pairings,
+                    "/v1/pairings/companions": service.list_companion_pairings,
+                    "/v1/companions": service.list_companion_devices,
                     "/v1/incidents": service.list_incidents,
                     "/v1/incidents/resolved": partial(
                         service.list_incidents, "resolved"
@@ -1002,6 +1308,62 @@ class AdministrationHTTPServer:
             def do_POST(self) -> None:  # noqa: N802
                 """Handle immediate administration actions."""
                 path = self.path.split("?", 1)[0]
+                if companion_only:
+                    pairing_prefix = "/v1/pairings/companions/"
+                    if path == "/v1/pairings/companions":
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.create_companion_pairing(payload)
+                            )
+                        return
+                    if path.startswith(pairing_prefix) and path.endswith("/poll"):
+                        pairing_id = path[len(pairing_prefix) : -len("/poll")]
+                        if pairing_id and "/" not in pairing_id:
+                            payload = self._read_json()
+                            if payload is not None:
+                                self._execute(
+                                    lambda: service.poll_companion_pairing(
+                                        pairing_id, payload
+                                    )
+                                )
+                        else:
+                            self._write_error(
+                                HTTPStatus.NOT_FOUND,
+                                "Companion endpoint not found",
+                            )
+                        return
+                    identity = self._companion_identity()
+                    if identity is None:
+                        return
+                    if path == "/v1/companions/notifications":
+                        payload = self._read_json()
+                        if payload is not None:
+                            self._execute(
+                                lambda: service.register_companion_notifications(
+                                    identity, payload
+                                )
+                            )
+                        return
+                    response_prefix = "/v1/incidents/requests/"
+                    response_suffix = "/response"
+                    if path.startswith(response_prefix) and path.endswith(
+                        response_suffix
+                    ):
+                        request_id = path[len(response_prefix) : -len(response_suffix)]
+                        if request_id and "/" not in request_id:
+                            payload = self._read_json()
+                            if payload is not None:
+                                self._execute(
+                                    lambda: service.respond_companion_request(
+                                        request_id, identity, payload
+                                    )
+                                )
+                            return
+                    self._write_error(
+                        HTTPStatus.NOT_FOUND, "Companion endpoint not found"
+                    )
+                    return
                 artifact_suffix = "/artifact"
                 if path.startswith("/v1/jobs/") and path.endswith(artifact_suffix):
                     job_id = path[len("/v1/jobs/") : -len(artifact_suffix)]
@@ -1067,6 +1429,29 @@ class AdministrationHTTPServer:
 
                 if not self._authorized(expected_token, "administration"):
                     return
+
+                companion_pairing_prefix = "/v1/pairings/companions/"
+                for action, operation in (
+                    ("approve", service.approve_companion_pairing),
+                    ("reject", service.reject_companion_pairing),
+                ):
+                    suffix = f"/{action}"
+                    if path.startswith(companion_pairing_prefix) and path.endswith(
+                        suffix
+                    ):
+                        pairing_id = path[len(companion_pairing_prefix) : -len(suffix)]
+                        if pairing_id and "/" not in pairing_id:
+                            self._execute(partial(operation, pairing_id))
+                            return
+                companion_prefix = "/v1/companions/"
+                revoke_suffix = "/revoke"
+                if path.startswith(companion_prefix) and path.endswith(revoke_suffix):
+                    device_id = path[len(companion_prefix) : -len(revoke_suffix)]
+                    if device_id and "/" not in device_id:
+                        self._execute(
+                            partial(service.revoke_companion_device, device_id)
+                        )
+                        return
 
                 if path == "/v1/jobs":
                     payload = self._read_json()
@@ -1281,6 +1666,28 @@ class AdministrationHTTPServer:
                     return False
                 return True
 
+            def _companion_identity(self) -> str | None:
+                """Authorize only one paired companion on the limited listener."""
+                device_id = self.headers.get("X-Ohana-Companion-Id", "").strip()
+                authorization = self.headers.get("Authorization", "")
+                prefix = "Bearer "
+                supplied_token = authorization.removeprefix(prefix)
+                authorized = (
+                    bool(device_id)
+                    and authorization.startswith(prefix)
+                    and service.companion_repository is not None
+                    and service.companion_repository.authorize(
+                        device_id, supplied_token
+                    )
+                )
+                if not authorized:
+                    self._write_error(
+                        HTTPStatus.UNAUTHORIZED,
+                        "A valid companion session is required",
+                    )
+                    return None
+                return device_id
+
             def _worker_transfer_identity(self) -> tuple[str, int] | None:
                 worker_id = self.headers.get("X-Ohana-Worker-Id", "").strip()
                 try:
@@ -1333,6 +1740,12 @@ class AdministrationHTTPServer:
                     if response_started:
                         LOGGER.exception("Distributed backup source stream failed")
                     else:
+                        LOGGER.exception(
+                            "Distributed backup source preparation failed for job %s "
+                            "(stage=%s)",
+                            job_id,
+                            getattr(error, "stage", "unknown"),
+                        )
                         status = (
                             HTTPStatus.INSUFFICIENT_STORAGE
                             if getattr(error, "stage", None) == "storage"
@@ -1417,6 +1830,7 @@ class AdministrationHTTPServer:
                     )
                     return
                 except (
+                    CompanionConflictError,
                     DistributedJobConflictError,
                     TsunadeExpertiseConflictError,
                 ) as error:

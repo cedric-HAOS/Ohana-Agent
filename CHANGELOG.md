@@ -6,6 +6,30 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.24.0] — Shizune et robustesse des sauvegardes — 2026-08-24
+
+## Ajouté
+
+- Agent héberge le contrat compagnon borné de Shizune : association explicite,
+  session révocable, synthèse Konoha, demandes/réponses Tsunade et activité
+  récente, sur un listener HTTPS dédié.
+- Les notifications natives facultatives sont envoyées directement à APNs,
+  sans dépendance à Home Assistant et sans bloquer Tsunade en cas d’échec.
+
+## Sécurité
+
+- Shizune ne dispose d’aucune exécution directe : ses réponses reviennent à
+  Tsunade et les réparations restent validées par les autorisations Agent.
+- L’iPhone reçoit uniquement des synthèses bornées ; les journaux et données
+  techniques détaillées restent dans Agent/Vision.
+
+## Corrigé
+
+- Le snapshot compact de la base Vision réessaie les verrous SQLite transitoires
+  et produit une erreur française détaillée si la contention persiste.
+- Agent journalise désormais l’étape exacte qui refuse une source de sauvegarde
+  distribuée, sans attendre ni compresser les données sur INFRA-01.
+
 # [1.23.0] — Mémoire, réparations et cockpit Tsunade — 2026-08-24
 
 ## Ajouté

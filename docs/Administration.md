@@ -81,6 +81,67 @@ Les opérations sont annoncées explicitement par `/v1/capabilities` :
 - `system.network.read`, `system.network.write`, `system.network.confirm` et
   `system.network.rollback` lorsque le helper NetworkManager est installé.
 
+## Compagnon personnel Shizune
+
+Shizune étend les contrats d’incidents Tsunade ; elle ne reçoit ni le jeton
+d’administration de Vision, ni le jeton worker de Katsuyu. Un listener HTTPS
+limité, activé par Installer sur le port `8767`, expose seulement :
+
+- l’ouverture et le suivi d’une association temporaire ;
+- la santé globale synthétique, les demandes structurées et l’activité récente ;
+- la réponse à une demande Tsunade ;
+- l’enregistrement ou la désactivation du jeton APNs de l’iPhone.
+
+L’association produit un code et l’empreinte courte de l’autorité TLS. Ces deux
+valeurs doivent être identiques dans Shizune et dans Vision avant autorisation.
+Agent délivre ensuite une seule fois un Bearer propre à l’iPhone, n’en conserve
+que le SHA-256, l’expire après 90 jours par défaut et permet sa révocation dans
+Vision. L’application stocke le jeton dans le trousseau iOS et épingle
+l’autorité Konoha après l’association.
+
+Une réponse Shizune porte uniquement un choix fini. Agent impose lui-même la
+provenance `shizune`, retrouve la proposition côté serveur puis passe par le
+même validateur et le même exécuteur que Vision. Une validation concurrente
+trouve la demande déjà traitée et ne peut pas déclencher une seconde exécution.
+Le listener ne publie aucune route d’infrastructure, DHCP, plugin, job ou
+opération système.
+
+Les notifications iOS sont envoyées directement par Agent à APNs en HTTP/2 ;
+elles ne passent ni par Home Assistant ni par MQTT. Le canal reste facultatif :
+une erreur Apple, une file pleine ou l’absence d’iPhone ne bloque jamais Agent,
+Tsunade, Shikamaru, Katsuyu, une réparation ou une sauvegarde. Les demandes
+restent persistées dans la base de contrôle et sont récupérées à la prochaine
+ouverture de l’application.
+
+Configuration minimale :
+
+```yaml
+administration:
+  companion:
+    enabled: true
+    port: 8767
+    certificate_file: /etc/ohana-agent/tls/worker.crt
+    private_key_file: /etc/ohana-agent/tls/worker.key
+    ca_certificate_file: /etc/ohana-agent/tls/ca.crt
+    credential_ttl_days: 90
+    push:
+      enabled: true
+      environment: production
+      team_id: ABCDEFGHIJ
+      key_id: ABCDEFGHIJ
+      bundle_id: fr.ohana.Shizune
+      private_key_file: /etc/ohana-agent/shizune-apns.p8
+```
+
+La clé privée Apple reste exclusivement sur INFRA-01, lisible par le compte de
+service Agent. Le port `8767` est destiné au LAN et au tunnel WireGuard de
+l’iPhone, jamais à une redirection publique.
+
+Lors d’une mise à niveau vers Agent 1.24.0, Installer ajoute cette section à
+la configuration locale uniquement si elle est absente. Il conserve toute
+section existante et laisse `push.enabled: false` jusqu’à la fourniture des
+identifiants Apple réels.
+
 ## Jobs distribués Tsunade vers Katsuyu
 
 Le protocole est une extension optionnelle de l'API d'administration existante.

@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.23.0"
+    assert project["version"] == "1.24.0"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"
@@ -53,6 +53,8 @@ def test_package_declares_runtime_dependencies() -> None:
         "dnspython>=2.7,<3",
         "paho-mqtt>=2,<3",
         "aiohttp>=3.11,<4",
+        "cryptography>=45,<47",
+        "httpx[http2]>=0.28,<1",
         "tzdata>=2025.2",
         "zwave-js-server-python>=0.72,<1",
     ]

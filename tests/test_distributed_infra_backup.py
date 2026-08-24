@@ -300,3 +300,61 @@ def test_source_snapshot_fits_when_database_contains_many_free_pages(
         snapshot = archive.extractfile("var/lib/ohana-vision/vision.db")
         assert snapshot is not None
         assert len(snapshot.read()) < available
+
+
+def test_vision_snapshot_retries_a_transient_sqlite_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = _claimed_repository(tmp_path)
+    database = tmp_path / "vision.db"
+    connection = sqlite3.connect(database)
+    connection.execute("CREATE TABLE observations(value TEXT)")
+    connection.execute("INSERT INTO observations VALUES ('healthy')")
+    connection.commit()
+    connection.close()
+    real_connect = sqlite3.connect
+    attempts = 0
+
+    class BusyConnection:
+        def execute(self, _statement: str, _parameters: object = ()) -> object:
+            raise sqlite3.OperationalError("database is locked")
+
+        def close(self) -> None:
+            return None
+
+    def connect(*args: object, **kwargs: object) -> object:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return BusyConnection()
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "plugins.backup.distributed_infra_backup.sqlite3.connect",
+        connect,
+    )
+    waits: list[float] = []
+    transfer = DistributedInfraBackupTransfer(
+        BackupConfig(infra_01=InfraBackupConfig(enabled=True)),
+        repository,
+        sources=(tmp_path,),
+        vision_database=database,
+        uploader=FakeUploader(),  # type: ignore[arg-type]
+        snapshot_retry_delay_seconds=0.25,
+        wait=waits.append,
+    )
+    snapshot = tmp_path / "snapshot.db"
+    try:
+        transfer._snapshot_vision(snapshot)
+    finally:
+        repository.close()
+
+    assert attempts == 2
+    assert waits == [0.25]
+    restored = sqlite3.connect(snapshot)
+    try:
+        assert restored.execute("SELECT value FROM observations").fetchone() == (
+            "healthy",
+        )
+    finally:
+        restored.close()

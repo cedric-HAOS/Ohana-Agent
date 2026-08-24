@@ -45,6 +45,22 @@ administration:
   host: 127.0.0.1
   port: 8765
   token_file: /etc/ohana-agent/management.token
+  companion:
+    enabled: true
+    host: 0.0.0.0
+    port: 8767
+    certificate_file: /etc/ohana-agent/tls/worker.crt
+    private_key_file: /etc/ohana-agent/tls/worker.key
+    ca_certificate_file: /etc/ohana-agent/tls/ca.crt
+    credential_ttl_days: 90
+    push:
+      enabled: false
+      environment: production
+      team_id: null
+      key_id: null
+      bundle_id: fr.ohana.Shizune
+      private_key_file: /etc/ohana-agent/shizune-apns.p8
+      timeout_seconds: 5.0
   jobs:
     enabled: false
     database_path: /var/lib/ohana-agent/distributed-jobs.db

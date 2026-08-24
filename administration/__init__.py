@@ -1,5 +1,9 @@
 """Ohana-Agent administration contracts and persistence."""
 
+from administration.companions import (
+    CompanionConflictError,
+    CompanionRepository,
+)
 from administration.dhcp import (
     DHCPConfigurationError,
     DnsmasqDHCPRepository,
@@ -49,6 +53,8 @@ __all__ = [
     "AdministrationServerGroup",
     "AdministrationService",
     "certificate_sha256",
+    "CompanionConflictError",
+    "CompanionRepository",
     "DHCPAdministrationState",
     "DHCPConfiguration",
     "DHCPConfigurationError",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
@@ -29,8 +29,12 @@ IncidentExpertiseState = Literal[
     "insufficient_context",
 ]
 IncidentRecordKind = Literal["investigation", "diagnostic", "action", "result"]
-RepairStatus = Literal["proposed", "verifying", "succeeded", "failed"]
+RepairStatus = Literal[
+    "proposed", "authorized", "refused", "verifying", "succeeded", "failed"
+]
 ValidationSource = Literal["vision", "shizune"]
+UserRequestState = Literal["pending", "answered", "expired", "cancelled", "resolved"]
+UserRequestChoice = Literal["YES", "NO", "AUTHORIZE", "REFUSE", "LATER", "CONFIRM"]
 
 
 class TsunadeRepair(AdministrationModel):
@@ -150,6 +154,57 @@ class TsunadeExperienceConfirmationRequest(AdministrationModel):
     confirm: Literal[True]
     source: ValidationSource
     confirmed_by: str = Field(default="utilisateur", min_length=1, max_length=120)
+
+
+class TsunadeUserRequest(AdministrationModel):
+    """One durable, synthetic decision requested by Tsunade."""
+
+    request_id: UUID
+    incident_id: UUID
+    origin: Literal["tsunade"] = "tsunade"
+    kind: Literal[
+        "investigation_authorization",
+        "repair_authorization",
+        "experience_confirmation",
+    ]
+    context: str = Field(min_length=1, max_length=1000)
+    question: str = Field(min_length=1, max_length=1000)
+    choices: list[UserRequestChoice] = Field(min_length=2, max_length=6)
+    risk: Literal["low", "medium", "high"] | None = None
+    state: UserRequestState
+    created_at: datetime
+    expires_at: datetime
+    deferred_until: datetime | None = None
+    answered_at: datetime | None = None
+    answer: UserRequestChoice | None = None
+    answer_source: ValidationSource | None = None
+    answered_by: str | None = None
+
+
+class TsunadeUserRequestResponse(AdministrationModel):
+    """A structured user response; free-form execution input is forbidden."""
+
+    choice: UserRequestChoice
+    source: ValidationSource
+    answered_by: str = Field(default="utilisateur", min_length=1, max_length=120)
+
+
+class TsunadeUserRequestCollection(AdministrationModel):
+    """Bounded requests displayed by Vision or a companion."""
+
+    schema_version: Literal[1] = 1
+    requests: list[TsunadeUserRequest] = Field(default_factory=list)
+
+
+class TsunadeCompanionActivity(AdministrationModel):
+    """One human-readable timeline entry without technical payloads."""
+
+    activity_id: str
+    occurred_at: datetime
+    kind: Literal["incident", "investigation", "decision", "action", "result"]
+    title: str
+    detail: str | None = None
+    incident_id: UUID | None = None
 
 
 class TsunadeIncidentRepository:
@@ -278,6 +333,204 @@ class TsunadeIncidentRepository:
             else None,
         }
 
+    def list_user_requests(
+        self,
+        *,
+        state: Literal["pending", "all"] = "pending",
+        limit: int = 100,
+    ) -> TsunadeUserRequestCollection:
+        """Return bounded, lazily expired requests without incident internals."""
+        if not 1 <= limit <= 200:
+            raise ValueError("request limit must be between 1 and 200")
+        now = datetime.now(UTC)
+        condition = "state='pending'" if state == "pending" else "1=1"
+        with self._lock, self._connection:
+            self._expire_user_requests_locked(now)
+            rows = self._connection.execute(
+                f"""SELECT * FROM tsunade_user_requests WHERE {condition}
+                ORDER BY (state='pending') DESC,created_at DESC LIMIT ?""",  # noqa: S608
+                (limit,),
+            ).fetchall()
+        return TsunadeUserRequestCollection(
+            requests=[self._user_request(row) for row in rows]
+        )
+
+    def get_user_request(self, request_id: UUID | str) -> TsunadeUserRequest:
+        """Read one request after applying expiry rules."""
+        with self._lock, self._connection:
+            self._expire_user_requests_locked(datetime.now(UTC))
+            return self._user_request(self._required_user_request(request_id))
+
+    def user_request_action_reference(self, request_id: UUID | str) -> str | None:
+        """Return the server-side allowlisted action reference, never client input."""
+        with self._lock:
+            row = self._required_user_request(request_id)
+            return row["action_reference"]
+
+    def defer_user_request(
+        self,
+        request_id: UUID | str,
+        payload: dict[str, Any],
+    ) -> TsunadeUserRequest:
+        """Keep a request pending while recording a bounded one-hour deferral."""
+        response = TsunadeUserRequestResponse.model_validate(payload)
+        if response.choice != "LATER":
+            raise ValueError("Cette réponse ne constitue pas un report")
+        now = datetime.now(UTC)
+        with self._lock, self._connection:
+            self._expire_user_requests_locked(now)
+            row = self._required_pending_user_request(request_id)
+            if response.choice not in json.loads(row["choices_json"]):
+                raise ValueError("Cette réponse n’est pas proposée par Tsunade")
+            deferred_until = min(
+                now + timedelta(hours=1), datetime.fromisoformat(row["expires_at"])
+            )
+            self._connection.execute(
+                """UPDATE tsunade_user_requests SET deferred_until=?
+                WHERE request_id=?""",
+                (deferred_until.isoformat(), str(request_id)),
+            )
+            self._event(
+                UUID(row["incident_id"]),
+                kind="decision",
+                occurred_at=now,
+                summary="La décision a été reportée par l’utilisateur.",
+                payload={
+                    "request_id": str(request_id),
+                    "choice": response.choice,
+                    "source": response.source,
+                    "answered_by": response.answered_by,
+                },
+            )
+            return self._user_request(self._required_user_request(request_id))
+
+    def answer_user_request(
+        self,
+        request_id: UUID | str,
+        payload: dict[str, Any],
+    ) -> TsunadeUserRequest:
+        """Record one terminal structured answer after Agent handled its effect."""
+        response = TsunadeUserRequestResponse.model_validate(payload)
+        if response.choice == "LATER":
+            return self.defer_user_request(request_id, payload)
+        now = datetime.now(UTC)
+        with self._lock, self._connection:
+            self._expire_user_requests_locked(now)
+            row = self._required_pending_user_request(request_id)
+            if response.choice not in json.loads(row["choices_json"]):
+                raise ValueError("Cette réponse n’est pas proposée par Tsunade")
+            self._connection.execute(
+                """UPDATE tsunade_user_requests SET state='answered',answered_at=?,
+                answer=?,answer_source=?,answered_by=?,deferred_until=NULL
+                WHERE request_id=?""",
+                (
+                    now.isoformat(),
+                    response.choice,
+                    response.source,
+                    response.answered_by,
+                    str(request_id),
+                ),
+            )
+            self._event(
+                UUID(row["incident_id"]),
+                kind="decision",
+                occurred_at=now,
+                summary=f"Réponse utilisateur enregistrée : {response.choice}.",
+                payload={
+                    "request_id": str(request_id),
+                    "choice": response.choice,
+                    "source": response.source,
+                    "answered_by": response.answered_by,
+                },
+            )
+            return self._user_request(self._required_user_request(request_id))
+
+    def refuse_repair(
+        self,
+        incident_id: UUID | str,
+        repair_id: UUID | str,
+        *,
+        source: ValidationSource,
+        answered_by: str,
+    ) -> TsunadeRepair:
+        """Record an explicit refusal without executing any operation."""
+        incident = self.get(incident_id)
+        now = datetime.now(UTC)
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT * FROM tsunade_repairs WHERE repair_id=? AND incident_id=?",
+                (str(repair_id), str(incident.incident_id)),
+            ).fetchone()
+            if row is None:
+                raise LookupError("Proposition de réparation inconnue")
+            if row["status"] != "proposed":
+                raise ValueError("Cette réparation n’attend plus de validation")
+            self._connection.execute(
+                """UPDATE tsunade_repairs SET status='refused',authorized_at=?,
+                authorization_source=?,authorized_by=?,result=? WHERE repair_id=?""",
+                (
+                    now.isoformat(),
+                    source,
+                    answered_by,
+                    "Réparation refusée par l’utilisateur.",
+                    str(repair_id),
+                ),
+            )
+            self._connection.execute(
+                """UPDATE tsunade_user_requests SET state='answered',answered_at=?,
+                answer='REFUSE',answer_source=?,answered_by=?,deferred_until=NULL
+                WHERE action_reference=? AND state='pending'""",
+                (now.isoformat(), source, answered_by, str(repair_id)),
+            )
+            self._event(
+                incident.incident_id,
+                kind="decision",
+                occurred_at=now,
+                summary=f"Réparation refusée depuis {source.capitalize()}.",
+                payload={
+                    "repair_id": str(repair_id),
+                    "authorized": False,
+                    "authorization_source": source,
+                    "answered_by": answered_by,
+                },
+            )
+        return self.get_repair(repair_id)
+
+    def companion_activity(self, *, limit: int = 20) -> list[TsunadeCompanionActivity]:
+        """Return a deliberately synthetic subset of the incident timeline."""
+        if not 1 <= limit <= 50:
+            raise ValueError("activity limit must be between 1 and 50")
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT event_id,incident_id,kind,occurred_at,summary
+                FROM tsunade_incident_events
+                WHERE kind IN (
+                    'opened','investigation','decision','action','result','resolved'
+                )
+                ORDER BY occurred_at DESC,event_id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        activities: list[TsunadeCompanionActivity] = []
+        for row in rows:
+            kind = {
+                "opened": "incident",
+                "investigation": "investigation",
+                "decision": "decision",
+                "action": "action",
+                "result": "result",
+                "resolved": "result",
+            }[row["kind"]]
+            activities.append(
+                TsunadeCompanionActivity(
+                    activity_id=f"incident-event-{row['event_id']}",
+                    occurred_at=datetime.fromisoformat(row["occurred_at"]),
+                    kind=kind,
+                    title=str(row["summary"]),
+                    incident_id=row["incident_id"],
+                )
+            )
+        return activities
+
     def get(self, incident_id: UUID | str) -> TsunadeIncident:
         """Return one incident with its complete bounded evolution."""
         with self._lock:
@@ -358,6 +611,28 @@ class TsunadeIncidentRepository:
                     now.isoformat(),
                 ),
             )
+            request_id = uuid4()
+            self._connection.execute(
+                """INSERT INTO tsunade_user_requests (
+                request_id,incident_id,origin,kind,context,question,choices_json,
+                risk,state,created_at,expires_at,action_reference
+                ) VALUES (?,?, 'tsunade','repair_authorization',?,?,?,?,
+                'pending',?,?,?)""",
+                (
+                    str(request_id),
+                    str(incident.incident_id),
+                    (
+                        f"{incident.equipment_id} : {incident.message} "
+                        "Tsunade propose une réparation supervisée."
+                    ),
+                    "Autoriser le redémarrage supervisé de dnsmasq ?",
+                    json.dumps(["AUTHORIZE", "REFUSE", "LATER"]),
+                    "low",
+                    now.isoformat(),
+                    (now + timedelta(days=7)).isoformat(),
+                    str(repair_id),
+                ),
+            )
             self._event(
                 incident.incident_id,
                 kind="action",
@@ -370,6 +645,7 @@ class TsunadeIncidentRepository:
                     "risk": "low",
                     "status": "proposed",
                     "authorized": False,
+                    "request_id": str(request_id),
                 },
             )
             row = self._connection.execute(
@@ -394,8 +670,19 @@ class TsunadeIncidentRepository:
             if row["status"] != "proposed":
                 raise ValueError("Cette réparation n’attend plus de validation")
             self._connection.execute(
-                """UPDATE tsunade_repairs SET authorized_at=?,
+                """UPDATE tsunade_repairs SET status='authorized',authorized_at=?,
                 authorization_source=?,authorized_by=? WHERE repair_id=?""",
+                (
+                    now.isoformat(),
+                    request.source,
+                    request.authorized_by,
+                    str(request.repair_id),
+                ),
+            )
+            self._connection.execute(
+                """UPDATE tsunade_user_requests SET state='answered',answered_at=?,
+                answer='AUTHORIZE',answer_source=?,answered_by=?,deferred_until=NULL
+                WHERE action_reference=? AND state='pending'""",
                 (
                     now.isoformat(),
                     request.source,
@@ -422,7 +709,7 @@ class TsunadeIncidentRepository:
         now = datetime.now(UTC)
         with self._lock, self._connection:
             row = self._required_repair(repair_id)
-            if row["authorized_at"] is None or row["status"] != "proposed":
+            if row["authorized_at"] is None or row["status"] != "authorized":
                 raise ValueError("La réparation n’est pas autorisée")
             self._connection.execute(
                 """UPDATE tsunade_repairs SET status='verifying',executed_at=?
@@ -784,6 +1071,29 @@ class TsunadeIncidentRepository:
             );
             CREATE INDEX IF NOT EXISTS tsunade_repairs_incident
             ON tsunade_repairs(incident_id, proposed_at);
+            CREATE TABLE IF NOT EXISTS tsunade_user_requests (
+                request_id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                context TEXT NOT NULL,
+                question TEXT NOT NULL,
+                choices_json TEXT NOT NULL,
+                risk TEXT,
+                state TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                deferred_until TEXT,
+                answered_at TEXT,
+                answer TEXT,
+                answer_source TEXT,
+                answered_by TEXT,
+                action_reference TEXT
+            );
+            CREATE INDEX IF NOT EXISTS tsunade_user_requests_state
+            ON tsunade_user_requests(state,created_at);
+            CREATE INDEX IF NOT EXISTS tsunade_user_requests_incident
+            ON tsunade_user_requests(incident_id,created_at);
             CREATE TABLE IF NOT EXISTS tsunade_experiences (
                 experience_id TEXT PRIMARY KEY,
                 signature TEXT NOT NULL UNIQUE,
@@ -906,6 +1216,11 @@ class TsunadeIncidentRepository:
                 str(incident.incident_id),
             ),
         )
+        self._connection.execute(
+            """UPDATE tsunade_user_requests SET state='resolved'
+            WHERE incident_id=? AND state='pending'""",
+            (str(incident.incident_id),),
+        )
         self._event(
             incident.incident_id,
             kind="resolved",
@@ -977,6 +1292,11 @@ class TsunadeIncidentRepository:
                 result,
                 str(incident.incident_id),
             ),
+        )
+        self._connection.execute(
+            """UPDATE tsunade_user_requests SET state='resolved'
+            WHERE incident_id=? AND state='pending'""",
+            (str(incident.incident_id),),
         )
         self._event(
             incident.incident_id,
@@ -1162,6 +1482,67 @@ class TsunadeIncidentRepository:
         if include_events:
             incident.experience_candidate = self._experience_candidate(incident)
         return incident
+
+    def _expire_user_requests_locked(self, now: datetime) -> None:
+        self._connection.execute(
+            """UPDATE tsunade_user_requests SET state='expired'
+            WHERE state='pending' AND expires_at<=?""",
+            (now.isoformat(),),
+        )
+
+    def _required_user_request(self, request_id: UUID | str) -> sqlite3.Row:
+        row = self._connection.execute(
+            "SELECT * FROM tsunade_user_requests WHERE request_id=?",
+            (str(request_id),),
+        ).fetchone()
+        if row is None:
+            raise LookupError("Demande Tsunade inconnue")
+        return row
+
+    def _required_pending_user_request(self, request_id: UUID | str) -> sqlite3.Row:
+        row = self._required_user_request(request_id)
+        if row["state"] != "pending":
+            raise ValueError("Cette demande Tsunade n’attend plus de réponse")
+        incident = self._connection.execute(
+            "SELECT ended_at FROM tsunade_incidents WHERE incident_id=?",
+            (row["incident_id"],),
+        ).fetchone()
+        if incident is None or incident["ended_at"] is not None:
+            self._connection.execute(
+                "UPDATE tsunade_user_requests SET state='resolved' WHERE request_id=?",
+                (str(request_id),),
+            )
+            raise ValueError("L’incident est déjà résolu")
+        return row
+
+    @staticmethod
+    def _user_request(row: sqlite3.Row) -> TsunadeUserRequest:
+        return TsunadeUserRequest(
+            request_id=row["request_id"],
+            incident_id=row["incident_id"],
+            origin=row["origin"],
+            kind=row["kind"],
+            context=row["context"],
+            question=row["question"],
+            choices=json.loads(row["choices_json"]),
+            risk=row["risk"],
+            state=row["state"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            expires_at=datetime.fromisoformat(row["expires_at"]),
+            deferred_until=(
+                datetime.fromisoformat(row["deferred_until"])
+                if row["deferred_until"]
+                else None
+            ),
+            answered_at=(
+                datetime.fromisoformat(row["answered_at"])
+                if row["answered_at"]
+                else None
+            ),
+            answer=row["answer"],
+            answer_source=row["answer_source"],
+            answered_by=row["answered_by"],
+        )
 
     def _required_repair(self, repair_id: UUID | str) -> sqlite3.Row:
         row = self._connection.execute(

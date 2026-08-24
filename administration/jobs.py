@@ -18,6 +18,8 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from administration.models import (
+    AiInferenceParameters,
+    AiInferenceResult,
     BackupCompressParameters,
     BackupCompressResult,
     BackupEncryptParameters,
@@ -63,6 +65,7 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "backup.encrypt": (BackupEncryptParameters, BackupEncryptResult),
     "backup.verify": (BackupVerifyParameters, BackupVerifyResult),
     "backup.infra": (InfraBackupParameters, InfraBackupResult),
+    "ai.inference": (AiInferenceParameters, AiInferenceResult),
 }
 PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 

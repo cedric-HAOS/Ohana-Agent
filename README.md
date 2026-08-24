@@ -64,7 +64,9 @@ Le contrat et le modèle de sécurité sont détaillés dans
 
 Cette API porte aussi, lorsqu'il est explicitement activé, le protocole de jobs
 durables Tsunade vers Katsuyu. Les types déterministes `system.health`,
-`backup.compress`, `backup.encrypt` et `backup.verify` constituent le MVP.
+`backup.compress`, `backup.encrypt`, `backup.verify` et `backup.infra`
+constituent le socle. Le type optionnel `ai.inference` transporte uniquement
+une question et des preuves bornées vers le modèle local de Bubule.
 Katsuyu dispose d'un jeton worker distinct et ne peut ni administrer Agent ni
 exécuter une commande arbitraire. Les jobs expirés sont repris sans traitement
 périodique permanent.

@@ -115,7 +115,7 @@ timeout entre 1 seconde et 24 heures. Le même `job_id` et le même document
 retournent le job existant ; un contenu différent pour cet identifiant produit
 un conflit HTTP 409.
 
-Les quatre types du MVP sont strictement déclarés :
+Les types de jobs sont strictement déclarés :
 
 - `system.health` ne prend aucun paramètre et mesure exclusivement l'hôte
   Katsuyu ;
@@ -126,6 +126,15 @@ Les quatre types du MVP sont strictement déclarés :
 - `backup.verify` reçoit un chemin relatif, un SHA-256 attendu et,
   facultativement, une taille attendue.
 
+Deux extensions conservent les mêmes règles de contrôle :
+
+- `backup.infra` orchestre le transfert en flux d'une source préparée par
+  Agent vers Katsuyu, puis sa compression, son chiffrement et sa vérification ;
+- `ai.inference` reçoit une question et de courts extraits de preuves identifiés.
+  L'ensemble est limité à 48 000 caractères et le résultat strict contient un
+  verdict `OK`, `KO` ou `INSUFFICIENT_CONTEXT`, des constats sourcés, le contexte
+  manquant et l'investigation recommandée.
+
 Les trois résultats de sauvegarde publient SHA-256 et tailles. Une divergence
 de vérification est un succès technique avec `valid: false`, afin que Tsunade
 puisse décider de la suite sans confondre une corruption avec une panne du
@@ -135,8 +144,10 @@ ce qui évite de refaire une opération terminée après une perte de connexion.
 Tous les chemins sont confinés dans un espace de travail configuré sur Bubule.
 Les chemins absolus, `..`, les liens symboliques et les fichiers non réguliers
 sont refusés. Aucun job ne transporte de commande, d'URL, de clé privée ou de
-chemin d'exécutable. L'analyse ciblée de journaux reste réservée à sa phase
-dédiée : aucun contrat ne centralise ni ne persiste des journaux.
+chemin d'exécutable. La collecte directe et ciblée de journaux reste confiée à
+un handler dédié. `ai.inference` ne collecte rien et ne crée aucune
+centralisation permanente : il traite seulement les extraits bornés joints au
+job, soumis à la rétention normale du magasin de jobs.
 
 ### États, reprise et vérification
 
@@ -161,8 +172,10 @@ borné et le caractère retentable. Les fins de jobs peuvent être rejouées à
 l'identique, mais une seconde valeur différente est refusée.
 
 Le magasin est limité à 1 000 jobs actifs par défaut. Les jobs terminés et leur
-journal sont purgés après 30 jours. Ces limites sont configurables. Aucune IA
-n'intervient dans ce protocole ou dans le type v1.
+journal sont purgés après 30 jours. Ces limites sont configurables. Le protocole,
+ses transitions et ses décisions restent déterministes. Un LLM optionnel peut
+seulement produire le résultat borné d'un job `ai.inference` ; l'absence d'un
+worker doté de cette capacité laisse le job en attente sans affecter Agent.
 
 ### Worker Katsuyu minimal
 

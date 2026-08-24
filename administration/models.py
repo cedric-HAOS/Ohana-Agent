@@ -603,6 +603,76 @@ class InfraBackupResult(AdministrationModel):
     logical_io_written_bytes: int = Field(ge=0)
 
 
+class AiInferenceEvidence(AdministrationModel):
+    """One bounded evidence fragment supplied by Tsunade, never an instruction."""
+
+    source: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    content: str = Field(min_length=1, max_length=16_000)
+
+
+class AiInferenceParameters(AdministrationModel):
+    """Minimal diagnostic request; raw permanent log collections are forbidden."""
+
+    task: Literal["technical.diagnosis"] = "technical.diagnosis"
+    question: str = Field(min_length=1, max_length=2_000)
+    evidence: list[AiInferenceEvidence] = Field(min_length=1, max_length=8)
+    max_output_tokens: int = Field(default=1_024, ge=128, le=1_024)
+
+    @model_validator(mode="after")
+    def bound_total_evidence(self) -> Self:
+        if sum(len(item.content) for item in self.evidence) > 48_000:
+            raise ValueError("ai.inference evidence cannot exceed 48000 characters")
+        return self
+
+
+class AiInferenceFinding(AdministrationModel):
+    """One evidence-backed finding returned by the local model."""
+
+    code: str = Field(min_length=1, max_length=80, pattern=r"^[A-Z0-9_.-]+$")
+    evidence: str = Field(min_length=1, max_length=500)
+    confidence: float = Field(ge=0, le=1)
+
+
+class AiInferenceMetrics(AdministrationModel):
+    """Measured local runtime cost returned for observability and comparison."""
+
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    ttft_ms: float = Field(ge=0)
+    tokens_per_second: float = Field(ge=0)
+    duration_seconds: float = Field(ge=0)
+
+
+class AiInferenceResult(AdministrationModel):
+    """Strict diagnostic result; recommendations never execute an operation."""
+
+    verdict: Literal["OK", "KO", "INSUFFICIENT_CONTEXT"]
+    generated_at: datetime
+    model_id: str = Field(min_length=1, max_length=120)
+    model_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    summary: str = Field(min_length=1, max_length=1_000)
+    findings: list[AiInferenceFinding] = Field(default_factory=list, max_length=16)
+    missing_context: list[str] = Field(default_factory=list, max_length=16)
+    recommended_investigation: list[str] = Field(default_factory=list, max_length=16)
+    metrics: AiInferenceMetrics
+
+    @model_validator(mode="after")
+    def validate_diagnostic_consistency(self) -> Self:
+        if self.verdict == "OK" and self.findings:
+            raise ValueError("OK cannot contain anomaly findings")
+        if self.verdict == "KO" and not self.findings:
+            raise ValueError("KO requires at least one finding")
+        if self.verdict == "INSUFFICIENT_CONTEXT" and not self.missing_context:
+            raise ValueError("INSUFFICIENT_CONTEXT requires missing_context")
+        bounded_text = [
+            *self.missing_context,
+            *self.recommended_investigation,
+        ]
+        if any(not value.strip() or len(value) > 500 for value in bounded_text):
+            raise ValueError("diagnostic list entries must contain 1 to 500 characters")
+        return self
+
+
 PluginAdministrationStatus = Literal[
     "active",
     "idle",

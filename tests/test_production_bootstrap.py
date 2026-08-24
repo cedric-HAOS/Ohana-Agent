@@ -95,6 +95,7 @@ administration:
         "backup.encrypt",
         "backup.verify",
         "backup.infra",
+        "ai.inference",
     )
     assert jobs_database.is_file()
     repository.close()

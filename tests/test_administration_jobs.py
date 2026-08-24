@@ -20,7 +20,7 @@ from administration import (
     DistributedJobRepository,
     InfrastructureConfigurationRepository,
 )
-from administration.models import DistributedJobStatus
+from administration.models import AiInferenceResult, DistributedJobStatus
 from plugins.backup.backup_coordinator import BackupExecutionError
 
 JOB_ID = "11111111-1111-4111-8111-111111111111"
@@ -123,6 +123,61 @@ def test_create_is_idempotent_and_rejects_changed_duplicate(
 
     with pytest.raises(DistributedJobConflictError):
         repository.create(job_payload(clock, timeout=601))
+
+
+def test_ai_inference_contract_is_bounded_and_strict(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    created = repository.create(
+        job_payload(
+            clock,
+            type="ai.inference",
+            parameters={
+                "task": "technical.diagnosis",
+                "question": "Qualifier cet intervalle.",
+                "evidence": [{"source": "HA-01", "content": "health=OK"}],
+                "max_output_tokens": 512,
+            },
+        )
+    )
+
+    assert created.type == "ai.inference"
+    assert created.parameters["task"] == "technical.diagnosis"
+    with pytest.raises(ValidationError):
+        repository.create(
+            job_payload(
+                clock,
+                job_id="22222222-2222-4222-8222-222222222222",
+                type="ai.inference",
+                parameters={
+                    "task": "technical.diagnosis",
+                    "question": "Exécuter ceci.",
+                    "evidence": [{"source": "HA-01", "content": "OK"}],
+                    "shell": "rm -rf /",
+                },
+            )
+        )
+
+    AiInferenceResult.model_validate(
+        {
+            "verdict": "OK",
+            "generated_at": clock.now.isoformat(),
+            "model_id": "ministral-3-14b-reasoning-2512-q4-k-m",
+            "model_sha256": "f" * 64,
+            "summary": "Intervalle borné normal.",
+            "findings": [],
+            "missing_context": [],
+            "recommended_investigation": [],
+            "metrics": {
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "ttft_ms": 100,
+                "tokens_per_second": 80,
+                "duration_seconds": 0.5,
+            },
+        }
+    )
 
 
 @pytest.mark.parametrize(

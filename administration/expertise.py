@@ -585,8 +585,8 @@ class TsunadeExpertiseService:
             elif relative_change >= 0.25:
                 warning_changes.append(finding)
 
-            if correlations or critical_findings or len(meaningful_changes) >= 2:
-                reasons: list[str] = []
+        if correlations or critical_findings or len(meaningful_changes) >= 2:
+            reasons: list[str] = []
 
             if correlations:
                 reasons.append(
@@ -595,6 +595,7 @@ class TsunadeExpertiseService:
 
             if critical_findings:
                 reasons.append(f"{len(critical_findings)} anomalie(s) critique(s)")
+
             if len(meaningful_changes) >= 2:
                 reasons.append(
                     f"{len(meaningful_changes)} anomalie(s) en évolution significative"

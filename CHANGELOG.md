@@ -6,6 +6,17 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.0] — Administration Wake-on-LAN — 2026-08-25
+
+## Ajouté
+
+- L’API d’administration expose la politique Wake-on-LAN effective utilisée par
+  Tsunade : activation, broadcast, port et délais.
+- Un worker Katsuyu indisponible peut recevoir un réveil de test explicite depuis
+  le plan de contrôle, en utilisant uniquement la MAC annoncée par le worker.
+- Les capacités déclarent séparément la lecture de la politique WOL et l’action
+  de réveil lorsqu’elle est réellement activée.
+
 # [1.25.0] — Wake-on-LAN piloté par Katsuyu — 2026-08-25
 
 ## Ajouté

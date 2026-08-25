@@ -364,6 +364,90 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
         repository.close()
 
 
+def test_wake_on_lan_policy_and_explicit_worker_wake(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.7.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    clock.advance(31)
+    sent: list[str] = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_timeout_seconds=180,
+        wake_sender=sent.append,
+        wake_broadcast_address="192.168.1.255",
+        wake_port=9,
+        wake_available_for_seconds=30,
+    )
+    try:
+        policy = service.read_wake_on_lan()
+        assert policy == {
+            "schema_version": 1,
+            "enabled": True,
+            "broadcast_address": "192.168.1.255",
+            "port": 9,
+            "wait_timeout_seconds": 180,
+            "available_for_seconds": 30,
+        }
+        worker = service.wake_worker("katsuyu-bubule")
+        assert sent == ["AA:BB:CC:DD:EE:FF"]
+        assert worker.availability.value == "WAKING"
+        assert worker.woken_by_ohana is True
+        assert "jobs.wake_on_lan.read" in service.capabilities().operations
+        assert "jobs.workers.wake" in service.capabilities().operations
+    finally:
+        repository.close()
+
+
+def test_explicit_worker_wake_is_rejected_when_wol_is_disabled(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.7.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_broadcast_address="192.168.1.255",
+    )
+    try:
+        assert service.read_wake_on_lan()["enabled"] is False
+        assert "jobs.wake_on_lan.read" in service.capabilities().operations
+        assert "jobs.workers.wake" not in service.capabilities().operations
+        with pytest.raises(DistributedJobConflictError, match="disabled"):
+            service.wake_worker("katsuyu-bubule")
+    finally:
+        repository.close()
+
+
 def test_spontaneous_worker_registration_is_never_marked_woken_by_ohana(
     repository: DistributedJobRepository,
     clock: MutableClock,
@@ -1212,3 +1296,63 @@ def test_worker_backup_source_preparation_fails_before_http_200(
             "Distributed backup source preparation failed: database or disk is full"
         )
     }
+
+
+def test_http_routes_expose_wake_policy_and_explicit_wake(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.7.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    clock.advance(31)
+    sent: list[str] = []
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            job_repository=repository,
+            wake_timeout_seconds=180,
+            wake_sender=sent.append,
+            wake_broadcast_address="192.168.1.255",
+            wake_port=9,
+            wake_available_for_seconds=30,
+        ),
+        token="tsunade-secret",
+        worker_token="katsuyu-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        policy = _request_json(
+            server,
+            "/v1/jobs/wake-on-lan",
+            token="tsunade-secret",
+        )
+        worker = _request_json(
+            server,
+            "/v1/jobs/workers/katsuyu-bubule/wake",
+            token="tsunade-secret",
+            method="POST",
+        )
+    finally:
+        server.stop()
+        repository.close()
+
+    assert policy["enabled"] is True
+    assert policy["broadcast_address"] == "192.168.1.255"
+    assert worker["availability"] == "WAKING"
+    assert worker["woken_by_ohana"] is True
+    assert sent == ["AA:BB:CC:DD:EE:FF"]

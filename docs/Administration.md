@@ -436,11 +436,19 @@ public de l'autorité locale. Le jeton et la clé serveur conservent des
 permissions `0640`; la clé privée de l'autorité reste exclusivement lisible par
 `root`.
 
-`administration.jobs.wake_on_lan` cible un seul worker connu et une seule MAC.
+`administration.jobs.wake_on_lan` définit uniquement la politique de réveil :
+activation, broadcast UDP, port et délais. L'identité du worker et sa MAC ne sont
+plus dupliquées dans cette configuration : Katsuyu les annonce lors de son
+enregistrement et Agent les conserve dans la base des workers.
+
 Lorsqu'un job compatible arrive après expiration de la fraîcheur du worker,
 Agent émet un paquet magique, expose le worker en `WAKING`, puis conserve
 `woken_by_ohana: true` lorsque Katsuyu s'enregistre. Une arrivée spontanée reste
-`woken_by_ohana: false`. Cette version n'implémente aucune extinction de Bubule.
+`woken_by_ohana: false`. L'administration expose aussi `GET
+/v1/jobs/wake-on-lan` pour lire la politique effective et `POST
+/v1/jobs/workers/{worker_id}/wake` pour un test de réveil explicite. L'envoi du
+Magic Packet reste exécuté par Agent/Tsunade. Cette version n'implémente aucune
+extinction de Bubule.
 
 ## Incidents Tsunade
 

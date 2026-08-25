@@ -95,6 +95,9 @@ class AdministrationService:
         worker_ca_sha256: str | None = None,
         wake_timeout_seconds: int = 180,
         wake_sender: Callable[[str], None] | None = None,
+        wake_broadcast_address: str | None = None,
+        wake_port: int = 9,
+        wake_available_for_seconds: int = 30,
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
         investigation_executor: InvestigationExecutor | None = None,
@@ -124,6 +127,9 @@ class AdministrationService:
         self.worker_ca_sha256 = worker_ca_sha256
         self.wake_timeout_seconds = wake_timeout_seconds
         self.wake_sender = wake_sender
+        self.wake_broadcast_address = wake_broadcast_address
+        self.wake_port = wake_port
+        self.wake_available_for_seconds = wake_available_for_seconds
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
         self.investigation_executor = investigation_executor
@@ -189,6 +195,7 @@ class AdministrationService:
                     "jobs.workers.pairings.read",
                     "jobs.workers.pairings.approve",
                     "jobs.workers.pairings.reject",
+                    "jobs.wake_on_lan.read",
                     "jobs.worker.pair",
                     "jobs.worker.register",
                     "jobs.worker.claim",
@@ -196,6 +203,8 @@ class AdministrationService:
                     "jobs.worker.complete",
                 ]
             )
+            if self.wake_sender is not None:
+                operations.append("jobs.workers.wake")
 
         if self.incident_repository is not None:
             operations.extend(
@@ -859,6 +868,43 @@ class AdministrationService:
             raise LookupError("Distributed jobs are unavailable")
         return self.job_repository.list_workers()
 
+    def read_wake_on_lan(self) -> object:
+        """Expose the effective Wake-on-LAN policy without duplicating worker data."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return {
+            "schema_version": 1,
+            "enabled": self.wake_sender is not None,
+            "broadcast_address": self.wake_broadcast_address,
+            "port": self.wake_port,
+            "wait_timeout_seconds": self.wake_timeout_seconds,
+            "available_for_seconds": self.wake_available_for_seconds,
+        }
+
+    def wake_worker(self, worker_id: str) -> object:
+        """Send one explicit Wake-on-LAN test to a registered Katsuyu worker."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        if self.wake_sender is None:
+            raise DistributedJobConflictError("Wake-on-LAN is disabled")
+        worker = self.job_repository.worker_availability(worker_id)
+        if worker.wake_on_lan_mac_address is None:
+            raise DistributedJobConflictError(
+                f"worker {worker_id} has not advertised a Wake-on-LAN MAC address"
+            )
+        if worker.availability.value == "AVAILABLE":
+            raise DistributedJobConflictError(
+                f"worker {worker_id} is already available"
+            )
+        if worker.availability.value == "WAKING":
+            return worker
+        self.wake_sender(worker.wake_on_lan_mac_address)
+        self.job_repository.mark_worker_waking(
+            worker.worker_id,
+            timeout_seconds=self.wake_timeout_seconds,
+        )
+        return self.job_repository.worker_availability(worker.worker_id)
+
     def create_worker_pairing(self, payload: dict[str, Any]) -> object:
         """Open a bounded Katsuyu pairing request for later approval."""
         if self.job_repository is None:
@@ -1222,6 +1268,7 @@ class AdministrationHTTPServer:
                     "/v1/plugins": service.list_plugins,
                     "/v1/system/network": service.read_network,
                     "/v1/jobs/workers": service.list_workers,
+                    "/v1/jobs/wake-on-lan": service.read_wake_on_lan,
                     "/v1/jobs/workers/pairings": service.list_worker_pairings,
                     "/v1/pairings/companions": service.list_companion_pairings,
                     "/v1/companions": service.list_companion_devices,
@@ -1465,6 +1512,20 @@ class AdministrationHTTPServer:
                             partial(service.revoke_companion_device, device_id)
                         )
                         return
+
+                worker_wake_prefix = "/v1/jobs/workers/"
+                worker_wake_suffix = "/wake"
+                if path.startswith(worker_wake_prefix) and path.endswith(
+                    worker_wake_suffix
+                ):
+                    worker_id = path[len(worker_wake_prefix) : -len(worker_wake_suffix)]
+                    if worker_id and "/" not in worker_id:
+                        self._execute(partial(service.wake_worker, worker_id))
+                    else:
+                        self._write_error(
+                            HTTPStatus.NOT_FOUND, "Worker endpoint not found"
+                        )
+                    return
 
                 if path == "/v1/jobs":
                     payload = self._read_json()

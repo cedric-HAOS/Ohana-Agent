@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -328,23 +329,23 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
             "capabilities": ["system.health"],
             "platform": "Windows 11",
             "worker_version": "0.3.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
         }
     )
     clock.advance(31)
-    sent: list[bool] = []
+    sent: list[str] = []
     service = AdministrationService(
         infrastructure_repository=InfrastructureConfigurationRepository(
             infrastructure_path
         ),
         job_repository=repository,
-        wake_worker_id="katsuyu-bubule",
         wake_timeout_seconds=180,
-        wake_sender=lambda: sent.append(True),
+        wake_sender=sent.append,
     )
     try:
         service.create_job(job_payload(clock))
         worker = repository.worker_availability("katsuyu-bubule")
-        assert sent == [True]
+        assert sent == ["AA:BB:CC:DD:EE:FF"]
         assert worker.availability.value == "WAKING"
         assert worker.woken_by_ohana is True
 
@@ -354,6 +355,7 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
                 "capabilities": ["system.health"],
                 "platform": "Windows 11",
                 "worker_version": "0.3.0",
+                "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
             }
         )
         assert registered.availability.value == "AVAILABLE"
@@ -634,6 +636,104 @@ def test_worker_pairing_issues_one_bound_credential(
         repository.close()
 
 
+def test_worker_identity_migration_preserves_pairing_credential(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    try:
+        created = repository.create_pairing(
+            {
+                "worker_id": "katsuyu-Bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.6.3",
+            }
+        )
+        repository.approve_pairing(str(created.pairing_id))
+        consumed = repository.poll_pairing(
+            str(created.pairing_id),
+            {"polling_secret": created.polling_secret},
+        )
+        assert consumed.worker_token is not None
+        token = consumed.worker_token
+        repository.register_worker(
+            {
+                "worker_id": "katsuyu-Bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.6.3",
+            }
+        )
+
+        assert repository.authorize_worker(
+            "katsuyu-bubule",
+            token,
+            previous_worker_id="katsuyu-Bubule",
+        )
+        migrated = repository.register_worker(
+            {
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.6.4",
+                "wake_on_lan_mac_address": "aa-bb-cc-dd-ee-ff",
+            },
+            previous_worker_id="katsuyu-Bubule",
+        )
+
+        assert migrated.worker_id == "katsuyu-bubule"
+        assert migrated.wake_on_lan_mac_address == "AA:BB:CC:DD:EE:FF"
+        assert repository.authorize_worker("katsuyu-bubule", token)
+        assert not repository.authorize_worker("katsuyu-Bubule", token)
+        assert [worker.worker_id for worker in repository.list_workers().workers] == [
+            "katsuyu-bubule"
+        ]
+    finally:
+        repository.close()
+
+
+def test_existing_worker_table_is_extended_with_wake_on_lan_mac(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    database = tmp_path / "jobs.db"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        """
+        CREATE TABLE distributed_workers (
+            worker_id TEXT PRIMARY KEY,
+            protocol_version INTEGER NOT NULL,
+            capabilities_json TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            worker_version TEXT NOT NULL,
+            registered_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            woken_by_ohana INTEGER NOT NULL DEFAULT 0,
+            wake_requested_at TEXT,
+            wake_deadline_at TEXT
+        )
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    repository = DistributedJobRepository(database, clock=clock)
+    try:
+        worker = repository.register_worker(
+            {
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.7.0",
+                "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+            }
+        )
+        assert worker.wake_on_lan_mac_address == "AA:BB:CC:DD:EE:FF"
+    finally:
+        repository.close()
+
+
 def test_worker_pairing_expires_without_approval(
     tmp_path: Path,
     clock: MutableClock,
@@ -668,6 +768,7 @@ def _request_json(
     token: str,
     method: str = "GET",
     payload: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, object]:
     assert server.address is not None
     host, port = server.address
@@ -679,6 +780,7 @@ def _request_json(
         headers={
             "Authorization": f"Bearer {token}",
             **({"Content-Type": "application/json"} if data else {}),
+            **(headers or {}),
         },
     )
     with urlopen(request, timeout=2) as response:
@@ -865,6 +967,101 @@ def test_http_pairing_requires_tsunade_approval_and_binds_worker_token(
                 },
             )
         assert wrong_worker.value.code == 401
+    finally:
+        server.stop()
+        repository.close()
+
+
+def test_http_registration_can_migrate_only_the_authenticated_previous_worker(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    created = repository.create_pairing(
+        {
+            "worker_id": "katsuyu-Bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.6.3",
+        }
+    )
+    repository.approve_pairing(str(created.pairing_id))
+    consumed = repository.poll_pairing(
+        str(created.pairing_id),
+        {"polling_secret": created.polling_secret},
+    )
+    assert consumed.worker_token is not None
+    token = consumed.worker_token
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-Bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.6.3",
+        }
+    )
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            job_repository=repository,
+        ),
+        token="tsunade-secret",
+        worker_token="legacy-shared",
+        port=0,
+    )
+    server.start()
+    try:
+        with pytest.raises(HTTPError) as shared_token_migration:
+            _request_json(
+                server,
+                "/v1/jobs/workers/register",
+                token="legacy-shared",
+                method="POST",
+                headers={"X-Ohana-Previous-Worker-Id": "katsuyu-Bubule"},
+                payload={
+                    "worker_id": "katsuyu-bubule",
+                    "capabilities": ["system.health"],
+                    "platform": "Windows 11",
+                    "worker_version": "0.7.0",
+                },
+            )
+        assert shared_token_migration.value.code == 401
+
+        migrated = _request_json(
+            server,
+            "/v1/jobs/workers/register",
+            token=token,
+            method="POST",
+            headers={"X-Ohana-Previous-Worker-Id": "katsuyu-Bubule"},
+            payload={
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.6.4",
+                "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+            },
+        )
+        assert migrated["worker_id"] == "katsuyu-bubule"
+
+        with pytest.raises(HTTPError) as wrong_previous:
+            _request_json(
+                server,
+                "/v1/jobs/workers/register",
+                token=token,
+                method="POST",
+                headers={"X-Ohana-Previous-Worker-Id": "katsuyu-other"},
+                payload={
+                    "worker_id": "katsuyu-new",
+                    "capabilities": ["system.health"],
+                    "platform": "Windows 11",
+                    "worker_version": "0.6.4",
+                },
+            )
+        assert wrong_previous.value.code == 401
     finally:
         server.stop()
         repository.close()

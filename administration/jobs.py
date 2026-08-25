@@ -399,7 +399,12 @@ class DistributedJobRepository:
             document = self._document(self._select_required_locked(row["job_id"]))
             return DistributedJobClaimResult(job=document)
 
-    def register_worker(self, payload: dict[str, Any]) -> DistributedWorkerDocument:
+    def register_worker(
+        self,
+        payload: dict[str, Any],
+        *,
+        previous_worker_id: str | None = None,
+    ) -> DistributedWorkerDocument:
         """Persist one authenticated worker identity and finite capability list."""
         registration = DistributedWorkerRegistration.model_validate(payload)
         capabilities = sorted(set(registration.capabilities))
@@ -411,6 +416,11 @@ class DistributedJobRepository:
         now = self._now()
         normalized = registration.model_copy(update={"capabilities": capabilities})
         with self._lock, self._connection:
+            if previous_worker_id and previous_worker_id != normalized.worker_id:
+                self._migrate_worker_identity_locked(
+                    previous_worker_id,
+                    normalized.worker_id,
+                )
             existing = self._connection.execute(
                 "SELECT * FROM distributed_workers WHERE worker_id = ?",
                 (normalized.worker_id,),
@@ -434,8 +444,8 @@ class DistributedJobRepository:
                 INSERT INTO distributed_workers (
                     worker_id, protocol_version, capabilities_json, platform,
                     worker_version, registered_at, last_seen_at, woken_by_ohana,
-                    wake_requested_at, wake_deadline_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    wake_requested_at, wake_deadline_at, wake_on_lan_mac_address
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(worker_id) DO UPDATE SET
                     protocol_version = excluded.protocol_version,
                     capabilities_json = excluded.capabilities_json,
@@ -444,7 +454,8 @@ class DistributedJobRepository:
                     last_seen_at = excluded.last_seen_at,
                     woken_by_ohana = excluded.woken_by_ohana,
                     wake_requested_at = excluded.wake_requested_at,
-                    wake_deadline_at = excluded.wake_deadline_at
+                    wake_deadline_at = excluded.wake_deadline_at,
+                    wake_on_lan_mac_address = excluded.wake_on_lan_mac_address
                 """,
                 (
                     normalized.worker_id,
@@ -457,6 +468,7 @@ class DistributedJobRepository:
                     woken_by_ohana,
                     wake_requested_at,
                     wake_deadline_at,
+                    normalized.wake_on_lan_mac_address,
                 ),
             )
         LOGGER.info(
@@ -533,6 +545,36 @@ class DistributedJobRepository:
                 (worker_id,),
             ).fetchone()
         return bool(row and job_type in json.loads(row["capabilities_json"]))
+
+    def wake_candidate(self, job_type: str) -> DistributedWorkerDocument | None:
+        """Return one unavailable compatible worker that advertised a WOL MAC."""
+        now = self._now()
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM distributed_workers ORDER BY last_seen_at DESC"
+            ).fetchall()
+        compatible = [
+            self._worker_document(row, now)
+            for row in rows
+            if job_type in json.loads(row["capabilities_json"])
+        ]
+        if any(
+            worker.availability
+            in {
+                DistributedWorkerAvailability.AVAILABLE,
+                DistributedWorkerAvailability.WAKING,
+            }
+            for worker in compatible
+        ):
+            return None
+        return next(
+            (
+                worker
+                for worker in compatible
+                if worker.wake_on_lan_mac_address is not None
+            ),
+            None,
+        )
 
     def worker_availability(self, worker_id: str) -> DistributedWorkerDocument:
         """Return the current computed availability of one worker."""
@@ -743,7 +785,13 @@ class DistributedJobRepository:
             worker_token=worker_token,
         )
 
-    def authorize_worker(self, worker_id: str, token: str) -> bool:
+    def authorize_worker(
+        self,
+        worker_id: str,
+        token: str,
+        *,
+        previous_worker_id: str | None = None,
+    ) -> bool:
         """Validate a per-worker bearer credential without storing its clear text."""
         with self._lock:
             row = self._connection.execute(
@@ -753,6 +801,14 @@ class DistributedJobRepository:
                 """,
                 (worker_id,),
             ).fetchone()
+            if row is None and previous_worker_id and previous_worker_id != worker_id:
+                row = self._connection.execute(
+                    """
+                    SELECT token_sha256 FROM distributed_worker_credentials
+                    WHERE worker_id = ? AND revoked_at IS NULL
+                    """,
+                    (previous_worker_id,),
+                ).fetchone()
         return row is not None and hmac.compare_digest(
             row["token_sha256"], self._secret_digest(token)
         )
@@ -944,7 +1000,8 @@ class DistributedJobRepository:
                     last_seen_at TEXT NOT NULL,
                     woken_by_ohana INTEGER NOT NULL DEFAULT 0,
                     wake_requested_at TEXT,
-                    wake_deadline_at TEXT
+                    wake_deadline_at TEXT,
+                    wake_on_lan_mac_address TEXT
                 )
                 """
             )
@@ -966,6 +1023,11 @@ class DistributedJobRepository:
             if "wake_deadline_at" not in worker_columns:
                 self._connection.execute(
                     "ALTER TABLE distributed_workers ADD COLUMN wake_deadline_at TEXT"
+                )
+            if "wake_on_lan_mac_address" not in worker_columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_workers "
+                    "ADD COLUMN wake_on_lan_mac_address TEXT"
                 )
             self._connection.execute(
                 """
@@ -1189,6 +1251,59 @@ class DistributedJobRepository:
             )
         self._require_attempt_owner(row, worker_id, attempt)
 
+    def _migrate_worker_identity_locked(
+        self,
+        previous_worker_id: str,
+        worker_id: str,
+    ) -> None:
+        """Move one paired worker identity without rotating its credential."""
+        target_credential = self._connection.execute(
+            "SELECT 1 FROM distributed_worker_credentials WHERE worker_id = ?",
+            (worker_id,),
+        ).fetchone()
+        if target_credential is not None:
+            raise DistributedJobConflictError(
+                f"worker identity already exists: {worker_id}"
+            )
+        previous_credential = self._connection.execute(
+            "SELECT 1 FROM distributed_worker_credentials WHERE worker_id = ?",
+            (previous_worker_id,),
+        ).fetchone()
+        if previous_credential is None:
+            raise LookupError(f"distributed worker not found: {previous_worker_id}")
+
+        target_worker = self._connection.execute(
+            "SELECT 1 FROM distributed_workers WHERE worker_id = ?",
+            (worker_id,),
+        ).fetchone()
+        if target_worker is not None:
+            raise DistributedJobConflictError(
+                f"worker identity already exists: {worker_id}"
+            )
+
+        self._connection.execute(
+            "UPDATE distributed_worker_credentials "
+            "SET worker_id = ? WHERE worker_id = ?",
+            (worker_id, previous_worker_id),
+        )
+        self._connection.execute(
+            "UPDATE distributed_workers SET worker_id = ? WHERE worker_id = ?",
+            (worker_id, previous_worker_id),
+        )
+        self._connection.execute(
+            "UPDATE distributed_worker_pairings SET worker_id = ? WHERE worker_id = ?",
+            (worker_id, previous_worker_id),
+        )
+        self._connection.execute(
+            "UPDATE distributed_jobs SET worker_id = ? WHERE worker_id = ?",
+            (worker_id, previous_worker_id),
+        )
+        LOGGER.info(
+            "Katsuyu worker identity migrated %s -> %s",
+            previous_worker_id,
+            worker_id,
+        )
+
     @staticmethod
     def _require_attempt_owner(row: sqlite3.Row, worker_id: str, attempt: int) -> None:
         if row["worker_id"] != worker_id or int(row["attempt"]) != attempt:
@@ -1221,6 +1336,7 @@ class DistributedJobRepository:
             capabilities=json.loads(row["capabilities_json"]),
             platform=row["platform"],
             worker_version=row["worker_version"],
+            wake_on_lan_mac_address=row["wake_on_lan_mac_address"],
             registered_at=self._parse_timestamp(row["registered_at"]),
             last_seen_at=last_seen,
             availability=availability,

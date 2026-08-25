@@ -351,6 +351,20 @@ class DistributedWorkerRegistration(AdministrationModel):
     capabilities: list[str] = Field(min_length=1, max_length=32)
     platform: str = Field(min_length=1, max_length=100)
     worker_version: str = Field(min_length=1, max_length=40)
+    wake_on_lan_mac_address: str | None = None
+
+    @field_validator("wake_on_lan_mac_address")
+    @classmethod
+    def normalize_wake_on_lan_mac_address(cls, value: str | None) -> str | None:
+        """Normalize the physical address Katsuyu advertises for Wake-on-LAN."""
+        if value is None:
+            return None
+        normalized = value.replace("-", ":").upper()
+        if MAC_ADDRESS_PATTERN.fullmatch(normalized) is None:
+            raise ValueError(
+                "wake_on_lan_mac_address must use the AA:BB:CC:DD:EE:FF format"
+            )
+        return normalized
 
 
 class DistributedWorkerAvailability(StrEnum):

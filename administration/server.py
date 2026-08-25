@@ -93,9 +93,8 @@ class AdministrationService:
         agent_version: str | None = None,
         worker_ca_certificate_pem: str | None = None,
         worker_ca_sha256: str | None = None,
-        wake_worker_id: str | None = None,
         wake_timeout_seconds: int = 180,
-        wake_sender: Callable[[], None] | None = None,
+        wake_sender: Callable[[str], None] | None = None,
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
         investigation_executor: InvestigationExecutor | None = None,
@@ -123,7 +122,6 @@ class AdministrationService:
             )
         self.worker_ca_certificate_pem = worker_ca_certificate_pem
         self.worker_ca_sha256 = worker_ca_sha256
-        self.wake_worker_id = wake_worker_id
         self.wake_timeout_seconds = wake_timeout_seconds
         self.wake_sender = wake_sender
         self.backup_transfer = backup_transfer
@@ -805,27 +803,22 @@ class AdministrationService:
         return job
 
     def _wake_compatible_worker(self, job_type: str) -> None:
-        """Wake only the configured worker when it is known and unavailable."""
-        if (
-            self.job_repository is None
-            or self.wake_sender is None
-            or self.wake_worker_id is None
-            or not self.job_repository.worker_supports(self.wake_worker_id, job_type)
-        ):
+        """Wake one unavailable compatible worker using its advertised WOL MAC."""
+        if self.job_repository is None or self.wake_sender is None:
             return
-        worker = self.job_repository.worker_availability(self.wake_worker_id)
-        if worker.availability.value != "UNAVAILABLE":
+        worker = self.job_repository.wake_candidate(job_type)
+        if worker is None or worker.wake_on_lan_mac_address is None:
             return
         try:
-            self.wake_sender()
+            self.wake_sender(worker.wake_on_lan_mac_address)
             self.job_repository.mark_worker_waking(
-                self.wake_worker_id,
+                worker.worker_id,
                 timeout_seconds=self.wake_timeout_seconds,
             )
-        except OSError:
+        except (OSError, ValueError):
             LOGGER.exception(
                 "Unable to send Wake-on-LAN for Katsuyu worker %s",
-                self.wake_worker_id,
+                worker.worker_id,
             )
 
     def read_job(self, job_id: str) -> object:
@@ -846,11 +839,19 @@ class AdministrationService:
             raise LookupError("Distributed jobs are unavailable")
         return self.job_repository.claim(payload)
 
-    def register_worker(self, payload: dict[str, Any]) -> object:
+    def register_worker(
+        self,
+        payload: dict[str, Any],
+        *,
+        previous_worker_id: str | None = None,
+    ) -> object:
         """Register Katsuyu and its finite capabilities."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        return self.job_repository.register_worker(payload)
+        return self.job_repository.register_worker(
+            payload,
+            previous_worker_id=previous_worker_id,
+        )
 
     def list_workers(self) -> object:
         """List the worker registrations visible to Tsunade."""
@@ -1400,8 +1401,20 @@ class AdministrationHTTPServer:
 
                 if path == "/v1/jobs/workers/register":
                     payload = self._read_json()
-                    if payload is not None and self._authorized_worker(payload):
-                        self._execute(lambda: service.register_worker(payload))
+                    previous_worker_id = (
+                        self.headers.get("X-Ohana-Previous-Worker-Id", "").strip()
+                        or None
+                    )
+                    if payload is not None and self._authorized_worker(
+                        payload,
+                        previous_worker_id=previous_worker_id,
+                    ):
+                        self._execute(
+                            lambda: service.register_worker(
+                                payload,
+                                previous_worker_id=previous_worker_id,
+                            )
+                        )
                     return
                 if path == "/v1/jobs/claim":
                     payload = self._read_json()
@@ -1640,7 +1653,12 @@ class AdministrationHTTPServer:
 
                 return True
 
-            def _authorized_worker(self, payload: dict[str, Any]) -> bool:
+            def _authorized_worker(
+                self,
+                payload: dict[str, Any],
+                *,
+                previous_worker_id: str | None = None,
+            ) -> bool:
                 authorization = self.headers.get("Authorization", "")
                 prefix = "Bearer "
                 worker_id = payload.get("worker_id")
@@ -1655,10 +1673,17 @@ class AdministrationHTTPServer:
                     and authorization.startswith(prefix)
                     and service.job_repository is not None
                     and service.job_repository.authorize_worker(
-                        worker_id, supplied_token
+                        worker_id,
+                        supplied_token,
+                        previous_worker_id=previous_worker_id,
                     )
                 )
-                if not shared_matches and not paired_matches:
+                authorized = (
+                    paired_matches
+                    if previous_worker_id is not None
+                    else shared_matches or paired_matches
+                )
+                if not authorized:
                     self._write_error(
                         HTTPStatus.UNAUTHORIZED,
                         "A valid worker token is required",

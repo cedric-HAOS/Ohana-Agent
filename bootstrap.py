@@ -1938,16 +1938,17 @@ def build_production_agent(
                 ) from error
 
         wake_sender = None
-        wake_worker_id = None
         wake_timeout_seconds = 180
         if administration_config.jobs.wake_on_lan.enabled:
             wake_config = administration_config.jobs.wake_on_lan
-            wake_sender = WakeOnLanSender(
-                mac_address=str(wake_config.mac_address),
-                broadcast_address=str(wake_config.broadcast_address),
-                port=wake_config.port,
-            ).send
-            wake_worker_id = wake_config.worker_id
+
+            def wake_sender(mac_address: str) -> None:
+                WakeOnLanSender(
+                    mac_address=mac_address,
+                    broadcast_address=str(wake_config.broadcast_address),
+                    port=wake_config.port,
+                ).send()
+
             wake_timeout_seconds = wake_config.wait_timeout_seconds
 
         administration_service = AdministrationService(
@@ -1968,7 +1969,6 @@ def build_production_agent(
             ),
             worker_ca_certificate_pem=worker_ca_certificate_pem,
             worker_ca_sha256=worker_ca_sha256,
-            wake_worker_id=wake_worker_id,
             wake_timeout_seconds=wake_timeout_seconds,
             wake_sender=wake_sender,
             incident_repository=incident_repository,

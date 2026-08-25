@@ -6,6 +6,28 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.25.0] — Wake-on-LAN piloté par Katsuyu — 2026-08-25
+
+## Ajouté
+
+- Katsuyu peut annoncer à Agent l'adresse MAC physique de l'interface Windows
+  utilisée pour joindre INFRA-01 ; Tsunade utilise cette donnée durable pour
+  réveiller un worker compatible et indisponible avant un job.
+- La liste des workers expose cette adresse MAC afin que Vision puisse afficher
+  et contrôler la configuration Wake-on-LAN sans dupliquer l'identité du PC.
+
+## Modifié
+
+- La politique Wake-on-LAN n'impose plus un `worker_id` ni une adresse MAC dans
+  `shikamaru.yaml` ; les anciens champs restent acceptés pour compatibilité avec
+  les configurations déjà migrées par Installer.
+
+## Corrigé
+
+- Un worker existant peut migrer explicitement de `katsuyu-Bubule` vers
+  `katsuyu-bubule` en conservant son jeton d'appairage, son historique de jobs
+  et son enregistrement durable.
+
 # [1.24.1] — Accès aux journaux HAOS — 2026-08-24
 
 ## Corrigé

@@ -81,8 +81,6 @@ administration:
       timeout_seconds: 900
     wake_on_lan:
       enabled: false
-      worker_id: katsuyu-bubule
-      mac_address: null
       broadcast_address: 192.168.1.255
       port: 9
       wait_timeout_seconds: 180

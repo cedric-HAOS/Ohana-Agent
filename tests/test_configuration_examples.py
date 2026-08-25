@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from configuration.administration import WakeOnLanConfig
 from configuration.loader import ConfigurationLoader
 from loader.dhcp_config_loader import DHCPConfigLoader
 from loader.dns_config_loader import DNSConfigLoader
@@ -44,6 +45,8 @@ def test_shikamaru_example_configuration_is_valid() -> None:
     assert configuration.administration.jobs.worker_tls.enabled is False
     assert configuration.administration.jobs.worker_tls.port == 8766
     assert configuration.administration.jobs.wake_on_lan.enabled is False
+    assert configuration.administration.jobs.wake_on_lan.worker_id is None
+    assert configuration.administration.jobs.wake_on_lan.mac_address is None
     assert (
         str(configuration.administration.jobs.wake_on_lan.broadcast_address)
         == "192.168.1.255"
@@ -56,6 +59,19 @@ def test_shikamaru_development_configuration_is_valid() -> None:
     assert configuration.administration.enabled is True
     assert configuration.administration.dhcp.enabled is True
     assert configuration.administration.dhcp.validation_command is None
+
+
+def test_wake_on_lan_can_use_worker_advertised_identity_and_mac() -> None:
+    configuration = WakeOnLanConfig(
+        enabled=True,
+        worker_id="katsuyu-bubule",
+        mac_address=None,
+        broadcast_address="192.168.1.255",
+    )
+
+    assert configuration.enabled is True
+    assert configuration.worker_id == "katsuyu-bubule"
+    assert configuration.mac_address is None
 
 
 def test_infrastructure_example_configuration_is_valid() -> None:

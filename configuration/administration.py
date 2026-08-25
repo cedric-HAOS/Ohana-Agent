@@ -87,10 +87,10 @@ class CompanionTLSConfig(Config):
 
 
 class WakeOnLanConfig(Config):
-    """Optional, bounded Wake-on-LAN policy for one Katsuyu host."""
+    """Optional, bounded Wake-on-LAN policy for registered Katsuyu workers."""
 
     enabled: bool = False
-    worker_id: str = "katsuyu-bubule"
+    worker_id: str | None = None
     mac_address: str | None = None
     broadcast_address: IPvAnyAddress = IPvAnyAddress("255.255.255.255")
     port: int = Field(default=9, ge=1, le=65535)
@@ -99,11 +99,11 @@ class WakeOnLanConfig(Config):
 
     @field_validator("worker_id")
     @classmethod
-    def validate_worker_id(cls, value: str) -> str:
+    def validate_worker_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
-        if not normalized:
-            raise ValueError("Wake-on-LAN worker_id cannot be empty")
-        return normalized
+        return normalized or None
 
     @field_validator("mac_address")
     @classmethod
@@ -112,12 +112,6 @@ class WakeOnLanConfig(Config):
             return None
         normalized = value.strip()
         return normalized or None
-
-    @model_validator(mode="after")
-    def validate_enabled_policy(self) -> "WakeOnLanConfig":
-        if self.enabled and self.mac_address is None:
-            raise ValueError("enabled Wake-on-LAN requires a MAC address")
-        return self
 
 
 class DistributedLogAnalysisConfig(Config):

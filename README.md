@@ -78,6 +78,12 @@ Katsuyu dispose d'un jeton worker distinct et ne peut ni administrer Agent ni
 exécuter une commande arbitraire. Les jobs expirés sont repris sans traitement
 périodique permanent.
 
+Lorsqu'il est activé, le Wake-on-LAN repose sur l'identité et l'adresse MAC
+annoncées par Katsuyu lors de son enregistrement. Agent conserve ces données,
+choisit un worker compatible réellement indisponible, envoie le magic packet
+puis publie l'état `WAKING`. Les anciens `worker_id` et `mac_address` statiques
+restent lisibles pour compatibilité mais ne sont plus la source de vérité.
+
 Tsunade applique aux incidents un cycle déterministe avant tout recours à l'IA.
 Le LLM local ne reçoit que le contexte utile et retourne des hypothèses,
 éléments concordants ou contradictoires et investigations proposées. Agent

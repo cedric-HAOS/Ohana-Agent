@@ -27,6 +27,32 @@ from administration.models import (
 
 LOGGER = logging.getLogger(__name__)
 
+TsunadeDecision = Literal[
+    "stable",
+    "watch",
+    "investigate",
+    "action_required",
+]
+
+TsunadeDecisionSource = Literal[
+    "deterministic",
+    "katsuyu_ai",
+    "fallback",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class TsunadeDecisionResult:
+    """One bounded decision owned by Tsunade."""
+
+    decision: TsunadeDecision
+    source: TsunadeDecisionSource
+    conclusion: str
+    reason: str
+    confidence: float
+    recommended_action: str
+    reevaluate_after: str | None = None
+
 
 class TsunadeExpertiseConflictError(RuntimeError):
     """Raised when an incident already has an expertise cycle in progress."""
@@ -107,6 +133,9 @@ class TsunadeExpertiseOutcome(AdministrationModel):
     facts: list[str] = Field(default_factory=list, max_length=32)
     proposals: list[str] = Field(default_factory=list, max_length=16)
     ai_job_id: UUID | None = None
+    decision: TsunadeDecision | None = None
+    decision_source: TsunadeDecisionSource | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class TsunadeExpertiseService:
@@ -193,9 +222,35 @@ class TsunadeExpertiseService:
                         *procedure.proposals,
                         *self._experience_proposals(experiences),
                     ][:16],
+                    decision="action_required",
+                    decision_source="deterministic",
+                    confidence=1.0,
                 )
                 self._record_deterministic(outcome, failures)
                 return outcome
+
+            if incident.capability_id == "logs.health":
+                decision = self._log_decision(incident, log_result)
+
+                if decision.decision in {"stable", "watch"}:
+                    outcome = TsunadeExpertiseOutcome(
+                        incident_id=incident.incident_id,
+                        status="DETERMINISTIC",
+                        known_procedure=procedure is not None,
+                        diagnosis=decision.conclusion,
+                        facts=facts,
+                        proposals=[],
+                        decision=decision.decision,
+                        decision_source=decision.source,
+                        confidence=decision.confidence,
+                    )
+                    self._record_decision(
+                        incident.incident_id,
+                        decision,
+                        facts=facts,
+                        cycle_status="deterministic_decision",
+                    )
+                    return outcome
 
             parameters = self._ai_parameters(
                 incident,
@@ -255,6 +310,9 @@ class TsunadeExpertiseService:
                     *self._experience_proposals(experiences),
                 ][:16],
                 ai_job_id=job_id,
+                decision="investigate",
+                decision_source="deterministic",
+                confidence=0.90,
             )
             self.incidents.append_record(
                 incident.incident_id,
@@ -265,7 +323,17 @@ class TsunadeExpertiseService:
                         "cycle_status": "ai_queued",
                         "facts": facts,
                         "ai_job_id": str(job_id),
-                        "decision": "pending",
+                        "decision": "investigate",
+                        "decision_source": "deterministic",
+                        "conclusion": (
+                            "Les éléments disponibles justifient une analyse "
+                            "corrélée complémentaire."
+                        ),
+                        "confidence": 0.90,
+                        "recommended_action": (
+                            "Utiliser Katsuyu AI comme aide à l’interprétation "
+                            "avant toute action."
+                        ),
                     },
                 },
             )
@@ -273,6 +341,64 @@ class TsunadeExpertiseService:
         finally:
             with self._lock:
                 self._inflight.discard(key)
+
+    @staticmethod
+    def _decision_from_ai_result(
+        result: AiInferenceResult,
+    ) -> TsunadeDecisionResult:
+        hypothesis_confidence = max(
+            (hypothesis.confidence for hypothesis in result.hypotheses),
+            default=0.0,
+        )
+
+        if result.verdict == "OK":
+            return TsunadeDecisionResult(
+                decision="watch",
+                source="katsuyu_ai",
+                conclusion=(result.interpretation.strip() or result.summary),
+                reason=(
+                    "Katsuyu AI n’identifie pas d’élément suffisant pour "
+                    "justifier une intervention."
+                ),
+                confidence=min(max(hypothesis_confidence, 0.70), 0.85),
+                recommended_action=("Maintenir la surveillance déterministe."),
+                reevaluate_after="next_logs_health_check",
+            )
+
+        if result.verdict == "KO":
+            return TsunadeDecisionResult(
+                decision="investigate",
+                source="katsuyu_ai",
+                conclusion=(result.interpretation.strip() or result.summary),
+                reason=(
+                    "L’analyse corrélée met en évidence des éléments qui "
+                    "méritent une investigation, sans autoriser de correction."
+                ),
+                confidence=min(max(hypothesis_confidence, 0.60), 0.85),
+                recommended_action=(
+                    result.recommended_investigation[0]
+                    if result.recommended_investigation
+                    else "Approfondir les éléments identifiés par Katsuyu."
+                ),
+                reevaluate_after=None,
+            )
+
+        return TsunadeDecisionResult(
+            decision="watch",
+            source="katsuyu_ai",
+            conclusion=(
+                "L’analyse Katsuyu ne dispose pas d’un contexte suffisant "
+                "pour confirmer une cause."
+            ),
+            reason=(result.summary or "Le contexte reste insuffisant."),
+            confidence=0.60,
+            recommended_action=(
+                result.recommended_investigation[0]
+                if result.recommended_investigation
+                else "Attendre de nouveaux éléments déterministes."
+            ),
+            reevaluate_after="next_logs_health_check",
+        )
 
     def record_ai_result(
         self,
@@ -282,6 +408,7 @@ class TsunadeExpertiseService:
     ) -> None:
         """Persist hypotheses as proposals; never promote them to facts or results."""
         result = AiInferenceResult.model_validate(payload)
+        decision = self._decision_from_ai_result(result)
         hypotheses = [
             hypothesis.model_dump(mode="json") for hypothesis in result.hypotheses
         ]
@@ -290,14 +417,20 @@ class TsunadeExpertiseService:
             {
                 "kind": "diagnostic",
                 "summary": (
-                    f"Katsuyu AI propose {len(hypotheses)} hypothèse(s) ; "
-                    "la décision de Tsunade reste en attente."
+                    f"Tsunade retient la décision « {decision.decision} » "
+                    f"après l’analyse Katsuyu AI."
                 ),
                 "payload": {
                     "cycle_status": "ai_completed",
                     "origin": "katsuyu_ai",
                     "epistemic_status": "hypothesis",
-                    "decision": "pending",
+                    "decision": decision.decision,
+                    "decision_source": decision.source,
+                    "conclusion": decision.conclusion,
+                    "reason": decision.reason,
+                    "confidence": decision.confidence,
+                    "recommended_action": decision.recommended_action,
+                    "reevaluate_after": decision.reevaluate_after,
                     "job_id": str(job_id),
                     "analysis_version": result.analysis_version,
                     "verdict": result.verdict,
@@ -333,20 +466,41 @@ class TsunadeExpertiseService:
         job_id: UUID | str,
         error: object,
     ) -> None:
-        """Keep a failed optional inference retryable and non-authoritative."""
+        """Fallback to a bounded Tsunade decision when optional AI fails."""
+        decision = TsunadeDecisionResult(
+            decision="watch",
+            source="fallback",
+            conclusion=(
+                "L’analyse Katsuyu AI n’a pas abouti. "
+                "Aucun élément ne permet d’autoriser une action corrective."
+            ),
+            reason=(
+                "Le moteur déterministe reste la référence ; "
+                "l’échec de l’analyse facultative ne bloque pas Tsunade."
+            ),
+            confidence=0.70,
+            recommended_action=(
+                "Maintenir la surveillance et réévaluer lors du prochain contrôle."
+            ),
+            reevaluate_after="next_logs_health_check",
+        )
+
         self.incidents.append_record(
             incident_id,
             {
                 "kind": "diagnostic",
-                "summary": (
-                    "L’analyse Katsuyu AI facultative a échoué ; "
-                    "aucune décision n’a été prise."
-                ),
+                "summary": decision.conclusion,
                 "payload": {
                     "cycle_status": "ai_failed",
                     "origin": "katsuyu_ai",
                     "epistemic_status": "none",
-                    "decision": "pending",
+                    "decision": decision.decision,
+                    "decision_source": decision.source,
+                    "conclusion": decision.conclusion,
+                    "reason": decision.reason,
+                    "confidence": decision.confidence,
+                    "recommended_action": decision.recommended_action,
+                    "reevaluate_after": decision.reevaluate_after,
                     "job_id": str(job_id),
                     "error": str(error)[:1_000],
                 },
@@ -378,6 +532,125 @@ class TsunadeExpertiseService:
                 },
             )
         return results
+
+        @classmethod
+        def _log_decision(
+            cls,
+            incident: TsunadeIncident,
+            log_result: dict[str, Any] | None,
+        ) -> TsunadeDecisionResult:
+            payload = log_result or incident.context
+            findings = cls._compact_logs(payload)
+            correlations = cls._compact_correlations(payload)
+
+            if not findings:
+                return TsunadeDecisionResult(
+                    decision="watch",
+                    source="deterministic",
+                    conclusion=(
+                        "Aucune anomalie exploitable n’a été "
+                        "isolée dans les éléments "
+                        "actuellement disponibles."
+                    ),
+                    reason="Le contexte est trop limité pour "
+                    "justifier une investigation.",
+                    confidence=0.75,
+                    recommended_action="Surveiller le prochain contrôle des journaux.",
+                    reevaluate_after="next_logs_health_check",
+                )
+
+            meaningful_changes: list[dict[str, Any]] = []
+            warning_changes: list[dict[str, Any]] = []
+            critical_findings: list[dict[str, Any]] = []
+
+            for finding in findings:
+                occurrences = int(finding.get("occurrences") or 0)
+                reference = finding.get("reference_occurrences")
+                trend = str(finding.get("trend") or "")
+                severity = str(finding.get("severity") or "")
+
+                relative_change = 0.0
+                if isinstance(reference, int) and reference > 0:
+                    relative_change = (occurrences - reference) / reference
+                elif reference == 0 and occurrences > 0:
+                    relative_change = 1.0
+
+                if severity == "critical" and trend not in {
+                    "decreasing",
+                    "disappeared",
+                }:
+                    critical_findings.append(finding)
+
+                if trend in {"new", "increasing"} or relative_change >= 0.50:
+                    meaningful_changes.append(finding)
+                elif relative_change >= 0.25:
+                    warning_changes.append(finding)
+
+            if correlations or critical_findings or len(meaningful_changes) >= 2:
+                reasons: list[str] = []
+
+                if correlations:
+                    reasons.append(
+                        f"{len(correlations)} corrélation(s) temporelle(s) détectée(s)"
+                    )
+                if critical_findings:
+                    reasons.append(f"{len(critical_findings)} anomalie(s) critique(s)")
+                if len(meaningful_changes) >= 2:
+                    reasons.append(
+                        f"{len(meaningful_changes)} anomalie(s) en "
+                        "évolution significative"
+                    )
+
+                return TsunadeDecisionResult(
+                    decision="investigate",
+                    source="deterministic",
+                    conclusion=(
+                        "Les journaux contiennent plusieurs éléments suffisamment "
+                        "significatifs pour justifier une analyse approfondie."
+                    ),
+                    reason=" ; ".join(reasons),
+                    confidence=0.90,
+                    recommended_action=(
+                        "Corréler les anomalies et rechercher une cause commune avant "
+                        "toute action corrective."
+                    ),
+                    reevaluate_after=None,
+                )
+
+            if meaningful_changes or warning_changes:
+                return TsunadeDecisionResult(
+                    decision="watch",
+                    source="deterministic",
+                    conclusion=(
+                        "Une évolution est visible, mais elle ne démontre pas encore "
+                        "une dégradation nécessitant une intervention."
+                    ),
+                    reason=(
+                        f"{len(meaningful_changes) + len(warning_changes)} anomalie(s) "
+                        "présentent une évolution à surveiller."
+                    ),
+                    confidence=0.85,
+                    recommended_action=(
+                        "Comparer avec le prochain contrôle avant d’approfondir."
+                    ),
+                    reevaluate_after="next_logs_health_check",
+                )
+
+            return TsunadeDecisionResult(
+                decision="stable",
+                source="deterministic",
+                conclusion=(
+                    "Les anomalies observées sont connues et ne présentent pas "
+                    "d’aggravation significative."
+                ),
+                reason=(
+                    "Aucune anomalie nouvelle, forte augmentation, corrélation "
+                    "temporelle ou criticité supplémentaire n’a été détectée."
+                ),
+                confidence=0.95,
+                recommended_action="Aucune investigation supplémentaire nécessaire.",
+                reevaluate_after="next_logs_health_check",
+            )
 
     def _ai_parameters(
         self,
@@ -430,12 +703,35 @@ class TsunadeExpertiseService:
                     ),
                 }
             )
-        compact_logs = self._compact_logs(log_result or incident.context)
-        if compact_logs:
+        log_payload = log_result or incident.context
+        compact_logs = self._compact_logs(log_payload)
+        compact_correlations = self._compact_correlations(log_payload)
+
+        if compact_logs or compact_correlations:
             evidence.append(
                 {
-                    "source": "logs.anomalies",
-                    "content": self._bounded_json(compact_logs),
+                    "source": "logs.analysis",
+                    "content": self._bounded_json(
+                        {
+                            "findings": compact_logs,
+                            "correlations": compact_correlations,
+                            "new_anomaly_count": (
+                                log_payload.get("new_anomaly_count")
+                                if isinstance(log_payload, dict)
+                                else None
+                            ),
+                            "worsening_anomaly_count": (
+                                log_payload.get("worsening_anomaly_count")
+                                if isinstance(log_payload, dict)
+                                else None
+                            ),
+                            "recommended_investigations": (
+                                log_payload.get("recommended_investigations", [])
+                                if isinstance(log_payload, dict)
+                                else []
+                            ),
+                        }
+                    ),
                 }
             )
         if procedure is not None:
@@ -484,6 +780,33 @@ class TsunadeExpertiseService:
             "timeout": 900,
         }
 
+    def _record_decision(
+        self,
+        incident_id: UUID | str,
+        decision: TsunadeDecisionResult,
+        *,
+        facts: list[str],
+        cycle_status: str,
+    ) -> None:
+        self.incidents.append_record(
+            incident_id,
+            {
+                "kind": "diagnostic",
+                "summary": decision.conclusion,
+                "payload": {
+                    "cycle_status": cycle_status,
+                    "decision": decision.decision,
+                    "decision_source": decision.source,
+                    "conclusion": decision.conclusion,
+                    "reason": decision.reason,
+                    "confidence": decision.confidence,
+                    "recommended_action": decision.recommended_action,
+                    "reevaluate_after": decision.reevaluate_after,
+                    "facts": facts,
+                },
+            },
+        )
+
     def _record_deterministic(
         self,
         outcome: TsunadeExpertiseOutcome,
@@ -499,7 +822,16 @@ class TsunadeExpertiseService:
                     "epistemic_status": "confirmed_by_probe",
                     "facts": outcome.facts,
                     "failed_investigations": [result.operation for result in failures],
-                    "decision": "pending",
+                    "decision": outcome.decision or "action_required",
+                    "decision_source": outcome.decision_source or "deterministic",
+                    "conclusion": outcome.diagnosis,
+                    "confidence": outcome.confidence or 1.0,
+                    "recommended_action": (
+                        outcome.proposals[0]
+                        if outcome.proposals
+                        else "Une intervention doit être étudiée."
+                    ),
+                    "reevaluate_after": None,
                 },
             },
         )
@@ -619,7 +951,9 @@ class TsunadeExpertiseService:
                                 "signature",
                                 "category",
                                 "severity",
+                                "summary",
                                 "occurrences",
+                                "reference_occurrences",
                                 "first_at",
                                 "last_at",
                                 "trend",
@@ -627,6 +961,28 @@ class TsunadeExpertiseService:
                         }
                     )
         return findings[:32]
+
+    @staticmethod
+    def _compact_correlations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+
+        correlations = payload.get("correlations", [])
+        if not isinstance(correlations, list):
+            return []
+
+        return [
+            {
+                key: correlation.get(key)
+                for key in (
+                    "sources",
+                    "occurred_at",
+                    "summary",
+                )
+            }
+            for correlation in correlations[:32]
+            if isinstance(correlation, dict)
+        ]
 
     @staticmethod
     def _bounded_json(value: object) -> str:

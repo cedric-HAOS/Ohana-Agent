@@ -1937,17 +1937,21 @@ def build_production_agent(
                     f"{worker_tls_config.ca_certificate_file}."
                 ) from error
 
-        wake_sender = None
         wake_config = administration_config.jobs.wake_on_lan
         wake_timeout_seconds = wake_config.wait_timeout_seconds
-        if wake_config.enabled:
 
-            def wake_sender(mac_address: str) -> None:
-                WakeOnLanSender(
-                    mac_address=mac_address,
-                    broadcast_address=str(wake_config.broadcast_address),
-                    port=wake_config.port,
-                ).send()
+        def wake_sender(mac_address: str) -> None:
+            WakeOnLanSender(
+                mac_address=mac_address,
+                broadcast_address=str(wake_config.broadcast_address),
+                port=wake_config.port,
+            ).send()
+
+        def on_wake_enabled_changed(enabled: bool) -> None:
+            ConfigurationLoader.write_wake_on_lan_enabled(
+                application_config_path,
+                enabled,
+            )
 
         administration_service = AdministrationService(
             infrastructure_repository=(
@@ -1996,6 +2000,8 @@ def build_production_agent(
                 if apns_notification_publisher is not None
                 else None
             ),
+            wake_enabled=wake_config.enabled,
+            on_wake_enabled_changed=on_wake_enabled_changed,
         )
 
         def dispatch_ai_job(payload: dict[str, object]) -> object | None:

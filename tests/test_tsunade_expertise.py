@@ -136,13 +136,20 @@ def test_unexplained_logs_queue_only_bounded_ai_evidence(tmp_path: Path) -> None
         "architecture.concerned",
         "shikamaru.observation",
         "history.relevant",
-        "logs.anomalies",
+        "logs.analysis",
     }
     assert "topology" not in str(parameters).casefold()
-    assert updated.events[-1].payload["decision"] == "pending"
+
+    diagnostic = updated.events[-1]
+    assert diagnostic.payload["cycle_status"] == "ai_queued"
+    assert diagnostic.payload["decision"] == "investigate"
+    assert diagnostic.payload["decision_source"] == "deterministic"
+    assert diagnostic.payload["confidence"] == 0.90
 
 
-def test_ai_hypotheses_remain_proposals_until_tsunade_decides(tmp_path: Path) -> None:
+def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
+    tmp_path: Path,
+) -> None:
     repository = TsunadeIncidentRepository(tmp_path / "control.db")
     incident = _incident(
         repository,
@@ -199,9 +206,17 @@ def test_ai_hypotheses_remain_proposals_until_tsunade_decides(tmp_path: Path) ->
         repository.close()
 
     assert updated.final_result is None
+
     diagnostic = updated.events[-2]
     proposal = updated.events[-1]
+
     assert diagnostic.payload["epistemic_status"] == "hypothesis"
     assert diagnostic.payload["analysis_version"] == 2
-    assert diagnostic.payload["decision"] == "pending"
+
+    assert diagnostic.payload["decision"] == "investigate"
+    assert diagnostic.payload["decision_source"] == "katsuyu_ai"
+    assert diagnostic.payload["confidence"] == 0.85
+
+    assert diagnostic.payload["recommended_action"] == ("Inspecter les voisins du nœud")
+
     assert proposal.payload["authorized"] is False

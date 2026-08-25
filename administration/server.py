@@ -111,6 +111,8 @@ class AdministrationService:
         companion_ca_sha256: str | None = None,
         companion_ca_certificate_pem: str | None = None,
         notification_publisher: Callable[[dict[str, Any]], None] | None = None,
+        wake_enabled: bool = False,
+        on_wake_enabled_changed: Callable[[bool], None] | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -147,6 +149,8 @@ class AdministrationService:
                 "Companion CA certificate and fingerprint must be configured together"
             )
         self.notification_publisher = notification_publisher
+        self.wake_enabled = wake_enabled
+        self.on_wake_enabled_changed = on_wake_enabled_changed
 
     def capabilities(self) -> AdministrationCapabilities:
         """Declare the operations actually supported by this Agent."""
@@ -196,6 +200,7 @@ class AdministrationService:
                     "jobs.workers.pairings.approve",
                     "jobs.workers.pairings.reject",
                     "jobs.wake_on_lan.read",
+                    "jobs.wake_on_lan.write",
                     "jobs.worker.pair",
                     "jobs.worker.register",
                     "jobs.worker.claim",
@@ -203,7 +208,7 @@ class AdministrationService:
                     "jobs.worker.complete",
                 ]
             )
-            if self.wake_sender is not None:
+            if self.wake_enabled and self.wake_sender is not None:
                 operations.append("jobs.workers.wake")
 
         if self.incident_repository is not None:
@@ -813,7 +818,11 @@ class AdministrationService:
 
     def _wake_compatible_worker(self, job_type: str) -> None:
         """Wake one unavailable compatible worker using its advertised WOL MAC."""
-        if self.job_repository is None or self.wake_sender is None:
+        if (
+            self.job_repository is None
+            or not self.wake_enabled
+            or self.wake_sender is None
+        ):
             return
         worker = self.job_repository.wake_candidate(job_type)
         if worker is None or worker.wake_on_lan_mac_address is None:
@@ -874,18 +883,48 @@ class AdministrationService:
             raise LookupError("Distributed jobs are unavailable")
         return {
             "schema_version": 1,
-            "enabled": self.wake_sender is not None,
+            "enabled": self.wake_enabled,
             "broadcast_address": self.wake_broadcast_address,
             "port": self.wake_port,
             "wait_timeout_seconds": self.wake_timeout_seconds,
             "available_for_seconds": self.wake_available_for_seconds,
         }
 
+    def write_wake_on_lan(self, payload: dict[str, Any]) -> object:
+        """Enable or disable Agent-owned Wake-on-LAN policy."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+
+        if set(payload) != {"enabled"}:
+            raise ValueError("Wake-on-LAN update only accepts enabled")
+
+        enabled = payload["enabled"]
+
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+
+        if enabled:
+            workers = self.job_repository.list_workers()
+
+            if not any(worker.wake_on_lan_mac_address for worker in workers.workers):
+                raise DistributedJobConflictError(
+                    "Wake-on-LAN cannot be enabled because no "
+                    "worker has advertised a Wake-on-LAN MAC "
+                    "address"
+                )
+
+        if self.on_wake_enabled_changed is not None:
+            self.on_wake_enabled_changed(enabled)
+
+        self.wake_enabled = enabled
+
+        return self.read_wake_on_lan()
+
     def wake_worker(self, worker_id: str) -> object:
         """Send one explicit Wake-on-LAN test to a registered Katsuyu worker."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        if self.wake_sender is None:
+        if not self.wake_enabled or self.wake_sender is None:
             raise DistributedJobConflictError("Wake-on-LAN is disabled")
         worker = self.job_repository.worker_availability(worker_id)
         if worker.wake_on_lan_mac_address is None:
@@ -1322,6 +1361,7 @@ class AdministrationHTTPServer:
                     "/v1/infrastructure": service.write_infrastructure,
                     "/v1/dhcp": service.write_dhcp,
                     "/v1/system/network": service.write_network,
+                    "/v1/jobs/wake-on-lan": service.write_wake_on_lan,
                 }
                 operation = routes.get(path)
 

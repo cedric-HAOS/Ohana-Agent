@@ -341,6 +341,7 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
         job_repository=repository,
         wake_timeout_seconds=180,
         wake_sender=sent.append,
+        wake_enabled=True,
     )
     try:
         service.create_job(job_payload(clock))
@@ -391,6 +392,7 @@ def test_wake_on_lan_policy_and_explicit_worker_wake(
         job_repository=repository,
         wake_timeout_seconds=180,
         wake_sender=sent.append,
+        wake_enabled=True,
         wake_broadcast_address="192.168.1.255",
         wake_port=9,
         wake_available_for_seconds=30,
@@ -1326,6 +1328,7 @@ def test_http_routes_expose_wake_policy_and_explicit_wake(
             job_repository=repository,
             wake_timeout_seconds=180,
             wake_sender=sent.append,
+            wake_enabled=True,
             wake_broadcast_address="192.168.1.255",
             wake_port=9,
             wake_available_for_seconds=30,

@@ -40,3 +40,25 @@ class ConfigurationLoader:
             data = yaml.safe_load(config_file) or {}
 
         return Configuration.model_validate(data)
+
+    @staticmethod
+    def write_wake_on_lan_enabled(path: str | Path, enabled: bool) -> None:
+        """Persist only the Agent-owned Wake-on-LAN activation flag."""
+        file_path = Path(path)
+
+        with file_path.open("r", encoding="utf-8") as config_file:
+            data = yaml.safe_load(config_file) or {}
+
+        administration = data.setdefault("administration", {})
+        jobs = administration.setdefault("jobs", {})
+        wake_on_lan = jobs.setdefault("wake_on_lan", {})
+        wake_on_lan["enabled"] = enabled
+
+        file_path.write_text(
+            yaml.safe_dump(
+                data,
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )

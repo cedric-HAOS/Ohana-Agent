@@ -533,124 +533,123 @@ class TsunadeExpertiseService:
             )
         return results
 
-        @classmethod
-        def _log_decision(
-            cls,
-            incident: TsunadeIncident,
-            log_result: dict[str, Any] | None,
-        ) -> TsunadeDecisionResult:
-            payload = log_result or incident.context
-            findings = cls._compact_logs(payload)
-            correlations = cls._compact_correlations(payload)
+    @classmethod
+    def _log_decision(
+        cls,
+        incident: TsunadeIncident,
+        log_result: dict[str, Any] | None,
+    ) -> TsunadeDecisionResult:
+        payload = log_result or incident.context
+        findings = cls._compact_logs(payload)
+        correlations = cls._compact_correlations(payload)
 
-            if not findings:
-                return TsunadeDecisionResult(
-                    decision="watch",
-                    source="deterministic",
-                    conclusion=(
-                        "Aucune anomalie exploitable n’a été "
-                        "isolée dans les éléments "
-                        "actuellement disponibles."
-                    ),
-                    reason="Le contexte est trop limité pour "
-                    "justifier une investigation.",
-                    confidence=0.75,
-                    recommended_action="Surveiller le prochain contrôle des journaux.",
-                    reevaluate_after="next_logs_health_check",
-                )
+        if not findings:
+            return TsunadeDecisionResult(
+                decision="watch",
+                source="deterministic",
+                conclusion=(
+                    "Aucune anomalie exploitable n’a été "
+                    "isolée dans les éléments "
+                    "actuellement disponibles."
+                ),
+                reason="Le contexte est trop limité pour justifier une investigation.",
+                confidence=0.75,
+                recommended_action="Surveiller le prochain contrôle des journaux.",
+                reevaluate_after="next_logs_health_check",
+            )
 
-            meaningful_changes: list[dict[str, Any]] = []
-            warning_changes: list[dict[str, Any]] = []
-            critical_findings: list[dict[str, Any]] = []
+        meaningful_changes: list[dict[str, Any]] = []
+        warning_changes: list[dict[str, Any]] = []
+        critical_findings: list[dict[str, Any]] = []
 
-            for finding in findings:
-                occurrences = int(finding.get("occurrences") or 0)
-                reference = finding.get("reference_occurrences")
-                trend = str(finding.get("trend") or "")
-                severity = str(finding.get("severity") or "")
+        for finding in findings:
+            occurrences = int(finding.get("occurrences") or 0)
+            reference = finding.get("reference_occurrences")
+            trend = str(finding.get("trend") or "")
+            severity = str(finding.get("severity") or "")
 
-                relative_change = 0.0
-                if isinstance(reference, int) and reference > 0:
-                    relative_change = (occurrences - reference) / reference
-                elif reference == 0 and occurrences > 0:
-                    relative_change = 1.0
+            relative_change = 0.0
+            if isinstance(reference, int) and reference > 0:
+                relative_change = (occurrences - reference) / reference
+            elif reference == 0 and occurrences > 0:
+                relative_change = 1.0
 
-                if severity == "critical" and trend not in {
-                    "decreasing",
-                    "disappeared",
-                }:
-                    critical_findings.append(finding)
+            if severity == "critical" and trend not in {
+                "decreasing",
+                "disappeared",
+            }:
+                critical_findings.append(finding)
 
-                if trend in {"new", "increasing"} or relative_change >= 0.50:
-                    meaningful_changes.append(finding)
-                elif relative_change >= 0.25:
-                    warning_changes.append(finding)
+            if trend in {"new", "increasing"} or relative_change >= 0.50:
+                meaningful_changes.append(finding)
+            elif relative_change >= 0.25:
+                warning_changes.append(finding)
 
             if correlations or critical_findings or len(meaningful_changes) >= 2:
                 reasons: list[str] = []
 
-                if correlations:
-                    reasons.append(
-                        f"{len(correlations)} corrélation(s) temporelle(s) détectée(s)"
-                    )
-                if critical_findings:
-                    reasons.append(f"{len(critical_findings)} anomalie(s) critique(s)")
-                if len(meaningful_changes) >= 2:
-                    reasons.append(
-                        f"{len(meaningful_changes)} anomalie(s) en "
-                        "évolution significative"
-                    )
-
-                return TsunadeDecisionResult(
-                    decision="investigate",
-                    source="deterministic",
-                    conclusion=(
-                        "Les journaux contiennent plusieurs éléments suffisamment "
-                        "significatifs pour justifier une analyse approfondie."
-                    ),
-                    reason=" ; ".join(reasons),
-                    confidence=0.90,
-                    recommended_action=(
-                        "Corréler les anomalies et rechercher une cause commune avant "
-                        "toute action corrective."
-                    ),
-                    reevaluate_after=None,
+            if correlations:
+                reasons.append(
+                    f"{len(correlations)} corrélation(s) temporelle(s) détectée(s)"
                 )
 
-            if meaningful_changes or warning_changes:
-                return TsunadeDecisionResult(
-                    decision="watch",
-                    source="deterministic",
-                    conclusion=(
-                        "Une évolution est visible, mais elle ne démontre pas encore "
-                        "une dégradation nécessitant une intervention."
-                    ),
-                    reason=(
-                        f"{len(meaningful_changes) + len(warning_changes)} anomalie(s) "
-                        "présentent une évolution à surveiller."
-                    ),
-                    confidence=0.85,
-                    recommended_action=(
-                        "Comparer avec le prochain contrôle avant d’approfondir."
-                    ),
-                    reevaluate_after="next_logs_health_check",
+            if critical_findings:
+                reasons.append(f"{len(critical_findings)} anomalie(s) critique(s)")
+            if len(meaningful_changes) >= 2:
+                reasons.append(
+                    f"{len(meaningful_changes)} anomalie(s) en évolution significative"
                 )
 
             return TsunadeDecisionResult(
-                decision="stable",
+                decision="investigate",
                 source="deterministic",
                 conclusion=(
-                    "Les anomalies observées sont connues et ne présentent pas "
-                    "d’aggravation significative."
+                    "Les journaux contiennent plusieurs éléments suffisamment "
+                    "significatifs pour justifier une analyse approfondie."
+                ),
+                reason=" ; ".join(reasons),
+                confidence=0.90,
+                recommended_action=(
+                    "Corréler les anomalies et rechercher une cause commune avant "
+                    "toute action corrective."
+                ),
+                reevaluate_after=None,
+            )
+
+        if meaningful_changes or warning_changes:
+            return TsunadeDecisionResult(
+                decision="watch",
+                source="deterministic",
+                conclusion=(
+                    "Une évolution est visible, mais elle ne démontre pas encore "
+                    "une dégradation nécessitant une intervention."
                 ),
                 reason=(
-                    "Aucune anomalie nouvelle, forte augmentation, corrélation "
-                    "temporelle ou criticité supplémentaire n’a été détectée."
+                    f"{len(meaningful_changes) + len(warning_changes)} anomalie(s) "
+                    "présentent une évolution à surveiller."
                 ),
-                confidence=0.95,
-                recommended_action="Aucune investigation supplémentaire nécessaire.",
+                confidence=0.85,
+                recommended_action=(
+                    "Comparer avec le prochain contrôle avant d’approfondir."
+                ),
                 reevaluate_after="next_logs_health_check",
             )
+
+        return TsunadeDecisionResult(
+            decision="stable",
+            source="deterministic",
+            conclusion=(
+                "Les anomalies observées sont connues et ne présentent pas "
+                "d’aggravation significative."
+            ),
+            reason=(
+                "Aucune anomalie nouvelle, forte augmentation, corrélation "
+                "temporelle ou criticité supplémentaire n’a été détectée."
+            ),
+            confidence=0.95,
+            recommended_action="Aucune investigation supplémentaire nécessaire.",
+            reevaluate_after="next_logs_health_check",
+        )
 
     def _ai_parameters(
         self,

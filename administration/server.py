@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import ssl
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -98,6 +99,11 @@ class AdministrationService:
         wake_broadcast_address: str | None = None,
         wake_port: int = 9,
         wake_available_for_seconds: int = 30,
+        wake_packet_burst_count: int = 3,
+        wake_burst_interval_seconds: float = 0.1,
+        wake_retry_count: int = 2,
+        wake_retry_delay_seconds: float = 1.0,
+        wake_retry_sleeper: Callable[[float], None] = time.sleep,
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
         investigation_executor: InvestigationExecutor | None = None,
@@ -132,6 +138,11 @@ class AdministrationService:
         self.wake_broadcast_address = wake_broadcast_address
         self.wake_port = wake_port
         self.wake_available_for_seconds = wake_available_for_seconds
+        self.wake_packet_burst_count = wake_packet_burst_count
+        self.wake_burst_interval_seconds = wake_burst_interval_seconds
+        self.wake_retry_count = wake_retry_count
+        self.wake_retry_delay_seconds = wake_retry_delay_seconds
+        self.wake_retry_sleeper = wake_retry_sleeper
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
         self.investigation_executor = investigation_executor
@@ -828,7 +839,7 @@ class AdministrationService:
         if worker is None or worker.wake_on_lan_mac_address is None:
             return
         try:
-            self.wake_sender(worker.wake_on_lan_mac_address)
+            self._send_wake_on_lan(worker.wake_on_lan_mac_address)
             self.job_repository.mark_worker_waking(
                 worker.worker_id,
                 timeout_seconds=self.wake_timeout_seconds,
@@ -888,6 +899,10 @@ class AdministrationService:
             "port": self.wake_port,
             "wait_timeout_seconds": self.wake_timeout_seconds,
             "available_for_seconds": self.wake_available_for_seconds,
+            "packet_burst_count": self.wake_packet_burst_count,
+            "burst_interval_seconds": self.wake_burst_interval_seconds,
+            "retry_count": self.wake_retry_count,
+            "retry_delay_seconds": self.wake_retry_delay_seconds,
         }
 
     def write_wake_on_lan(self, payload: dict[str, Any]) -> object:
@@ -937,12 +952,28 @@ class AdministrationService:
             )
         if worker.availability.value == "WAKING":
             return worker
-        self.wake_sender(worker.wake_on_lan_mac_address)
+        self._send_wake_on_lan(worker.wake_on_lan_mac_address)
         self.job_repository.mark_worker_waking(
             worker.worker_id,
             timeout_seconds=self.wake_timeout_seconds,
         )
         return self.job_repository.worker_availability(worker.worker_id)
+
+    def _send_wake_on_lan(self, mac_address: str) -> None:
+        """Send Wake-on-LAN with bounded retries around the sender burst."""
+        if self.wake_sender is None:
+            raise DistributedJobConflictError("Wake-on-LAN is disabled")
+
+        attempts = self.wake_retry_count + 1
+        for attempt in range(attempts):
+            try:
+                self.wake_sender(mac_address)
+                return
+            except (OSError, ValueError):
+                if attempt >= attempts - 1:
+                    raise
+                if self.wake_retry_delay_seconds > 0:
+                    self.wake_retry_sleeper(self.wake_retry_delay_seconds)
 
     def create_worker_pairing(self, payload: dict[str, Any]) -> object:
         """Open a bounded Katsuyu pairing request for later approval."""

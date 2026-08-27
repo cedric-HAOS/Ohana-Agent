@@ -1945,6 +1945,8 @@ def build_production_agent(
                 mac_address=mac_address,
                 broadcast_address=str(wake_config.broadcast_address),
                 port=wake_config.port,
+                burst_count=wake_config.packet_burst_count,
+                burst_interval_seconds=wake_config.burst_interval_seconds,
             ).send()
 
         def on_wake_enabled_changed(enabled: bool) -> None:
@@ -1976,6 +1978,10 @@ def build_production_agent(
             wake_broadcast_address=str(wake_config.broadcast_address),
             wake_port=wake_config.port,
             wake_available_for_seconds=wake_config.available_for_seconds,
+            wake_packet_burst_count=wake_config.packet_burst_count,
+            wake_burst_interval_seconds=wake_config.burst_interval_seconds,
+            wake_retry_count=wake_config.retry_count,
+            wake_retry_delay_seconds=wake_config.retry_delay_seconds,
             incident_repository=incident_repository,
             investigation_executor=investigation_executor,
             log_source_broker=(

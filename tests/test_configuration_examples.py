@@ -51,6 +51,10 @@ def test_shikamaru_example_configuration_is_valid() -> None:
         str(configuration.administration.jobs.wake_on_lan.broadcast_address)
         == "192.168.1.255"
     )
+    assert configuration.administration.jobs.wake_on_lan.packet_burst_count == 3
+    assert configuration.administration.jobs.wake_on_lan.burst_interval_seconds == 0.1
+    assert configuration.administration.jobs.wake_on_lan.retry_count == 2
+    assert configuration.administration.jobs.wake_on_lan.retry_delay_seconds == 1.0
 
 
 def test_shikamaru_development_configuration_is_valid() -> None:

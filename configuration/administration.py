@@ -96,6 +96,10 @@ class WakeOnLanConfig(Config):
     port: int = Field(default=9, ge=1, le=65535)
     wait_timeout_seconds: int = Field(default=180, ge=10, le=1800)
     available_for_seconds: int = Field(default=30, ge=10, le=600)
+    packet_burst_count: int = Field(default=3, ge=1, le=10)
+    burst_interval_seconds: float = Field(default=0.1, ge=0, le=5)
+    retry_count: int = Field(default=2, ge=0, le=5)
+    retry_delay_seconds: float = Field(default=1.0, ge=0, le=30)
 
     @field_validator("worker_id")
     @classmethod

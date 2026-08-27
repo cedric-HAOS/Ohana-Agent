@@ -85,6 +85,10 @@ administration:
       port: 9
       wait_timeout_seconds: 180
       available_for_seconds: 30
+      packet_burst_count: 3
+      burst_interval_seconds: 0.1
+      retry_count: 2
+      retry_delay_seconds: 1.0
     worker_tls:
       enabled: false
       host: 0.0.0.0

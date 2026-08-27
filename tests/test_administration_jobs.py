@@ -396,6 +396,10 @@ def test_wake_on_lan_policy_and_explicit_worker_wake(
         wake_broadcast_address="192.168.1.255",
         wake_port=9,
         wake_available_for_seconds=30,
+        wake_packet_burst_count=3,
+        wake_burst_interval_seconds=0.1,
+        wake_retry_count=2,
+        wake_retry_delay_seconds=1.0,
     )
     try:
         policy = service.read_wake_on_lan()
@@ -406,6 +410,10 @@ def test_wake_on_lan_policy_and_explicit_worker_wake(
             "port": 9,
             "wait_timeout_seconds": 180,
             "available_for_seconds": 30,
+            "packet_burst_count": 3,
+            "burst_interval_seconds": 0.1,
+            "retry_count": 2,
+            "retry_delay_seconds": 1.0,
         }
         worker = service.wake_worker("katsuyu-bubule")
         assert sent == ["AA:BB:CC:DD:EE:FF"]
@@ -413,6 +421,58 @@ def test_wake_on_lan_policy_and_explicit_worker_wake(
         assert worker.woken_by_ohana is True
         assert "jobs.wake_on_lan.read" in service.capabilities().operations
         assert "jobs.workers.wake" in service.capabilities().operations
+    finally:
+        repository.close()
+
+
+def test_wake_on_lan_retries_transient_sender_failures(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.7.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    clock.advance(31)
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    def wake_sender(mac_address: str) -> None:
+        attempts.append(mac_address)
+        if len(attempts) < 3:
+            raise OSError("temporary broadcast failure")
+
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_timeout_seconds=180,
+        wake_sender=wake_sender,
+        wake_enabled=True,
+        wake_retry_count=2,
+        wake_retry_delay_seconds=0.5,
+        wake_retry_sleeper=sleeps.append,
+    )
+    try:
+        worker = service.wake_worker("katsuyu-bubule")
+        assert attempts == [
+            "AA:BB:CC:DD:EE:FF",
+            "AA:BB:CC:DD:EE:FF",
+            "AA:BB:CC:DD:EE:FF",
+        ]
+        assert sleeps == [0.5, 0.5]
+        assert worker.availability.value == "WAKING"
     finally:
         repository.close()
 

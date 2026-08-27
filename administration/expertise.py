@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,6 +27,7 @@ from administration.models import (
 )
 
 LOGGER = logging.getLogger(__name__)
+HOME_ASSISTANT_ENTITY_ID = re.compile(r"\b[a-z][a-z0-9_]*\.[a-z0-9_]+\b", re.IGNORECASE)
 
 TsunadeDecision = Literal[
     "stable",
@@ -405,6 +407,8 @@ class TsunadeExpertiseService:
         incident_id: UUID | str,
         job_id: UUID | str,
         payload: dict[str, Any],
+        *,
+        evidence: list[dict[str, Any]] | None = None,
     ) -> None:
         """Persist hypotheses as proposals; never promote them to facts or results."""
         result = AiInferenceResult.model_validate(payload)
@@ -412,7 +416,10 @@ class TsunadeExpertiseService:
         hypotheses = [
             hypothesis.model_dump(mode="json") for hypothesis in result.hypotheses
         ]
-        investigation_commands = self._suggested_investigation_commands(result)
+        investigation_commands = self._suggested_investigation_commands(
+            result,
+            evidence=evidence,
+        )
         self.incidents.append_record(
             incident_id,
             {
@@ -466,38 +473,58 @@ class TsunadeExpertiseService:
     @staticmethod
     def _suggested_investigation_commands(
         result: AiInferenceResult,
+        *,
+        evidence: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, str]]:
         text = " ".join(
             [
                 result.summary,
                 result.interpretation,
                 *result.recommended_investigation,
-                *(
-                    hypothesis.statement
-                    for hypothesis in result.hypotheses
-                ),
+                *(hypothesis.statement for hypothesis in result.hypotheses),
                 *(
                     evidence
                     for hypothesis in result.hypotheses
                     for evidence in hypothesis.supporting_evidence
                 ),
+                *(
+                    str(item.get("content", ""))
+                    for item in (evidence or [])
+                    if isinstance(item, dict)
+                ),
             ]
-        ).casefold()
+        )
+        normalized_text = text.casefold()
 
         commands: list[dict[str, str]] = []
-        if "template" in text and "float" in text:
+        entity_ids = list(
+            dict.fromkeys(
+                entity_id.casefold()
+                for entity_id in HOME_ASSISTANT_ENTITY_ID.findall(text)
+                if entity_id.casefold().startswith("sensor.")
+            )
+        )[:16]
+        if "template" in normalized_text and "float" in normalized_text and entity_ids:
+            quoted_entity_ids = ", ".join(repr(entity_id) for entity_id in entity_ids)
             commands.append(
                 {
-                    "title": "Repérer les templates float sans défaut",
-                    "target": "HA-01",
+                    "title": "Vérifier les entités citées par le journal",
+                    "target": "Home Assistant > Outils de développement > Modèle",
                     "safety": "Lecture seule",
-                    "command": (
-                        "find /config -type f \\( -name '*.yaml' -o -name '*.yml' \\) "
-                        "-exec grep -nE '\\|\\s*float\\s*(\\(\\s*\\))?(\\s*[|}])' {} +"
+                    "command": "\n".join(
+                        [
+                            f"{{% set entity_ids = [{quoted_entity_ids}] %}}",
+                            "{% for entity_id in entity_ids %}",
+                            "{{ entity_id }} ; "
+                            "{{ state_attr(entity_id, 'friendly_name') "
+                            "| default(entity_id, true) }} ; "
+                            "{{ states(entity_id) }}",
+                            "{% endfor %}",
+                        ]
                     ),
                     "expected": (
-                        "Liste les fichiers et lignes où un filtre Jinja float "
-                        "semble utilisé sans valeur par défaut."
+                        "Affiche toujours le nom et l’état courant de chaque entité "
+                        "explicitement citée par le journal Home Assistant."
                     ),
                 }
             )
@@ -1001,6 +1028,7 @@ class TsunadeExpertiseService:
                                 "first_at",
                                 "last_at",
                                 "trend",
+                                "references",
                             )
                         }
                     )

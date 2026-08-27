@@ -6,6 +6,17 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.7] — Investigations Home Assistant ciblées — 2026-08-27
+
+## Corrigé
+
+- Tsunade construit les modèles Home Assistant à partir des identifiants d’entité
+  explicitement cités dans les journaux analysés par Katsuyu.
+- Le modèle proposé affiche toujours le nom et l’état courant des entités ciblées,
+  même lorsqu’elles sont redevenues disponibles après l’erreur.
+- Les suggestions ne sont plus exposées au compagnon Shizune mobile ; elles restent
+  disponibles dans la page incident Tsunade de Vision.
+
 # [1.26.6] — Suggestions d'investigation Shizune — 2026-08-27
 
 ## Ajouté

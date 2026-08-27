@@ -206,6 +206,16 @@ def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
                     "duration_seconds": 2,
                 },
             },
+            evidence=[
+                {
+                    "source": "logs.analysis",
+                    "content": (
+                        "TemplateError float got invalid input unavailable for "
+                        "sensor.teleinfo_041964385922_easf02 while processing "
+                        "sensor.linky_bleue_hp"
+                    ),
+                }
+            ],
         )
         updated = repository.get(incident.incident_id)
     finally:
@@ -229,21 +239,24 @@ def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
     )
     assert diagnostic.payload["investigation_commands"] == [
         {
-            "title": "Repérer les templates float sans défaut",
-            "target": "HA-01",
+            "title": "Vérifier les entités citées par le journal",
+            "target": "Home Assistant > Outils de développement > Modèle",
             "safety": "Lecture seule",
-            "command": (
-                "find /config -type f \\( -name '*.yaml' -o -name '*.yml' \\) "
-                "-exec grep -nE '\\|\\s*float\\s*(\\(\\s*\\))?(\\s*[|}])' {} +"
-            ),
             "expected": (
-                "Liste les fichiers et lignes où un filtre Jinja float "
-                "semble utilisé sans valeur par défaut."
+                "Affiche toujours le nom et l’état courant de chaque entité "
+                "explicitement citée par le journal Home Assistant."
             ),
+            "command": diagnostic.payload["investigation_commands"][0]["command"],
         }
     ]
+    command = diagnostic.payload["investigation_commands"][0]["command"]
+    assert "'sensor.teleinfo_041964385922_easf02'" in command
+    assert "'sensor.linky_bleue_hp'" in command
+    assert "{% for entity_id in entity_ids %}" in command
+    assert "{{ states(entity_id) }}" in command
 
     assert proposal.payload["authorized"] is False
-    assert proposal.payload["investigation_commands"] == (
-        diagnostic.payload["investigation_commands"]
+    assert (
+        proposal.payload["investigation_commands"]
+        == (diagnostic.payload["investigation_commands"])
     )

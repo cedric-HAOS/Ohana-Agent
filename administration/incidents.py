@@ -207,37 +207,6 @@ class TsunadeCompanionActivity(AdministrationModel):
     incident_id: UUID | None = None
 
 
-class TsunadeCompanionSuggestionCommand(AdministrationModel):
-    """One read-only command a companion may copy, never execute."""
-
-    title: str = Field(min_length=1, max_length=120)
-    target: str = Field(min_length=1, max_length=80)
-    safety: str = Field(min_length=1, max_length=80)
-    command: str = Field(min_length=1, max_length=1000)
-    expected: str = Field(min_length=1, max_length=500)
-
-
-class TsunadeCompanionSuggestion(AdministrationModel):
-    """Bounded diagnostic suggestion exposed to Shizune."""
-
-    suggestion_id: str
-    incident_id: UUID
-    occurred_at: datetime
-    title: str = Field(min_length=1, max_length=160)
-    detail: str = Field(min_length=1, max_length=500)
-    commands: list[TsunadeCompanionSuggestionCommand] = Field(
-        default_factory=list,
-        max_length=8,
-    )
-
-
-class TsunadeCompanionSuggestionCollection(AdministrationModel):
-    """Bounded suggestions displayed by a companion."""
-
-    schema_version: Literal[1] = 1
-    suggestions: list[TsunadeCompanionSuggestion] = Field(default_factory=list)
-
-
 class TsunadeIncidentRepository:
     """Deduplicate and persist incidents in Agent's existing control database."""
 
@@ -561,73 +530,6 @@ class TsunadeIncidentRepository:
                 )
             )
         return activities
-
-    def companion_suggestions(
-        self,
-        *,
-        limit: int = 10,
-    ) -> TsunadeCompanionSuggestionCollection:
-        """Return bounded copy-only investigation suggestions for companions."""
-        if not 1 <= limit <= 20:
-            raise ValueError("suggestion limit must be between 1 and 20")
-        with self._lock:
-            rows = self._connection.execute(
-                """SELECT event_id,incident_id,occurred_at,summary,payload_json
-                FROM tsunade_incident_events
-                WHERE kind IN ('diagnostic','action')
-                ORDER BY occurred_at DESC,event_id DESC LIMIT 50"""
-            ).fetchall()
-        suggestions: list[TsunadeCompanionSuggestion] = []
-        for row in rows:
-            try:
-                payload = json.loads(row["payload_json"])
-            except json.JSONDecodeError:
-                payload = {}
-            if not isinstance(payload, dict):
-                payload = {}
-            commands = payload.get("investigation_commands")
-            if not isinstance(commands, list) or not commands:
-                continue
-            public_commands: list[dict[str, str]] = []
-            for command in commands[:8]:
-                if not isinstance(command, dict):
-                    continue
-                command_text = str(command.get("command") or "").strip()
-                if not command_text:
-                    continue
-                public_commands.append(
-                    {
-                        "title": str(command.get("title") or "Commande proposée"),
-                        "target": str(command.get("target") or "Cible à confirmer"),
-                        "safety": str(command.get("safety") or "Lecture seule"),
-                        "command": command_text,
-                        "expected": str(
-                            command.get("expected")
-                            or "Affiche les éléments utiles à l'investigation."
-                        ),
-                    }
-                )
-            if not public_commands:
-                continue
-            suggestions.append(
-                TsunadeCompanionSuggestion(
-                    suggestion_id=f"incident-suggestion-{row['event_id']}",
-                    incident_id=row["incident_id"],
-                    occurred_at=datetime.fromisoformat(row["occurred_at"]),
-                    title=str(row["summary"]),
-                    detail=(
-                        "Investigation proposée par Tsunade, "
-                        "à copier et lancer manuellement."
-                    ),
-                    commands=[
-                        TsunadeCompanionSuggestionCommand.model_validate(command)
-                        for command in public_commands
-                    ],
-                )
-            )
-            if len(suggestions) >= limit:
-                break
-        return TsunadeCompanionSuggestionCollection(suggestions=suggestions)
 
     def get(self, incident_id: UUID | str) -> TsunadeIncident:
         """Return one incident with its complete bounded evolution."""

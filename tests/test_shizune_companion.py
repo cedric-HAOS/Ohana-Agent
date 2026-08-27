@@ -153,26 +153,6 @@ def test_companion_listener_exposes_only_synthetic_contract_and_executes_once(
     repair = service.propose_incident_repair(
         str(incident.incident_id), {"operation": "restart_service"}
     )
-    incidents.append_record(
-        incident.incident_id,
-        {
-            "kind": "diagnostic",
-            "summary": "Tsunade retient la décision « investigate » après Katsuyu.",
-            "payload": {
-                "epistemic_status": "hypothesis",
-                "investigation_commands": [
-                    {
-                        "title": "Repérer les templates float sans défaut",
-                        "target": "HA-01",
-                        "safety": "Lecture seule",
-                        "command": "find /config -type f -name '*.yaml'",
-                        "expected": "Liste les fichiers YAML à inspecter.",
-                    }
-                ],
-                "hypotheses": [{"internal": "not exposed"}],
-            },
-        },
-    )
     request_id = str(incidents.list_user_requests().requests[0].request_id)
     server = AdministrationHTTPServer(
         service=service,
@@ -202,21 +182,6 @@ def test_companion_listener_exposes_only_synthetic_contract_and_executes_once(
             "LATER",
         ]
         assert "action_reference" not in requests["requests"][0]  # type: ignore[operator,index]
-        suggestions = _companion_request(
-            server,
-            "/v1/incidents/suggestions",
-            device_id="iphone-cedric",
-            token=token,
-        )
-        assert suggestions["schema_version"] == 1
-        assert suggestions["suggestions"][0]["commands"][0] == {  # type: ignore[index]
-            "title": "Repérer les templates float sans défaut",
-            "target": "HA-01",
-            "safety": "Lecture seule",
-            "command": "find /config -type f -name '*.yaml'",
-            "expected": "Liste les fichiers YAML à inspecter.",
-        }
-        assert "hypotheses" not in suggestions["suggestions"][0]  # type: ignore[operator,index]
         with pytest.raises(HTTPError) as forbidden:
             _companion_request(
                 server,
@@ -225,6 +190,14 @@ def test_companion_listener_exposes_only_synthetic_contract_and_executes_once(
                 token=token,
             )
         assert forbidden.value.code == 404
+        with pytest.raises(HTTPError) as hidden_suggestions:
+            _companion_request(
+                server,
+                "/v1/incidents/suggestions",
+                device_id="iphone-cedric",
+                token=token,
+            )
+        assert hidden_suggestions.value.code == 404
         with pytest.raises(HTTPError) as unauthorized:
             _companion_request(server, "/v1/incidents/summary")
         assert unauthorized.value.code == 401

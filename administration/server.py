@@ -273,7 +273,6 @@ class AdministrationService:
                     "incidents.requests.read",
                     "incidents.requests.respond",
                     "incidents.activity.read",
-                    "incidents.suggestions.read",
                 ]
             )
         if self.companion_repository is not None:
@@ -541,12 +540,6 @@ class AdministrationService:
                 )
         activity.sort(key=lambda item: str(item["occurred_at"]), reverse=True)
         return {"schema_version": 1, "activity": activity[:20]}
-
-    def read_companion_suggestions(self) -> object:
-        """Return copy-only investigation suggestions for Shizune."""
-        if self.incident_repository is None:
-            raise LookupError("Tsunade incidents are unavailable")
-        return self.incident_repository.companion_suggestions()
 
     def respond_companion_request(
         self,
@@ -1191,6 +1184,7 @@ class AdministrationService:
                         incident_id,
                         job.job_id,
                         job.result,
+                        evidence=job.parameters.get("evidence"),
                     )
         elif (
             job.type == "ai.inference"
@@ -1446,9 +1440,6 @@ class AdministrationHTTPServer:
                             service.read_companion_requests, "all"
                         ),
                         "/v1/incidents/activity": service.read_companion_activity,
-                        "/v1/incidents/suggestions": (
-                            service.read_companion_suggestions
-                        ),
                     }
                     operation = routes.get(path)
                     if operation is None:

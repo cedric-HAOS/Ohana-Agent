@@ -21,7 +21,11 @@ from administration import (
     DistributedJobRepository,
     InfrastructureConfigurationRepository,
 )
-from administration.models import AiInferenceResult, DistributedJobStatus
+from administration.models import (
+    AiInferenceParameters,
+    AiInferenceResult,
+    DistributedJobStatus,
+)
 from plugins.backup.backup_coordinator import BackupExecutionError
 
 JOB_ID = "11111111-1111-4111-8111-111111111111"
@@ -160,6 +164,13 @@ def test_ai_inference_contract_is_bounded_and_strict(
 
     assert created.type == "ai.inference"
     assert created.parameters["task"] == "technical.diagnosis"
+    AiInferenceParameters.model_validate(
+        {**created.parameters, "max_output_tokens": 16_384}
+    )
+    with pytest.raises(ValidationError):
+        AiInferenceParameters.model_validate(
+            {**created.parameters, "max_output_tokens": 16_385}
+        )
     with pytest.raises(ValidationError):
         repository.create(
             job_payload(

@@ -131,6 +131,7 @@ def test_unexplained_logs_queue_only_bounded_ai_evidence(tmp_path: Path) -> None
     assert outcome.ai_job_id == job_id
     parameters = dispatched[0]["parameters"]
     assert parameters["incident_id"] == str(incident.incident_id)
+    assert parameters["max_output_tokens"] == 8_192
     sources = {entry["source"] for entry in parameters["evidence"]}
     assert sources == {
         "architecture.concerned",

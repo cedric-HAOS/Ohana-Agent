@@ -6,6 +6,15 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.8] — Réponses Katsuyu complètes — 2026-08-27
+
+## Corrigé
+
+- Tsunade demande jusqu’à 8 192 jetons à l’analyse locale structurée afin que
+  Katsuyu puisse restituer intégralement les hypothèses issues des journaux.
+- Le contrat Agent-Katsuyu conserve une limite stricte à 16 384 jetons pour
+  permettre de futurs diagnostics plus développés.
+
 # [1.26.7] — Investigations Home Assistant ciblées — 2026-08-27
 
 ## Corrigé

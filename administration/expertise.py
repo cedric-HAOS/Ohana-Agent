@@ -840,7 +840,7 @@ class TsunadeExpertiseService:
                 "décider ni autoriser une action. Réponds intégralement en français."
             ),
             evidence=evidence[:8],
-            max_output_tokens=1_024,
+            max_output_tokens=8_192,
         )
         return {
             "protocol_version": 1,

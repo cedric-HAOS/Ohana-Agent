@@ -62,6 +62,20 @@ def job_payload(clock: MutableClock, **overrides: object) -> dict[str, object]:
     return payload
 
 
+def typed_job_payload(
+    clock: MutableClock,
+    job_id: str,
+    job_type: str,
+    parameters: dict[str, object],
+) -> dict[str, object]:
+    return job_payload(
+        clock,
+        job_id=job_id,
+        type=job_type,
+        parameters=parameters,
+    )
+
+
 def claim_payload(worker_id: str = "katsuyu-bubule") -> dict[str, object]:
     return {
         "protocol_version": 1,
@@ -323,10 +337,11 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
     repository = DistributedJobRepository(
         tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
     )
+    clock.now = clock.now.replace(hour=0, minute=0, second=0, microsecond=0)
     repository.register_worker(
         {
             "worker_id": "katsuyu-bubule",
-            "capabilities": ["system.health"],
+            "capabilities": ["backup.infra"],
             "platform": "Windows 11",
             "worker_version": "0.3.0",
             "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
@@ -342,9 +357,23 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
         wake_timeout_seconds=180,
         wake_sender=sent.append,
         wake_enabled=True,
+        wake_batch_window_seconds=0,
+        wake_planned_window_end_hour=24,
     )
     try:
-        service.create_job(job_payload(clock))
+        service.create_job(
+            typed_job_payload(
+                clock,
+                JOB_ID,
+                "backup.infra",
+                {
+                    "backup_id": "20260819T080000Z",
+                    "recipient": "age1" + "q" * 58,
+                    "compression_level": 6,
+                },
+            )
+        )
+        service.dispatch_due_wake_requests()
         worker = repository.worker_availability("katsuyu-bubule")
         assert sent == ["AA:BB:CC:DD:EE:FF"]
         assert worker.availability.value == "WAKING"
@@ -353,7 +382,7 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
         registered = repository.register_worker(
             {
                 "worker_id": "katsuyu-bubule",
-                "capabilities": ["system.health"],
+                "capabilities": ["backup.infra"],
                 "platform": "Windows 11",
                 "worker_version": "0.3.0",
                 "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
@@ -363,6 +392,181 @@ def test_tsunade_wakes_only_an_unavailable_compatible_worker(
         assert registered.woken_by_ohana is True
     finally:
         repository.close()
+
+
+def test_tsunade_groups_jobs_before_waking_worker(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    clock.now = clock.now.replace(hour=0, minute=0, second=0, microsecond=0)
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["backup.infra", "logs.health_check"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    clock.advance(31)
+    sent: list[str] = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_timeout_seconds=180,
+        wake_sender=sent.append,
+        wake_enabled=True,
+        wake_batch_window_seconds=600,
+    )
+    try:
+        service.create_job(
+            typed_job_payload(
+                clock,
+                JOB_ID,
+                "backup.infra",
+                {
+                    "backup_id": "20260819T080000Z",
+                    "recipient": "age1" + "q" * 58,
+                    "compression_level": 6,
+                },
+            )
+        )
+        clock.advance(300)
+        service.create_job(
+            typed_job_payload(
+                clock,
+                "22222222-2222-4222-8222-222222222222",
+                "logs.health_check",
+                {
+                    "sources": ["ha-01"],
+                    "window_started_at": (
+                        (clock.now - timedelta(hours=24)).isoformat()
+                    ),
+                    "window_ended_at": clock.now.isoformat(),
+                    "max_bytes_per_source": 1048576,
+                },
+            )
+        )
+
+        assert sent == []
+
+        clock.now = clock.now.replace(hour=3, minute=0, second=0, microsecond=0)
+        service.dispatch_due_wake_requests(now=clock.now)
+
+        assert sent == ["AA:BB:CC:DD:EE:FF"]
+        assert (
+            repository.worker_availability("katsuyu-bubule").availability.value
+            == "WAKING"
+        )
+    finally:
+        repository.close()
+
+
+def test_tsunade_does_not_wake_for_non_planned_worker_job(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    clock.advance(31)
+    sent: list[str] = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_sender=sent.append,
+        wake_enabled=True,
+        wake_batch_window_seconds=0,
+        wake_planned_window_end_hour=24,
+    )
+    try:
+        service.create_job(job_payload(clock))
+        service.dispatch_due_wake_requests()
+        assert sent == []
+    finally:
+        repository.close()
+
+
+def test_last_grouped_job_asks_ohana_woken_worker_to_shutdown(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    repository.create(job_payload(clock))
+    repository.create(
+        job_payload(
+            clock,
+            job_id="22222222-2222-4222-8222-222222222222",
+        )
+    )
+    clock.advance(31)
+    repository.mark_worker_waking("katsuyu-bubule", timeout_seconds=180)
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.0",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+
+    first = repository.claim(claim_payload()).job
+    assert first is not None
+    assert first.shutdown_after_completion is False
+    repository.complete(str(first.job_id), success_payload(first.attempt))
+
+    second = repository.claim(claim_payload()).job
+    assert second is not None
+    assert second.shutdown_after_completion is True
+
+
+def test_human_started_worker_is_not_asked_to_shutdown(
+    repository: DistributedJobRepository,
+    clock: MutableClock,
+) -> None:
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.0",
+        }
+    )
+    repository.create(job_payload(clock))
+
+    claimed = repository.claim(claim_payload()).job
+
+    assert claimed is not None
+    assert claimed.shutdown_after_completion is False
 
 
 def test_wake_on_lan_policy_and_explicit_worker_wake(
@@ -414,6 +618,12 @@ def test_wake_on_lan_policy_and_explicit_worker_wake(
             "burst_interval_seconds": 0.1,
             "retry_count": 2,
             "retry_delay_seconds": 1.0,
+            "batch_window_seconds": 600,
+            "planned_window_start_hour": 0,
+            "planned_window_end_hour": 5,
+            "schedule_timezone": "Europe/Paris",
+            "minimum_interval_seconds": 7200,
+            "shutdown_after_completion": True,
         }
         worker = service.wake_worker("katsuyu-bubule")
         assert sent == ["AA:BB:CC:DD:EE:FF"]
@@ -421,6 +631,57 @@ def test_wake_on_lan_policy_and_explicit_worker_wake(
         assert worker.woken_by_ohana is True
         assert "jobs.wake_on_lan.read" in service.capabilities().operations
         assert "jobs.workers.wake" in service.capabilities().operations
+    finally:
+        repository.close()
+
+
+def test_log_analysis_policy_can_be_reconfigured(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    changes = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        log_analysis_enabled=True,
+        log_analysis_schedule="0 5 * * *",
+        log_sources=("ha-01", "linky-01", "zwave-01"),
+        on_log_analysis_changed=changes.append,
+    )
+    try:
+        policy = service.read_log_analysis()
+        assert policy["enabled"] is True
+        assert policy["schedule"] == "0 5 * * *"
+        assert policy["sources"] == ["ha-01", "linky-01", "zwave-01"]
+
+        updated = service.write_log_analysis(
+            {
+                "enabled": False,
+                "schedule": "30 6 * * *",
+                "sources": ["ha-01"],
+                "window_hours": 12,
+                "max_bytes_per_source": 1048576,
+                "timeout_seconds": 600,
+            }
+        )
+
+        assert updated == {
+            "schema_version": 1,
+            "enabled": False,
+            "schedule": "30 6 * * *",
+            "sources": ["ha-01"],
+            "window_hours": 12,
+            "max_bytes_per_source": 1048576,
+            "timeout_seconds": 600,
+        }
+        assert changes[-1].enabled is False
+        with pytest.raises(LookupError, match="log analysis is unavailable"):
+            service.request_log_health_check()
     finally:
         repository.close()
 

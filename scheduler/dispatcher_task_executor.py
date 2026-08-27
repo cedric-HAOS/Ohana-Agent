@@ -40,6 +40,7 @@ class DispatcherTaskExecutor:
     dispatcher: DispatcherLike
     monitoring_registry: MonitoringScheduleRegistry | None = None
     job_runner: Callable[[dict[str, object], datetime], object] | None = None
+    wake_dispatcher: Callable[[datetime], object] | None = None
     _suspended_tasks: set[str] = field(default_factory=set, init=False, repr=False)
 
     def execute(self, task: Task, now: datetime) -> TaskExecutionResult:
@@ -76,6 +77,10 @@ class DispatcherTaskExecutor:
                 if self.job_runner is None:
                     raise RuntimeError("distributed log job runner is unavailable")
                 self.job_runner(task.arguments, now)
+            elif task.command == "jobs.wake.dispatch":
+                if self.wake_dispatcher is None:
+                    raise RuntimeError("distributed wake dispatcher is unavailable")
+                self.wake_dispatcher(now)
             else:
                 self.dispatcher.execute(task.command, task.arguments)
         except Exception as exc:

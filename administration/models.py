@@ -317,6 +317,7 @@ class DistributedJobDocument(AdministrationModel):
     attempt: int = Field(default=0, ge=0)
     lease_expires_at: datetime | None = None
     progress: DistributedJobProgress | None = None
+    shutdown_after_completion: bool = False
 
 
 class DistributedJobClaim(AdministrationModel):

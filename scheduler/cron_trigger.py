@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 
 from scheduler.base_trigger import BaseTrigger
 
@@ -13,6 +13,7 @@ class CronTrigger(BaseTrigger):
     """Simple cron trigger supporting five fields: minute hour day month weekday."""
 
     expression: str
+    timezone: tzinfo | None = None
 
     def __post_init__(self) -> None:
         super().__init__()
@@ -30,6 +31,10 @@ class CronTrigger(BaseTrigger):
 
     def next_run_at(self, after: datetime) -> datetime | None:
         candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if self.timezone is not None:
+            candidate = after.astimezone(self.timezone).replace(
+                second=0, microsecond=0
+            ) + timedelta(minutes=1)
 
         for _ in range(366 * 24 * 60):
             if self._matches(candidate):
@@ -41,6 +46,8 @@ class CronTrigger(BaseTrigger):
 
     def is_due(self, now: datetime) -> bool:
         normalized = now.replace(second=0, microsecond=0)
+        if self.timezone is not None:
+            normalized = now.astimezone(self.timezone).replace(second=0, microsecond=0)
         last_execution = self.last_executed_at
         already_executed = (
             last_execution is not None

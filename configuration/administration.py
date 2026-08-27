@@ -100,6 +100,12 @@ class WakeOnLanConfig(Config):
     burst_interval_seconds: float = Field(default=0.1, ge=0, le=5)
     retry_count: int = Field(default=2, ge=0, le=5)
     retry_delay_seconds: float = Field(default=1.0, ge=0, le=30)
+    batch_window_seconds: int = Field(default=600, ge=0, le=3600)
+    planned_window_start_hour: int = Field(default=0, ge=0, le=23)
+    planned_window_end_hour: int = Field(default=5, ge=1, le=24)
+    schedule_timezone: str = "Europe/Paris"
+    minimum_interval_seconds: int = Field(default=7200, ge=0, le=86_400)
+    shutdown_after_completion: bool = True
 
     @field_validator("worker_id")
     @classmethod

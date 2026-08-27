@@ -89,6 +89,12 @@ administration:
       burst_interval_seconds: 0.1
       retry_count: 2
       retry_delay_seconds: 1.0
+      batch_window_seconds: 600
+      planned_window_start_hour: 0
+      planned_window_end_hour: 5
+      schedule_timezone: Europe/Paris
+      minimum_interval_seconds: 7200
+      shutdown_after_completion: true
     worker_tls:
       enabled: false
       host: 0.0.0.0

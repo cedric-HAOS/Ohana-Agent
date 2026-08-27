@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Protocol
 
 
@@ -16,7 +16,7 @@ class SystemClock:
     """Clock using the system time."""
 
     def now(self) -> datetime:
-        return datetime.now(UTC)
+        return datetime.now().astimezone()
 
 
 @dataclass

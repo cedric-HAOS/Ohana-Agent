@@ -8,12 +8,13 @@ import json
 import logging
 import secrets
 import sqlite3
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable, Collection
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -54,6 +55,7 @@ from administration.models import (
 )
 
 LOGGER = logging.getLogger(__name__)
+LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
 TERMINAL_STATUSES = {
     DistributedJobStatus.SUCCEEDED,
     DistributedJobStatus.FAILED,
@@ -73,6 +75,10 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "logs.investigate": (LogsInvestigateParameters, LogsInvestigateResult),
     "ai.inference": (AiInferenceParameters, AiInferenceResult),
 }
+
+AUTOMATIC_WAKE_JOB_TYPES = frozenset(
+    {"backup.infra", "logs.health_check", "logs.investigate"}
+)
 PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -119,7 +125,7 @@ class DistributedJobRepository:
         self.pairing_ttl_seconds = pairing_ttl_seconds
         self.max_pending_pairings = max_pending_pairings
         self.worker_available_seconds = worker_available_seconds
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._clock = clock or (lambda: datetime.now(LOCAL_TIMEZONE))
         self._lock = Lock()
         if path != Path(":memory:"):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,14 +143,24 @@ class DistributedJobRepository:
         with self._lock:
             self._connection.close()
 
+    def now(self) -> datetime:
+        """Return the repository clock used for deterministic coordination."""
+        return self._now()
+
     def create(self, payload: dict[str, Any]) -> DistributedJobDocument:
         """Validate and durably enqueue one idempotent Tsunade request."""
         request = DistributedJobCreate.model_validate(payload)
         parameters = self._validate_parameters(request.type, request.parameters)
-        normalized = request.model_copy(update={"parameters": parameters})
-        request_sha256 = self._digest(normalized.model_dump(mode="json"))
         now = self._now()
-        created_at = request.created_at.astimezone(UTC)
+        timeout = request.timeout
+        if request.type in AUTOMATIC_WAKE_JOB_TYPES and now.hour < 5:
+            batch_end = now.replace(hour=5, minute=0, second=0, microsecond=0)
+            timeout = max(timeout, int((batch_end - now).total_seconds()) + 1)
+        normalized = request.model_copy(
+            update={"parameters": parameters, "timeout": timeout}
+        )
+        request_sha256 = self._digest(normalized.model_dump(mode="json"))
+        created_at = request.created_at
         if created_at > now + timedelta(minutes=5):
             raise ValueError(
                 "created_at cannot be more than five minutes in the future"
@@ -178,7 +194,7 @@ class DistributedJobRepository:
                 request.type,
                 self._timestamp(created_at),
                 self._json(parameters),
-                request.timeout,
+                timeout,
                 DistributedJobStatus.QUEUED.value,
                 request_sha256,
                 self._timestamp(now),
@@ -236,7 +252,7 @@ class DistributedJobRepository:
             self._recover_locked(self._now())
             row = self._connection.execute(
                 """SELECT * FROM distributed_jobs WHERE type = ?
-                ORDER BY created_at DESC, job_id DESC LIMIT 1""",
+                ORDER BY julianday(created_at) DESC, job_id DESC LIMIT 1""",
                 (job_type,),
             ).fetchone()
         return self._document(row) if row is not None else None
@@ -251,7 +267,7 @@ class DistributedJobRepository:
             self._recover_locked(self._now())
             rows = self._connection.execute(
                 """SELECT * FROM distributed_jobs WHERE type = ?
-                ORDER BY created_at DESC, job_id DESC LIMIT 100""",
+                ORDER BY julianday(created_at) DESC, job_id DESC LIMIT 100""",
                 (job_type,),
             ).fetchall()
         for row in rows:
@@ -283,7 +299,7 @@ class DistributedJobRepository:
             rows = self._connection.execute(
                 """SELECT * FROM distributed_jobs
                 WHERE type = ? AND status NOT IN (?, ?, ?, ?)
-                ORDER BY created_at ASC""",
+                ORDER BY julianday(created_at) ASC""",
                 (
                     job_type,
                     *(status.value for status in TERMINAL_STATUSES),
@@ -328,7 +344,12 @@ class DistributedJobRepository:
             )
             return self._document(self._select_required_locked(job_id))
 
-    def claim(self, payload: dict[str, Any]) -> DistributedJobClaimResult:
+    def claim(
+        self,
+        payload: dict[str, Any],
+        *,
+        shutdown_after_completion: bool = True,
+    ) -> DistributedJobClaimResult:
         """Atomically lease the oldest compatible job to Katsuyu."""
         claim = DistributedJobClaim.model_validate(payload)
         compatible_types = [
@@ -348,7 +369,7 @@ class DistributedJobRepository:
                 f"""
                 SELECT * FROM distributed_jobs
                 WHERE status IN (?, ?) AND type IN ({placeholders})
-                ORDER BY created_at ASC, job_id ASC
+                ORDER BY julianday(created_at) ASC, job_id ASC
                 LIMIT 1
                 """,  # noqa: S608 - placeholders are generated, values remain bound.
                 (
@@ -396,8 +417,72 @@ class DistributedJobRepository:
                 claim.worker_id,
                 attempt,
             )
-            document = self._document(self._select_required_locked(row["job_id"]))
+            should_shutdown = (
+                self._should_shutdown_after_claim_locked(
+                    claim.worker_id,
+                    row["job_id"],
+                    compatible_types,
+                    now,
+                )
+                if shutdown_after_completion
+                else False
+            )
+            document = self._document(
+                self._select_required_locked(row["job_id"]),
+                shutdown_after_completion=should_shutdown,
+            )
             return DistributedJobClaimResult(job=document)
+
+    def wake_ready_job_types(
+        self,
+        *,
+        batch_window_seconds: int,
+        job_types: Collection[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+    ) -> tuple[str, ...]:
+        """Return queued job types old enough to justify one grouped WOL."""
+        if batch_window_seconds < 0 or batch_window_seconds > 3600:
+            raise ValueError("batch_window_seconds must be between 0 and 3600")
+        now = self._now()
+        ready_at = now - timedelta(seconds=batch_window_seconds)
+        allowed_types = tuple(sorted(set(job_types or ())))
+        type_filter = ""
+        type_parameters: tuple[str, ...] = ()
+        date_filter = ""
+        date_parameters: tuple[str, ...] = ()
+        if created_after is not None:
+            date_filter += " AND created_at >= ?"
+            date_parameters += (self._timestamp(created_after),)
+        if created_before is not None:
+            date_filter += " AND created_at <= ?"
+            date_parameters += (self._timestamp(created_before),)
+        if job_types is not None:
+            if not allowed_types:
+                return ()
+            placeholders = ",".join("?" for _ in allowed_types)
+            type_filter = f" AND type IN ({placeholders})"
+            type_parameters = allowed_types
+        with self._lock, self._connection:
+            self._recover_locked(now)
+            rows = self._connection.execute(
+                f"""
+                SELECT type FROM distributed_jobs
+                WHERE status IN (?, ?) AND created_at <= ?
+                {type_filter}
+                {date_filter}
+                GROUP BY type
+                ORDER BY MIN(created_at) ASC, type ASC
+                """,
+                (
+                    DistributedJobStatus.QUEUED.value,
+                    DistributedJobStatus.WAITING_WORKER.value,
+                    self._timestamp(ready_at),
+                    *type_parameters,
+                    *date_parameters,
+                ),
+            ).fetchall()
+        return tuple(row["type"] for row in rows)
 
     def register_worker(
         self,
@@ -546,12 +631,20 @@ class DistributedJobRepository:
             ).fetchone()
         return bool(row and job_type in json.loads(row["capabilities_json"]))
 
-    def wake_candidate(self, job_type: str) -> DistributedWorkerDocument | None:
+    def wake_candidate(
+        self,
+        job_type: str,
+        *,
+        minimum_interval_seconds: int = 0,
+    ) -> DistributedWorkerDocument | None:
         """Return one unavailable compatible worker that advertised a WOL MAC."""
+        if minimum_interval_seconds < 0:
+            raise ValueError("minimum_interval_seconds cannot be negative")
         now = self._now()
         with self._lock:
             rows = self._connection.execute(
-                "SELECT * FROM distributed_workers ORDER BY last_seen_at DESC"
+                "SELECT * FROM distributed_workers "
+                "ORDER BY julianday(last_seen_at) DESC"
             ).fetchall()
         compatible = [
             self._worker_document(row, now)
@@ -564,6 +657,13 @@ class DistributedJobRepository:
                 DistributedWorkerAvailability.AVAILABLE,
                 DistributedWorkerAvailability.WAKING,
             }
+            for worker in compatible
+        ):
+            return None
+        if minimum_interval_seconds > 0 and any(
+            worker.wake_requested_at is not None
+            and worker.wake_requested_at + timedelta(seconds=minimum_interval_seconds)
+            > now
             for worker in compatible
         ):
             return None
@@ -684,7 +784,7 @@ class DistributedJobRepository:
             rows = self._connection.execute(
                 """
                 SELECT * FROM distributed_worker_pairings
-                ORDER BY created_at DESC LIMIT 100
+                ORDER BY julianday(created_at) DESC LIMIT 100
                 """
             ).fetchall()
         return DistributedWorkerPairingCollection(
@@ -1390,7 +1490,47 @@ class DistributedJobRepository:
             (job_id,),
         ).fetchone()
 
-    def _document(self, row: sqlite3.Row) -> DistributedJobDocument:
+    def _should_shutdown_after_claim_locked(
+        self,
+        worker_id: str,
+        job_id: str,
+        compatible_types: list[str],
+        now: datetime,
+    ) -> bool:
+        worker_row = self._connection.execute(
+            "SELECT * FROM distributed_workers WHERE worker_id = ?",
+            (worker_id,),
+        ).fetchone()
+        if worker_row is None:
+            return False
+        worker = self._worker_document(worker_row, now)
+        if not worker.woken_by_ohana:
+            return False
+
+        placeholders = ",".join("?" for _ in compatible_types)
+        queued = self._connection.execute(
+            f"""
+            SELECT 1 FROM distributed_jobs
+            WHERE job_id != ?
+              AND status IN (?, ?)
+              AND type IN ({placeholders})
+            LIMIT 1
+            """,  # noqa: S608 - placeholders are generated, values remain bound.
+            (
+                job_id,
+                DistributedJobStatus.QUEUED.value,
+                DistributedJobStatus.WAITING_WORKER.value,
+                *compatible_types,
+            ),
+        ).fetchone()
+        return queued is None
+
+    def _document(
+        self,
+        row: sqlite3.Row,
+        *,
+        shutdown_after_completion: bool = False,
+    ) -> DistributedJobDocument:
         return DistributedJobDocument(
             protocol_version=row["protocol_version"],
             job_id=row["job_id"],
@@ -1420,6 +1560,7 @@ class DistributedJobRepository:
             progress=(
                 json.loads(row["progress_json"]) if row["progress_json"] else None
             ),
+            shutdown_after_completion=shutdown_after_completion,
         )
 
     def _deadline(self, row: sqlite3.Row) -> datetime:
@@ -1431,15 +1572,15 @@ class DistributedJobRepository:
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("distributed job clock must return a timezone-aware value")
-        return value.astimezone(UTC)
+        return value.astimezone(LOCAL_TIMEZONE)
 
     @staticmethod
     def _timestamp(value: datetime) -> str:
-        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        return value.astimezone(LOCAL_TIMEZONE).isoformat()
 
     @staticmethod
     def _parse_timestamp(value: str) -> datetime:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     @staticmethod
     def _json(value: object) -> str:

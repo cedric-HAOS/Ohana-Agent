@@ -83,6 +83,27 @@ def test_dispatcher_task_executor_executes_task_command() -> None:
     assert task.execution_count == 1
 
 
+def test_dispatcher_task_executor_dispatches_due_wake_requests() -> None:
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    dispatcher = FakeDispatcher()
+    calls: list[datetime] = []
+    executor = DispatcherTaskExecutor(
+        dispatcher,
+        wake_dispatcher=calls.append,
+    )
+
+    task = Task(
+        command="jobs.wake.dispatch",
+        trigger=IntervalTrigger(timedelta(seconds=30)),
+    )
+
+    result = executor.execute(task, now)
+
+    assert result.success is True
+    assert calls == [now]
+    assert dispatcher.executed == []
+
+
 def test_dispatcher_task_executor_handles_dispatcher_failure() -> None:
     now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     dispatcher = FailingDispatcher()

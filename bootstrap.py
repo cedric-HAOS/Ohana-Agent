@@ -6,6 +6,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from administration import (
     AdministrationHTTPServer,
@@ -39,7 +40,10 @@ from builder import (
     WireGuardConfigurationBuilder,
     ZWaveConfigurationBuilder,
 )
-from configuration.administration import DistributedJobsConfig
+from configuration.administration import (
+    DistributedJobsConfig,
+    DistributedLogAnalysisConfig,
+)
 from configuration.backup import BackupPluginConfig
 from configuration.dhcp import DHCPPluginConfig
 from configuration.dns import DNSPluginConfig
@@ -163,6 +167,7 @@ from scheduler import (
 from scheduler.clock import Clock, SystemClock
 
 DEFAULT_PRODUCTION_OUTBOX_PATH = Path("/var/lib/ohana-agent/vision-outbox.db")
+LOCAL_SCHEDULE_TIMEZONE = ZoneInfo("Europe/Paris")
 
 
 def _build_dhcp_tasks(
@@ -501,14 +506,16 @@ def _build_teleinformation_tasks(
     ]
 
 
-def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
+def _build_backup_tasks(
+    *, backup_config: BackupConfig, schedule_timezone: ZoneInfo | None = None
+) -> list[Task]:
     """Build independent HAOS and INFRA-01 backup tasks."""
     tasks = [
         Task(
             id=f"backup.run:{target.id}",
             name=f"Back up {target.label}",
             command="backup.run",
-            trigger=CronTrigger(target.schedule),
+            trigger=CronTrigger(target.schedule, timezone=schedule_timezone),
             arguments={
                 "target_id": target.id,
                 "device_id": target.id,
@@ -530,7 +537,10 @@ def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
                 id="backup.run:infra-01",
                 name="Back up INFRA-01",
                 command="backup.run",
-                trigger=CronTrigger(backup_config.infra_01.schedule),
+                trigger=CronTrigger(
+                    backup_config.infra_01.schedule,
+                    timezone=schedule_timezone,
+                ),
                 arguments={
                     "target_id": "infra-01",
                     "device_id": "infra-01",
@@ -547,26 +557,53 @@ def _build_backup_tasks(*, backup_config: BackupConfig) -> list[Task]:
     return tasks
 
 
-def _build_log_analysis_tasks(*, jobs_config: DistributedJobsConfig) -> list[Task]:
+def _build_log_analysis_tasks(
+    *,
+    logs_config: DistributedLogAnalysisConfig,
+    schedule_timezone: ZoneInfo | None = None,
+) -> list[Task]:
     """Build the single configurable daily Tsunade log-control task."""
-    if not jobs_config.logs.enabled:
+    if not logs_config.enabled:
         return []
     return [
         Task(
             id="tsunade.logs.health_check",
             name="Check Konoha logs with Katsuyu",
             command="jobs.logs.health_check",
-            trigger=CronTrigger(jobs_config.logs.schedule),
+            trigger=CronTrigger(logs_config.schedule, timezone=schedule_timezone),
             arguments={
-                "sources": list(jobs_config.logs.sources),
-                "window_hours": jobs_config.logs.window_hours,
-                "max_bytes_per_source": jobs_config.logs.max_bytes_per_source,
-                "timeout_seconds": jobs_config.logs.timeout_seconds,
+                "sources": list(logs_config.sources),
+                "window_hours": logs_config.window_hours,
+                "max_bytes_per_source": logs_config.max_bytes_per_source,
+                "timeout_seconds": logs_config.timeout_seconds,
             },
             metadata={
                 "managed_by": "tsunade-logs",
-                "schedule": jobs_config.logs.schedule,
+                "schedule": logs_config.schedule,
             },
+        )
+    ]
+
+
+def _build_wake_dispatch_tasks(
+    *, jobs_config: DistributedJobsConfig, start_at: datetime
+) -> list[Task]:
+    """Build the internal grouped Wake-on-LAN dispatcher task."""
+    if not jobs_config.enabled:
+        return []
+    return [
+        Task(
+            id="tsunade.wake.dispatch",
+            name="Dispatch grouped Katsuyu wake requests",
+            command="jobs.wake.dispatch",
+            trigger=IntervalTrigger(
+                timedelta(seconds=5),
+                start_at=start_at,
+            ),
+            metadata={
+                "managed_by": "tsunade-wake",
+            },
+            priority=10,
         )
     ]
 
@@ -936,12 +973,18 @@ def build_production_agent(
             timeout_seconds=int(arguments["timeout_seconds"]),
         )
 
+    def dispatch_due_wake_requests(now: datetime) -> None:
+        if administration_service is None:
+            raise RuntimeError("Tsunade administration is unavailable")
+        administration_service.dispatch_due_wake_requests(now=now)
+
     scheduler = Scheduler(
         clock=resolved_clock,
         executor=DispatcherTaskExecutor(
             dispatcher=dispatcher,
             monitoring_registry=monitoring_registry,
             job_runner=queue_log_health_job,
+            wake_dispatcher=dispatch_due_wake_requests,
         ),
         event_bus=event_bus,
     )
@@ -1067,7 +1110,10 @@ def build_production_agent(
     )
     _replace_plugin_tasks(
         scheduler,
-        _build_backup_tasks(backup_config=backup_config)
+        _build_backup_tasks(
+            backup_config=backup_config,
+            schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
+        )
         if backup_plugin_config.enabled
         else [],
         plugin_name="backup",
@@ -1499,7 +1545,10 @@ def build_production_agent(
         _replace_plugin_tasks(
             scheduler,
             (
-                _build_backup_tasks(backup_config=updated_config)
+                _build_backup_tasks(
+                    backup_config=updated_config,
+                    schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
+                )
                 if configuration.enabled
                 else []
             ),
@@ -1729,8 +1778,19 @@ def build_production_agent(
             )
             _replace_plugin_tasks(
                 scheduler,
-                _build_log_analysis_tasks(jobs_config=jobs_config),
+                _build_log_analysis_tasks(
+                    logs_config=jobs_config.logs,
+                    schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
+                ),
                 plugin_name="tsunade-logs",
+            )
+            _replace_plugin_tasks(
+                scheduler,
+                _build_wake_dispatch_tasks(
+                    jobs_config=jobs_config,
+                    start_at=resolved_clock.now(),
+                ),
+                plugin_name="tsunade-wake",
             )
 
         if administration_config.network.enabled:
@@ -1955,6 +2015,22 @@ def build_production_agent(
                 enabled,
             )
 
+        def on_log_analysis_changed(
+            logs_configuration: DistributedLogAnalysisConfig,
+        ) -> None:
+            ConfigurationLoader.write_log_analysis(
+                application_config_path,
+                logs_configuration.model_dump(mode="json"),
+            )
+            _replace_plugin_tasks(
+                scheduler,
+                _build_log_analysis_tasks(
+                    logs_config=logs_configuration,
+                    schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
+                ),
+                plugin_name="tsunade-logs",
+            )
+
         administration_service = AdministrationService(
             infrastructure_repository=(
                 InfrastructureConfigurationRepository(
@@ -1982,6 +2058,12 @@ def build_production_agent(
             wake_burst_interval_seconds=wake_config.burst_interval_seconds,
             wake_retry_count=wake_config.retry_count,
             wake_retry_delay_seconds=wake_config.retry_delay_seconds,
+            wake_batch_window_seconds=wake_config.batch_window_seconds,
+            wake_planned_window_start_hour=wake_config.planned_window_start_hour,
+            wake_planned_window_end_hour=wake_config.planned_window_end_hour,
+            wake_schedule_timezone=wake_config.schedule_timezone,
+            wake_minimum_interval_seconds=wake_config.minimum_interval_seconds,
+            wake_shutdown_after_completion=wake_config.shutdown_after_completion,
             incident_repository=incident_repository,
             investigation_executor=investigation_executor,
             log_source_broker=(
@@ -1990,14 +2072,13 @@ def build_production_agent(
                 else None
             ),
             expertise_service=expertise_service,
-            log_sources=(
-                administration_config.jobs.logs.sources
-                if administration_config.jobs.logs.enabled
-                else ()
-            ),
+            log_analysis_enabled=administration_config.jobs.logs.enabled,
+            log_analysis_schedule=administration_config.jobs.logs.schedule,
+            log_sources=administration_config.jobs.logs.sources,
             log_window_hours=administration_config.jobs.logs.window_hours,
             log_max_bytes=administration_config.jobs.logs.max_bytes_per_source,
             log_timeout_seconds=administration_config.jobs.logs.timeout_seconds,
+            on_log_analysis_changed=on_log_analysis_changed,
             companion_repository=companion_repository,
             companion_ca_sha256=companion_ca_sha256,
             companion_ca_certificate_pem=companion_ca_certificate_pem,

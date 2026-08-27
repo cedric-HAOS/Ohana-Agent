@@ -19,6 +19,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
@@ -40,6 +41,8 @@ from administration.infrastructure import (
 )
 from administration.investigations import InvestigationExecutor, InvestigationRequest
 from administration.jobs import (
+    AUTOMATIC_WAKE_JOB_TYPES,
+    LOCAL_TIMEZONE,
     DistributedJobConflictError,
     DistributedJobRepository,
 )
@@ -54,6 +57,7 @@ from administration.network import (
     NetworkManagerRepository,
 )
 from administration.plugins import PluginAdministrationRepository
+from configuration.administration import DistributedLogAnalysisConfig
 from configuration.infrastructure import InfrastructureConfig
 from plugins.backup.backup_coordinator import BackupExecutionError
 
@@ -104,15 +108,26 @@ class AdministrationService:
         wake_retry_count: int = 2,
         wake_retry_delay_seconds: float = 1.0,
         wake_retry_sleeper: Callable[[float], None] = time.sleep,
+        wake_batch_window_seconds: int = 600,
+        wake_planned_window_start_hour: int = 0,
+        wake_planned_window_end_hour: int = 5,
+        wake_schedule_timezone: str = "Europe/Paris",
+        wake_minimum_interval_seconds: int = 7200,
+        wake_shutdown_after_completion: bool = True,
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
         investigation_executor: InvestigationExecutor | None = None,
         log_source_broker: LogSourceBroker | None = None,
         expertise_service: TsunadeExpertiseService | None = None,
         log_sources: tuple[str, ...] = (),
+        log_analysis_enabled: bool | None = None,
+        log_analysis_schedule: str = "0 5 * * *",
         log_window_hours: int = 24,
         log_max_bytes: int = 2 * 1024 * 1024,
         log_timeout_seconds: int = 900,
+        on_log_analysis_changed: (
+            Callable[[DistributedLogAnalysisConfig], None] | None
+        ) = None,
         companion_repository: CompanionRepository | None = None,
         companion_ca_sha256: str | None = None,
         companion_ca_certificate_pem: str | None = None,
@@ -143,15 +158,33 @@ class AdministrationService:
         self.wake_retry_count = wake_retry_count
         self.wake_retry_delay_seconds = wake_retry_delay_seconds
         self.wake_retry_sleeper = wake_retry_sleeper
+        self.wake_batch_window_seconds = wake_batch_window_seconds
+        if not 0 <= wake_planned_window_start_hour < wake_planned_window_end_hour <= 24:
+            raise ValueError("planned Wake-on-LAN window must be between 0 and 24")
+        self.wake_planned_window_start_hour = wake_planned_window_start_hour
+        self.wake_planned_window_end_hour = wake_planned_window_end_hour
+        try:
+            self.wake_schedule_timezone = ZoneInfo(wake_schedule_timezone)
+        except Exception as error:
+            raise ValueError("invalid Wake-on-LAN schedule timezone") from error
+        self.wake_schedule_timezone_name = wake_schedule_timezone
+        self.wake_minimum_interval_seconds = wake_minimum_interval_seconds
+        self.wake_shutdown_after_completion = wake_shutdown_after_completion
+        self._last_planned_wake_date = None
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
         self.expertise_service = expertise_service
+        self.log_analysis_enabled = (
+            bool(log_sources) if log_analysis_enabled is None else log_analysis_enabled
+        )
+        self.log_analysis_schedule = log_analysis_schedule
         self.log_sources = tuple(log_sources)
         self.log_window_hours = log_window_hours
         self.log_max_bytes = log_max_bytes
         self.log_timeout_seconds = log_timeout_seconds
+        self.on_log_analysis_changed = on_log_analysis_changed
         self.companion_repository = companion_repository
         self.companion_ca_sha256 = companion_ca_sha256
         self.companion_ca_certificate_pem = companion_ca_certificate_pem
@@ -254,8 +287,12 @@ class AdministrationService:
             )
         if self.expertise_service is not None:
             operations.append("incidents.diagnose")
-        if self.job_repository is not None and self.log_sources:
-            operations.extend(["incidents.logs.check", "incidents.logs.investigate"])
+        if self.job_repository is not None:
+            operations.extend(["incidents.logs.read", "incidents.logs.write"])
+            if self.log_analysis_enabled and self.log_sources:
+                operations.extend(
+                    ["incidents.logs.check", "incidents.logs.investigate"]
+                )
         if self.investigation_executor is not None:
             operations.extend(["investigations.read", "investigations.execute"])
 
@@ -687,7 +724,11 @@ class AdministrationService:
         timeout_seconds: int | None = None,
     ) -> object:
         """Ask Katsuyu for one bounded deterministic control chosen by Tsunade."""
-        if self.job_repository is None or not self.log_sources:
+        if (
+            self.job_repository is None
+            or not self.log_analysis_enabled
+            or not self.log_sources
+        ):
             raise LookupError("Tsunade log analysis is unavailable")
         selected_sources = list(sources or self.log_sources)
         if not selected_sources or any(
@@ -699,7 +740,11 @@ class AdministrationService:
             raise DistributedJobConflictError(
                 f"log health check is already active as job {active.job_id}"
             )
-        current = (now or datetime.now(UTC)).astimezone(UTC)
+        current = now or datetime.now(LOCAL_TIMEZONE)
+        if current.tzinfo is None or current.utcoffset() is None:
+            current = current.replace(tzinfo=LOCAL_TIMEZONE)
+        else:
+            current = current.astimezone(LOCAL_TIMEZONE)
         selected_window = window_hours or self.log_window_hours
         baseline: list[dict[str, object]] = []
         previous = self.job_repository.latest_successful_result("logs.health_check")
@@ -735,11 +780,48 @@ class AdministrationService:
             }
         )
 
+    def read_log_analysis(self) -> object:
+        """Expose the effective scheduled Tsunade log-control policy."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return {
+            "schema_version": 1,
+            "enabled": self.log_analysis_enabled,
+            "schedule": self.log_analysis_schedule,
+            "sources": list(self.log_sources),
+            "window_hours": self.log_window_hours,
+            "max_bytes_per_source": self.log_max_bytes,
+            "timeout_seconds": self.log_timeout_seconds,
+        }
+
+    def write_log_analysis(self, payload: dict[str, Any]) -> object:
+        """Enable, disable or reschedule the bounded Tsunade log control."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+
+        configuration = DistributedLogAnalysisConfig.model_validate(payload)
+
+        if self.on_log_analysis_changed is not None:
+            self.on_log_analysis_changed(configuration)
+
+        self.log_analysis_enabled = configuration.enabled
+        self.log_analysis_schedule = configuration.schedule
+        self.log_sources = configuration.sources
+        self.log_window_hours = configuration.window_hours
+        self.log_max_bytes = configuration.max_bytes_per_source
+        self.log_timeout_seconds = configuration.timeout_seconds
+
+        return self.read_log_analysis()
+
     def request_log_investigation(
         self, incident_id: str, payload: dict[str, Any]
     ) -> object:
         """Queue an operator-authorized follow-up for one log incident."""
-        if self.job_repository is None or not self.log_sources:
+        if (
+            self.job_repository is None
+            or not self.log_analysis_enabled
+            or not self.log_sources
+        ):
             raise LookupError("Tsunade log analysis is unavailable")
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
@@ -824,31 +906,60 @@ class AdministrationService:
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
         job = self.job_repository.create(payload)
-        self._wake_compatible_worker(job.type)
+        self.dispatch_due_wake_requests()
         return job
 
-    def _wake_compatible_worker(self, job_type: str) -> None:
+    def dispatch_due_wake_requests(self, now: datetime | None = None) -> None:
+        """Wake one worker at the local daily Katsuyu batch boundary."""
+        if self.job_repository is None:
+            return
+        current = (now or self.job_repository.now()).astimezone(
+            self.wake_schedule_timezone
+        )
+        if (
+            self.wake_planned_window_end_hour < 24
+            and current.hour != self.wake_planned_window_end_hour
+        ):
+            return
+        batch_date = current.date()
+        if self._last_planned_wake_date == batch_date:
+            return
+        woke_worker = False
+        for job_type in self.job_repository.wake_ready_job_types(
+            batch_window_seconds=0,
+            job_types=AUTOMATIC_WAKE_JOB_TYPES,
+        ):
+            woke_worker = self._wake_compatible_worker(job_type) or woke_worker
+        if woke_worker:
+            self._last_planned_wake_date = batch_date
+
+    def _wake_compatible_worker(self, job_type: str) -> bool:
         """Wake one unavailable compatible worker using its advertised WOL MAC."""
         if (
             self.job_repository is None
             or not self.wake_enabled
             or self.wake_sender is None
         ):
-            return
-        worker = self.job_repository.wake_candidate(job_type)
+            return False
+        worker = self.job_repository.wake_candidate(
+            job_type,
+            minimum_interval_seconds=self.wake_minimum_interval_seconds,
+        )
         if worker is None or worker.wake_on_lan_mac_address is None:
-            return
+            return False
         try:
             self._send_wake_on_lan(worker.wake_on_lan_mac_address)
             self.job_repository.mark_worker_waking(
                 worker.worker_id,
                 timeout_seconds=self.wake_timeout_seconds,
             )
+            return True
         except (OSError, ValueError):
             LOGGER.exception(
                 "Unable to send Wake-on-LAN for Katsuyu worker %s",
                 worker.worker_id,
             )
+            return False
 
     def read_job(self, job_id: str) -> object:
         """Read the current durable state of one job."""
@@ -866,7 +977,10 @@ class AdministrationService:
         """Lease the oldest compatible job to Katsuyu."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        return self.job_repository.claim(payload)
+        return self.job_repository.claim(
+            payload,
+            shutdown_after_completion=self.wake_shutdown_after_completion,
+        )
 
     def register_worker(
         self,
@@ -903,6 +1017,12 @@ class AdministrationService:
             "burst_interval_seconds": self.wake_burst_interval_seconds,
             "retry_count": self.wake_retry_count,
             "retry_delay_seconds": self.wake_retry_delay_seconds,
+            "batch_window_seconds": self.wake_batch_window_seconds,
+            "planned_window_start_hour": self.wake_planned_window_start_hour,
+            "planned_window_end_hour": self.wake_planned_window_end_hour,
+            "schedule_timezone": self.wake_schedule_timezone_name,
+            "minimum_interval_seconds": self.wake_minimum_interval_seconds,
+            "shutdown_after_completion": self.wake_shutdown_after_completion,
         }
 
     def write_wake_on_lan(self, payload: dict[str, Any]) -> object:
@@ -1339,6 +1459,7 @@ class AdministrationHTTPServer:
                     "/v1/system/network": service.read_network,
                     "/v1/jobs/workers": service.list_workers,
                     "/v1/jobs/wake-on-lan": service.read_wake_on_lan,
+                    "/v1/incidents/logs": service.read_log_analysis,
                     "/v1/jobs/workers/pairings": service.list_worker_pairings,
                     "/v1/pairings/companions": service.list_companion_pairings,
                     "/v1/companions": service.list_companion_devices,
@@ -1393,6 +1514,7 @@ class AdministrationHTTPServer:
                     "/v1/dhcp": service.write_dhcp,
                     "/v1/system/network": service.write_network,
                     "/v1/jobs/wake-on-lan": service.write_wake_on_lan,
+                    "/v1/incidents/logs": service.write_log_analysis,
                 }
                 operation = routes.get(path)
 

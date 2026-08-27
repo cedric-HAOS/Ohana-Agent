@@ -437,18 +437,24 @@ permissions `0640`; la clé privée de l'autorité reste exclusivement lisible p
 `root`.
 
 `administration.jobs.wake_on_lan` définit uniquement la politique de réveil :
-activation, broadcast UDP, port et délais. L'identité du worker et sa MAC ne sont
+activation, broadcast UDP, port et délais. Les tâches planifiées nécessitant
+Katsuyu sont regroupées dans la fenêtre locale `00:00`-`05:00` de
+`schedule_timezone`, puis un réveil unique est tenté à sa clôture. L'identité du
+worker et sa MAC ne sont
 plus dupliquées dans cette configuration : Katsuyu les annonce lors de son
 enregistrement et Agent les conserve dans la base des workers.
 
 Lorsqu'un job compatible arrive après expiration de la fraîcheur du worker,
 Agent émet un paquet magique, expose le worker en `WAKING`, puis conserve
 `woken_by_ohana: true` lorsque Katsuyu s'enregistre. Une arrivée spontanée reste
-`woken_by_ohana: false`. L'administration expose aussi `GET
+`woken_by_ohana: false`. Les jobs compatibles sont regroupés pendant la fenêtre
+configurée et un délai minimal évite les réveils automatiques rapprochés.
+L'administration expose aussi `GET
 /v1/jobs/wake-on-lan` pour lire la politique effective et `POST
 /v1/jobs/workers/{worker_id}/wake` pour un test de réveil explicite. L'envoi du
-Magic Packet reste exécuté par Agent/Tsunade. Cette version n'implémente aucune
-extinction de Bubule.
+Magic Packet reste exécuté par Agent/Tsunade. Quand Agent a réveillé Bubule, le
+dernier job compatible reçu peut demander à Katsuyu l'extinction de Bubule après
+son traitement.
 
 ## Incidents Tsunade
 

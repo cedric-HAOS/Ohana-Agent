@@ -55,6 +55,19 @@ def test_shikamaru_example_configuration_is_valid() -> None:
     assert configuration.administration.jobs.wake_on_lan.burst_interval_seconds == 0.1
     assert configuration.administration.jobs.wake_on_lan.retry_count == 2
     assert configuration.administration.jobs.wake_on_lan.retry_delay_seconds == 1.0
+    assert configuration.administration.jobs.wake_on_lan.batch_window_seconds == 600
+    assert configuration.administration.jobs.wake_on_lan.planned_window_start_hour == 0
+    assert configuration.administration.jobs.wake_on_lan.planned_window_end_hour == 5
+    assert (
+        configuration.administration.jobs.wake_on_lan.schedule_timezone
+        == "Europe/Paris"
+    )
+    assert (
+        configuration.administration.jobs.wake_on_lan.minimum_interval_seconds == 7200
+    )
+    assert (
+        configuration.administration.jobs.wake_on_lan.shutdown_after_completion is True
+    )
 
 
 def test_shikamaru_development_configuration_is_valid() -> None:

@@ -290,6 +290,56 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
         incidents.close()
 
 
+def test_administration_server_exposes_log_analysis_policy(
+    tmp_path: Path,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    jobs = DistributedJobRepository(tmp_path / "jobs.db")
+    changes = []
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            job_repository=jobs,
+            log_analysis_enabled=True,
+            log_analysis_schedule="0 5 * * *",
+            log_sources=("ha-01", "linky-01", "zwave-01"),
+            on_log_analysis_changed=changes.append,
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        current = request_json(server, "/v1/incidents/logs")
+        assert current["enabled"] is True
+        assert current["schedule"] == "0 5 * * *"
+        assert current["sources"] == ["ha-01", "linky-01", "zwave-01"]
+
+        updated = request_json(
+            server,
+            "/v1/incidents/logs",
+            method="PUT",
+            payload={
+                "enabled": False,
+                "schedule": "30 6 * * *",
+                "sources": ["ha-01"],
+                "window_hours": 12,
+                "max_bytes_per_source": 1048576,
+                "timeout_seconds": 600,
+            },
+        )
+
+        assert updated["enabled"] is False
+        assert updated["schedule"] == "30 6 * * *"
+        assert changes[-1].sources == ("ha-01",)
+    finally:
+        server.stop()
+        jobs.close()
+
+
 def test_administration_server_updates_infrastructure(
     administration_server: AdministrationHTTPServer,
 ) -> None:

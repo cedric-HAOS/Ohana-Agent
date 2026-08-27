@@ -62,3 +62,25 @@ class ConfigurationLoader:
             ),
             encoding="utf-8",
         )
+
+    @staticmethod
+    def write_log_analysis(path: str | Path, payload: dict[str, object]) -> None:
+        """Persist only the Agent-owned Tsunade log-control policy."""
+        file_path = Path(path)
+
+        with file_path.open("r", encoding="utf-8") as config_file:
+            data = yaml.safe_load(config_file) or {}
+
+        administration = data.setdefault("administration", {})
+        jobs = administration.setdefault("jobs", {})
+        logs = jobs.setdefault("logs", {})
+        logs.update(payload)
+
+        file_path.write_text(
+            yaml.safe_dump(
+                data,
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )

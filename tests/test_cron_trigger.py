@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -53,3 +54,10 @@ def test_cron_trigger_fires_only_once_during_matching_minute() -> None:
     trigger.mark_executed(first_tick)
 
     assert trigger.is_due(datetime(2026, 1, 1, 2, 30, 59, tzinfo=UTC)) is False
+
+
+def test_cron_trigger_interprets_configured_timezone() -> None:
+    trigger = CronTrigger("0 5 * * *", timezone=ZoneInfo("Europe/Paris"))
+
+    assert trigger.is_due(datetime(2026, 1, 1, 4, 0, tzinfo=UTC)) is True
+    assert trigger.is_due(datetime(2026, 1, 1, 5, 0, tzinfo=UTC)) is False

@@ -188,6 +188,7 @@ class TsunadeExpertiseService:
         incident_id: UUID | str,
         *,
         log_result: dict[str, Any] | None = None,
+        operator_requested: bool = False,
     ) -> TsunadeExpertiseOutcome:
         key = str(incident_id)
         with self._lock:
@@ -234,7 +235,7 @@ class TsunadeExpertiseService:
             if incident.capability_id == "logs.health":
                 decision = self._log_decision(incident, log_result)
 
-                if decision.decision in {"stable", "watch"}:
+                if decision.decision in {"stable", "watch"} and not operator_requested:
                     outcome = TsunadeExpertiseOutcome(
                         incident_id=incident.incident_id,
                         status="DETERMINISTIC",
@@ -323,6 +324,11 @@ class TsunadeExpertiseService:
                     "summary": outcome.diagnosis,
                     "payload": {
                         "cycle_status": "ai_queued",
+                        "trigger": (
+                            "operator_request"
+                            if operator_requested
+                            else "automatic_escalation"
+                        ),
                         "facts": facts,
                         "ai_job_id": str(job_id),
                         "decision": "investigate",

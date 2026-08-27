@@ -6,6 +6,15 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.9] — Diagnostic opérateur explicite — 2026-08-27
+
+## Corrigé
+
+- Un clic sur « Lancer le diagnostic » demande désormais l’analyse Katsuyu
+  même lorsque la décision automatique de Tsunade serait de surveiller.
+- Les cycles automatiques conservent leur filtre déterministe afin de ne pas
+  solliciter l’IA pour chaque anomalie stable ou faiblement évolutive.
+
 # [1.26.8] — Réponses Katsuyu complètes — 2026-08-27
 
 ## Corrigé

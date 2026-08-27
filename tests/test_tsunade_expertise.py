@@ -148,6 +148,67 @@ def test_unexplained_logs_queue_only_bounded_ai_evidence(tmp_path: Path) -> None
     assert diagnostic.payload["confidence"] == 0.90
 
 
+def test_operator_requested_log_diagnosis_bypasses_watch_decision(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = _incident(
+        repository,
+        node="ha-01",
+        service="home-assistant",
+        capability="logs.health",
+    )
+    assert incident is not None
+    dispatched: list[dict[str, object]] = []
+    job_id = UUID("22222222-2222-4222-8222-222222222222")
+    log_result = {
+        "sources": [
+            {
+                "source": "ha-01",
+                "findings": [
+                    {
+                        "source": "ha-01",
+                        "signature": "template float unavailable",
+                        "category": "home_assistant",
+                        "severity": "error",
+                        "occurrences": 17,
+                        "reference_occurrences": 10,
+                        "trend": "increasing",
+                    }
+                ],
+            }
+        ]
+    }
+
+    def dispatch(payload):
+        dispatched.append(payload)
+        return SimpleNamespace(job_id=job_id)
+
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=FakeInvestigations(),  # type: ignore[arg-type]
+        ai_dispatcher=dispatch,
+    )
+    try:
+        automatic = service.diagnose(incident.incident_id, log_result=log_result)
+        requested = service.diagnose(
+            incident.incident_id,
+            log_result=log_result,
+            operator_requested=True,
+        )
+        updated = repository.get(incident.incident_id)
+    finally:
+        repository.close()
+
+    assert automatic.status == "DETERMINISTIC"
+    assert automatic.decision == "watch"
+    assert requested.status == "AI_QUEUED"
+    assert requested.ai_job_id == job_id
+    assert len(dispatched) == 1
+    assert updated.events[-1].payload["cycle_status"] == "ai_queued"
+    assert updated.events[-1].payload["trigger"] == "operator_request"
+
+
 def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
     tmp_path: Path,
 ) -> None:

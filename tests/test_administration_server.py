@@ -175,7 +175,8 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
     class FakeExpertise:
         calls = 0
 
-        def diagnose(self, incident_id):
+        def diagnose(self, incident_id, *, operator_requested=False):
+            assert operator_requested is True
             self.calls += 1
             if self.calls > 1:
                 raise TsunadeExpertiseConflictError("expertise already queued")

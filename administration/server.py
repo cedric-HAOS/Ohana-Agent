@@ -645,10 +645,13 @@ class AdministrationService:
         return self.incident_repository.append_record(incident_id, payload)
 
     def diagnose_incident(self, incident_id: str) -> object:
-        """Run Tsunade's bounded deterministic-first expertise cycle."""
+        """Run the bounded expertise cycle explicitly requested by an operator."""
         if self.expertise_service is None:
             raise LookupError("Tsunade expertise is unavailable")
-        return self.expertise_service.diagnose(incident_id)
+        return self.expertise_service.diagnose(
+            incident_id,
+            operator_requested=True,
+        )
 
     def propose_incident_repair(
         self, incident_id: str, payload: dict[str, Any]

@@ -412,6 +412,7 @@ class TsunadeExpertiseService:
         hypotheses = [
             hypothesis.model_dump(mode="json") for hypothesis in result.hypotheses
         ]
+        investigation_commands = self._suggested_investigation_commands(result)
         self.incidents.append_record(
             incident_id,
             {
@@ -441,6 +442,7 @@ class TsunadeExpertiseService:
                     ],
                     "hypotheses": hypotheses,
                     "missing_context": result.missing_context,
+                    "investigation_commands": investigation_commands,
                     "metrics": result.metrics.model_dump(mode="json"),
                 },
             },
@@ -456,9 +458,51 @@ class TsunadeExpertiseService:
                         "authorized": False,
                         "origin": "katsuyu_ai",
                         "proposals": result.recommended_investigation,
+                        "investigation_commands": investigation_commands,
                     },
                 },
             )
+
+    @staticmethod
+    def _suggested_investigation_commands(
+        result: AiInferenceResult,
+    ) -> list[dict[str, str]]:
+        text = " ".join(
+            [
+                result.summary,
+                result.interpretation,
+                *result.recommended_investigation,
+                *(
+                    hypothesis.statement
+                    for hypothesis in result.hypotheses
+                ),
+                *(
+                    evidence
+                    for hypothesis in result.hypotheses
+                    for evidence in hypothesis.supporting_evidence
+                ),
+            ]
+        ).casefold()
+
+        commands: list[dict[str, str]] = []
+        if "template" in text and "float" in text:
+            commands.append(
+                {
+                    "title": "Repérer les templates float sans défaut",
+                    "target": "HA-01",
+                    "safety": "Lecture seule",
+                    "command": (
+                        "find /config -type f \\( -name '*.yaml' -o -name '*.yml' \\) "
+                        "-exec grep -nE '\\|\\s*float\\s*(\\(\\s*\\))?(\\s*[|}])' {} +"
+                    ),
+                    "expected": (
+                        "Liste les fichiers et lignes où un filtre Jinja float "
+                        "semble utilisé sans valeur par défaut."
+                    ),
+                }
+            )
+
+        return commands[:8]
 
     def record_ai_failure(
         self,

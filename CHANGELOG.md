@@ -6,6 +6,15 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.6] — Suggestions d'investigation Shizune — 2026-08-27
+
+## Ajouté
+
+- Tsunade conserve les commandes d'investigation en lecture seule proposées par
+  l'analyse Katsuyu AI lorsqu'elles peuvent aider l'opérateur.
+- Le contrat compagnon Shizune expose ces suggestions bornées sans publier les
+  hypothèses brutes ni fournir de voie d'exécution directe.
+
 # [1.26.0] — Administration Wake-on-LAN — 2026-08-25
 
 ## Ajouté

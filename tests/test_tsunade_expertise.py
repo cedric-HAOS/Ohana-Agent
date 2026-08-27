@@ -183,15 +183,21 @@ def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
                 ],
                 "hypotheses": [
                     {
-                        "statement": "La route Z-Wave du nœud est dégradée.",
+                        "statement": (
+                            "Les templates Home Assistant utilisent float "
+                            "sans valeur par défaut."
+                        ),
                         "confidence": 0.87,
-                        "possible_causes": ["route radio instable"],
-                        "supporting_evidence": ["47 échecs ciblés"],
-                        "contradicting_evidence": ["autres nœuds normaux"],
+                        "possible_causes": ["template Home Assistant incomplet"],
+                        "supporting_evidence": ["float got invalid input 'unknown'"],
+                        "contradicting_evidence": ["autres capteurs normaux"],
                     }
                 ],
-                "missing_context": ["table des voisins"],
-                "recommended_investigation": ["Inspecter les voisins du nœud"],
+                "missing_context": ["configuration des templates"],
+                "recommended_investigation": [
+                    "Vérifier les templates Home Assistant qui utilisent float "
+                    "sans valeur par défaut."
+                ],
                 "metrics": {
                     "prompt_tokens": 100,
                     "completion_tokens": 80,
@@ -217,6 +223,27 @@ def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
     assert diagnostic.payload["decision_source"] == "katsuyu_ai"
     assert diagnostic.payload["confidence"] == 0.85
 
-    assert diagnostic.payload["recommended_action"] == ("Inspecter les voisins du nœud")
+    assert diagnostic.payload["recommended_action"] == (
+        "Vérifier les templates Home Assistant qui utilisent float "
+        "sans valeur par défaut."
+    )
+    assert diagnostic.payload["investigation_commands"] == [
+        {
+            "title": "Repérer les templates float sans défaut",
+            "target": "HA-01",
+            "safety": "Lecture seule",
+            "command": (
+                "find /config -type f \\( -name '*.yaml' -o -name '*.yml' \\) "
+                "-exec grep -nE '\\|\\s*float\\s*(\\(\\s*\\))?(\\s*[|}])' {} +"
+            ),
+            "expected": (
+                "Liste les fichiers et lignes où un filtre Jinja float "
+                "semble utilisé sans valeur par défaut."
+            ),
+        }
+    ]
 
     assert proposal.payload["authorized"] is False
+    assert proposal.payload["investigation_commands"] == (
+        diagnostic.payload["investigation_commands"]
+    )

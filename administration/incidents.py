@@ -915,15 +915,7 @@ class TsunadeIncidentRepository:
                     if current is not None:
                         self._resolve_log_incident(current, job_id, now, source)
                     continue
-                severity = (
-                    "critical"
-                    if any(
-                        isinstance(finding, dict)
-                        and finding.get("severity") in {"error", "critical"}
-                        for finding in findings
-                    )
-                    else "degraded"
-                )
+                severity = "degraded"
                 message = (
                     f"{source_id} : {len(findings)} anomalie(s) "
                     "de journaux regroupée(s)"

@@ -6,6 +6,16 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.10] — Fenêtre Katsuyu regroupée — 2026-08-28
+
+## Corrigé
+
+- Les jobs automatiques créés pendant la fenêtre de regroupement Wake-on-LAN
+  conservent assez de délai pour attendre le réveil planifié de Katsuyu à la fin
+  de la fenêtre, au lieu d'expirer avant 05:00.
+- Les incidents issus de la santé des journaux sont classés en état dégradé afin
+  de signaler une investigation à mener sans annoncer une criticité excessive.
+
 # [1.26.9] — Diagnostic opérateur explicite — 2026-08-27
 
 ## Corrigé

@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import ssl
 import time
 from collections.abc import Callable
@@ -908,9 +909,49 @@ class AdministrationService:
         """Validate and queue one explicitly typed distributed job."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
+        payload = self._extend_job_timeout_until_planned_wake(payload)
         job = self.job_repository.create(payload)
         self.dispatch_due_wake_requests()
         return job
+
+    def _extend_job_timeout_until_planned_wake(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Keep grouped Katsuyu jobs alive until the planned wake boundary."""
+        if (
+            not self.wake_enabled
+            or self.wake_planned_window_end_hour >= 24
+            or payload.get("type") not in AUTOMATIC_WAKE_JOB_TYPES
+        ):
+            return payload
+        try:
+            timeout_seconds = int(payload["timeout"])
+            created_at = datetime.fromisoformat(str(payload["created_at"]))
+        except (KeyError, TypeError, ValueError):
+            return payload
+        if created_at.tzinfo is None or created_at.utcoffset() is None:
+            created_at = created_at.replace(tzinfo=LOCAL_TIMEZONE)
+        current = created_at.astimezone(self.wake_schedule_timezone)
+        if not (
+            self.wake_planned_window_start_hour
+            <= current.hour
+            < self.wake_planned_window_end_hour
+        ):
+            return payload
+        planned_wake = current.replace(
+            hour=self.wake_planned_window_end_hour,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        seconds_until_wake = math.ceil((planned_wake - current).total_seconds())
+        if seconds_until_wake <= 0:
+            return payload
+        extended = dict(payload)
+        extended["timeout"] = (
+            timeout_seconds + seconds_until_wake + self.wake_timeout_seconds
+        )
+        return extended
 
     def dispatch_due_wake_requests(self, now: datetime | None = None) -> None:
         """Wake one worker at the local daily Katsuyu batch boundary."""

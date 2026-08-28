@@ -480,6 +480,71 @@ def test_tsunade_groups_jobs_before_waking_worker(
         repository.close()
 
 
+def test_tsunade_wakes_backup_worker_inside_planned_window_before_job_timeout(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    clock.now = clock.now.replace(hour=1, minute=59, second=29, microsecond=0)
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["backup.infra"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.3",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+    clock.advance(31)
+    sent: list[str] = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_timeout_seconds=180,
+        wake_sender=sent.append,
+        wake_enabled=True,
+        wake_batch_window_seconds=600,
+        wake_planned_window_start_hour=0,
+        wake_planned_window_end_hour=5,
+    )
+    try:
+        payload = typed_job_payload(
+            clock,
+            JOB_ID,
+            "backup.infra",
+            {
+                "backup_id": "20260828T020000Z",
+                "recipient": "age1" + "q" * 58,
+                "compression_level": 6,
+            },
+        )
+        payload["timeout"] = 3600
+        service.create_job(payload)
+        assert sent == []
+        job = repository.get(JOB_ID)
+        assert job.timeout == 7380
+
+        clock.advance(600)
+        service.dispatch_due_wake_requests(now=clock.now)
+        assert sent == []
+
+        clock.now = clock.now.replace(hour=3, minute=0, second=0, microsecond=0)
+        service.dispatch_due_wake_requests(now=clock.now)
+        worker = repository.worker_availability("katsuyu-bubule")
+        job = repository.get(JOB_ID)
+        assert sent == ["AA:BB:CC:DD:EE:FF"]
+        assert worker.availability.value == "WAKING"
+        assert job.status.value == "WAITING_WORKER"
+    finally:
+        repository.close()
+
+
 def test_tsunade_does_not_wake_for_non_planned_worker_job(
     tmp_path: Path,
     clock: MutableClock,

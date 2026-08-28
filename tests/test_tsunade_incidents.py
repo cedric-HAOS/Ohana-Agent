@@ -157,7 +157,7 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
         active = repository.list(state="active")
         assert len(active) == 1
         assert active[0].capability_id == "logs.health"
-        assert active[0].severity == "critical"
+        assert active[0].severity == "degraded"
         assert active[0].context["findings"][0]["reference_occurrences"] == 3
 
         repository.record_log_health(

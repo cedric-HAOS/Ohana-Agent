@@ -108,8 +108,8 @@ redémarrage de `dnsmasq.service` via le mécanisme privilégié déjà install�
 provenance Vision ou Shizune de chaque autorisation est auditée.
 
 La collection d’incidents expose également une synthèse compacte destinée au
-cockpit Vision : dernier contrôle des journaux, état de HA-01, LINKY-01 et
-ZWAVE-01, interventions, réparations apprises et taux de réussite. Cette
+cockpit Vision : dernier contrôle des journaux, état d’INFRA-01, HA-01,
+LINKY-01 et ZWAVE-01, interventions, réparations apprises et taux de réussite. Cette
 extension réutilise `/v1/incidents`, reste compatible avec les clients
 existants et ne contient aucun journal brut.
 

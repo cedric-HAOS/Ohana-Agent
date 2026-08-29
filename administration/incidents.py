@@ -906,7 +906,12 @@ class TsunadeIncidentRepository:
                     "window_ended_at": result.get("window_ended_at"),
                 }
                 source_id = str(source.get("source", ""))
-                if source_id not in {"ha-01", "linky-01", "zwave-01"}:
+                if source_id not in {
+                    "infra-01",
+                    "ha-01",
+                    "linky-01",
+                    "zwave-01",
+                }:
                     continue
                 key = (source_id, "home-assistant", "logs.health")
                 current = self._active(key)

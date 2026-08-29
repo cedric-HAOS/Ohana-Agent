@@ -14,7 +14,7 @@ revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.26.11 — Réveil Katsuyu fiable.**
+**Version préparée : 1.26.12 — Journaux propres de Tsunade.**
 
 Le socle actuel couvre notamment :
 

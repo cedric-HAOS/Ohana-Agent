@@ -9,6 +9,7 @@ Type=simple
 
 User=ohana-agent
 Group=ohana-agent
+SupplementaryGroups=systemd-journal
 
 ExecStart=/opt/ohana-agent/venv/bin/ohana-agent \
     --config /etc/ohana-agent/shikamaru.yaml \

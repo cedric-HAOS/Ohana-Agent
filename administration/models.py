@@ -618,7 +618,7 @@ class InfraBackupResult(AdministrationModel):
     logical_io_written_bytes: int = Field(ge=0)
 
 
-LogSourceId = Literal["ha-01", "linky-01", "zwave-01"]
+LogSourceId = Literal["infra-01", "ha-01", "linky-01", "zwave-01"]
 
 
 class LogBaseline(AdministrationModel):
@@ -632,7 +632,7 @@ class LogBaseline(AdministrationModel):
 class LogsHealthCheckParameters(AdministrationModel):
     """Bounded deterministic log control requested by Tsunade."""
 
-    sources: list[LogSourceId] = Field(min_length=1, max_length=3)
+    sources: list[LogSourceId] = Field(min_length=1, max_length=4)
     window_started_at: datetime
     window_ended_at: datetime
     max_bytes_per_source: int = Field(
@@ -738,7 +738,7 @@ class LogSourceHealth(AdministrationModel):
 class LogCorrelation(AdministrationModel):
     """Temporal proximity only; it never asserts causality."""
 
-    sources: list[LogSourceId] = Field(min_length=2, max_length=3)
+    sources: list[LogSourceId] = Field(min_length=2, max_length=4)
     occurred_at: datetime
     summary: str = Field(min_length=1, max_length=500)
 
@@ -750,7 +750,7 @@ class LogsHealthCheckResult(AdministrationModel):
     analyzed_at: datetime
     window_started_at: datetime
     window_ended_at: datetime
-    sources: list[LogSourceHealth] = Field(min_length=1, max_length=3)
+    sources: list[LogSourceHealth] = Field(min_length=1, max_length=4)
     new_anomaly_count: int = Field(ge=0)
     worsening_anomaly_count: int = Field(ge=0)
     disappeared_anomalies: list[LogBaseline] = Field(

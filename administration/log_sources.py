@@ -1,23 +1,88 @@
-"""Job-bound access descriptors for direct Katsuyu-to-HAOS log retrieval."""
+"""Job-bound access to bounded INFRA-01 and HAOS log sources."""
 
 from __future__ import annotations
 
+import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from administration.jobs import DistributedJobRepository
 from plugins.backup.backup_config import BackupConfig
 from plugins.backup.backup_secrets import resolve_backup_secret
 
 LOG_JOB_TYPES = ("logs.health_check", "logs.investigate")
-LOG_SOURCE_IDS = frozenset({"ha-01", "linky-01", "zwave-01"})
+LOG_SOURCE_IDS = frozenset({"infra-01", "ha-01", "linky-01", "zwave-01"})
+_INFRA_JOURNAL_UNITS = ("ohana-agent.service", "ohana-vision.service")
+JournalReader = Callable[[str, str, int], tuple[str, bool]]
+
+
+def _journal_timestamp(value: str) -> str:
+    """Convert a validated job timestamp to journalctl's unambiguous epoch form."""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise RuntimeError("Invalid INFRA-01 journal window timestamp") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise RuntimeError("INFRA-01 journal window timestamp must include a timezone")
+    return f"@{parsed.timestamp():.6f}"
+
+
+def read_infra_journal(
+    window_started_at: str,
+    window_ended_at: str,
+    max_bytes: int,
+) -> tuple[str, bool]:
+    """Read a bounded tail of the Agent and Vision systemd journals."""
+    command = ["journalctl"]
+    for unit in _INFRA_JOURNAL_UNITS:
+        command.extend(("--unit", unit))
+    command.extend(
+        (
+            "--since",
+            _journal_timestamp(window_started_at),
+            "--until",
+            _journal_timestamp(window_ended_at),
+            "--lines",
+            "10000",
+            "--output",
+            "short-iso-precise",
+            "--no-pager",
+            "--quiet",
+        )
+    )
+    try:
+        completed = subprocess.run(  # noqa: S603 - command and units are fixed.
+            command,
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"Unable to read INFRA-01 journal: {error}") from error
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()[:500]
+        raise RuntimeError(
+            "Unable to read INFRA-01 journal" + (f": {detail}" if detail else "")
+        )
+
+    payload = completed.stdout
+    truncated = len(payload) > max_bytes
+    if truncated:
+        payload = payload[-max_bytes:]
+        first_line_end = payload.find(b"\n")
+        if first_line_end >= 0:
+            payload = payload[first_line_end + 1 :]
+    return payload.decode("utf-8", errors="replace"), truncated
 
 
 @dataclass(slots=True)
 class LogSourceBroker:
-    """Reveal one configured HAOS credential only to the owning worker attempt."""
+    """Reveal one bounded log source only to the owning worker attempt."""
 
     config: BackupConfig
     repository: DistributedJobRepository
+    journal_reader: JournalReader = read_infra_journal
 
     def descriptor(
         self,
@@ -41,6 +106,24 @@ class LogSourceBroker:
         )
         if source_id not in requested:
             raise ValueError("log source is not authorized by this job")
+        if source_id == "infra-01":
+            max_bytes_key = (
+                "max_bytes_per_source"
+                if job.type == "logs.health_check"
+                else "max_bytes"
+            )
+            content, truncated = self.journal_reader(
+                str(job.parameters["window_started_at"]),
+                str(job.parameters["window_ended_at"]),
+                int(job.parameters[max_bytes_key]),
+            )
+            return {
+                "schema_version": 1,
+                "source": source_id,
+                "transport": "inline",
+                "content": content,
+                "truncated": truncated,
+            }
         target = next(
             (
                 candidate

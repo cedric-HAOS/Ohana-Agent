@@ -129,7 +129,8 @@ class DistributedLogAnalysisConfig(Config):
 
     enabled: bool = False
     schedule: str = "0 5 * * *"
-    sources: tuple[Literal["ha-01", "linky-01", "zwave-01"], ...] = (
+    sources: tuple[Literal["infra-01", "ha-01", "linky-01", "zwave-01"], ...] = (
+        "infra-01",
         "ha-01",
         "linky-01",
         "zwave-01",
@@ -143,8 +144,8 @@ class DistributedLogAnalysisConfig(Config):
     @field_validator("sources")
     @classmethod
     def validate_sources(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value or len(value) > 3 or len(set(value)) != len(value):
-            raise ValueError("log sources must contain one to three unique targets")
+        if not value or len(value) > 4 or len(set(value)) != len(value):
+            raise ValueError("log sources must contain one to four unique targets")
         return value
 
 

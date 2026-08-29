@@ -73,6 +73,7 @@ administration:
       enabled: false
       schedule: "0 5 * * *"
       sources:
+        - infra-01
         - ha-01
         - linky-01
         - zwave-01

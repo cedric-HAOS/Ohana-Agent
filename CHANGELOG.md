@@ -6,6 +6,20 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.12] — Journaux propres de Tsunade — 2026-08-29
+
+## Ajouté
+
+- La source bornée `infra-01` expose à Katsuyu, uniquement pour le job qui la
+  demande, les journaux de `ohana-agent.service` et `ohana-vision.service`.
+- Le contrôle quotidien et les investigations Tsunade acceptent désormais
+  quatre sources sans transmettre d’accès général à journald.
+
+## Sécurité
+
+- La fenêtre temporelle, les unités systemd, le nombre de lignes, la taille et
+  la durée de lecture sont bornés côté Agent.
+
 # [1.26.11] — Réveil Katsuyu fiable — 2026-08-29
 
 ## Corrigé

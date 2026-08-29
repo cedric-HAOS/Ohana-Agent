@@ -115,6 +115,8 @@ class AdministrationService:
         wake_schedule_timezone: str = "Europe/Paris",
         wake_minimum_interval_seconds: int = 7200,
         wake_shutdown_after_completion: bool = True,
+        wake_worker_id: str | None = None,
+        wake_mac_address: str | None = None,
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
         investigation_executor: InvestigationExecutor | None = None,
@@ -171,6 +173,8 @@ class AdministrationService:
         self.wake_schedule_timezone_name = wake_schedule_timezone
         self.wake_minimum_interval_seconds = wake_minimum_interval_seconds
         self.wake_shutdown_after_completion = wake_shutdown_after_completion
+        self.wake_worker_id = wake_worker_id
+        self.wake_mac_address = wake_mac_address
         self._last_planned_wake_date = None
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
@@ -988,6 +992,8 @@ class AdministrationService:
         worker = self.job_repository.wake_candidate(
             job_type,
             minimum_interval_seconds=self.wake_minimum_interval_seconds,
+            fallback_worker_id=self.wake_worker_id,
+            fallback_mac_address=self.wake_mac_address,
         )
         if worker is None or worker.wake_on_lan_mac_address is None:
             return False
@@ -1035,6 +1041,13 @@ class AdministrationService:
         """Register Katsuyu and its finite capabilities."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
+        if (
+            payload.get("worker_id") == self.wake_worker_id
+            and payload.get("wake_on_lan_mac_address") is None
+            and self.wake_mac_address is not None
+        ):
+            payload = dict(payload)
+            payload["wake_on_lan_mac_address"] = self.wake_mac_address
         return self.job_repository.register_worker(
             payload,
             previous_worker_id=previous_worker_id,
@@ -1106,7 +1119,14 @@ class AdministrationService:
         if not self.wake_enabled or self.wake_sender is None:
             raise DistributedJobConflictError("Wake-on-LAN is disabled")
         worker = self.job_repository.worker_availability(worker_id)
-        if worker.wake_on_lan_mac_address is None:
+        mac_address = worker.wake_on_lan_mac_address
+        if (
+            mac_address is None
+            and worker.worker_id == self.wake_worker_id
+            and self.wake_mac_address is not None
+        ):
+            mac_address = self.wake_mac_address
+        if mac_address is None:
             raise DistributedJobConflictError(
                 f"worker {worker_id} has not advertised a Wake-on-LAN MAC address"
             )
@@ -1116,7 +1136,7 @@ class AdministrationService:
             )
         if worker.availability.value == "WAKING":
             return worker
-        self._send_wake_on_lan(worker.wake_on_lan_mac_address)
+        self._send_wake_on_lan(mac_address)
         self.job_repository.mark_worker_waking(
             worker.worker_id,
             timeout_seconds=self.wake_timeout_seconds,

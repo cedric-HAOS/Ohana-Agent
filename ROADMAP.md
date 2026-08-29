@@ -7,31 +7,36 @@ Il observe les services réels, normalise leurs états et fournit à Ohana-Visio
 la définition de référence de l'infrastructure, de sa topologie et de ses
 observations.
 
-Agent reste propriétaire de la configuration et de l'exécution. Ses capacités
-d'administration sont exposées par des contrats publics, versionnés et conçus
-pour revenir à un état sûr en cas d'échec.
+Agent reste propriétaire de la configuration, de l'exécution et des décisions
+opérationnelles. Ses capacités d'administration, de diagnostic, de sauvegarde et
+de remédiation sont exposées par des contrats publics, versionnés et conçus pour
+revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.13.0 — Sauvegarde logique d'INFRA-01.**
+**Version préparée : 1.26.11 — Réveil Katsuyu fiable.**
 
 Le socle actuel couvre notamment :
 
-- l'infrastructure déclarative et sa synchronisation avec Vision ;
-- le scheduler, le pipeline d'observation et le Plugin Manager ;
-- l'administration locale sécurisée de l'infrastructure, du réseau, du DHCP et
-  des plugins ;
+- l'infrastructure déclarative et sa synchronisation durable avec Vision ;
+- le scheduler, le pipeline d'observation, l'outbox SQLite et le Plugin Manager ;
+- l'administration locale sécurisée de l'infrastructure, du réseau, du DHCP,
+  des plugins, des workers Katsuyu et des compagnons Shizune ;
 - les observations DNS, NTP, MQTT, DHCP, réseau, Z-Wave, WireGuard,
   Téléinformation et télémétrie Home Assistant ;
-- les plages de surveillance et l'état suspendu neutre ;
+- les plages de surveillance, l'état suspendu neutre et la présence réseau
+  distincte de la santé fonctionnelle ;
 - la publication MQTT Discovery vers Home Assistant ;
-- la santé de la machine hôte, partagée avec Home Assistant et Vision, et
-  l'agrégation des services redondants dans Home Assistant ;
-- la livraison durable et ordonnée des observations vers Vision.
-- les sauvegardes HAOS chiffrées vers iCloud, sans archive persistante sur la
-  carte microSD d'INFRA-01 et avec rotation uniquement après validation distante.
-- la sauvegarde logique chiffrée d'INFRA-01 et son contrat de reconstruction
-  vérifié par Ohana-Installer.
+- les sauvegardes HAOS chiffrées vers iCloud et la sauvegarde logique chiffrée
+  d'INFRA-01, sans archive persistante sur la carte microSD ;
+- les jobs distribués vers Katsuyu, avec appairage TLS, suivi de worker,
+  Wake-on-LAN, fenêtre de regroupement et timeouts compatibles ;
+- Tsunade comme cockpit Agent de diagnostic, d'investigation et de décision ;
+- les incidents persistants, les contrôles `logs.health`, les investigations de
+  journaux et les analyses Katsuyu AI bornées ;
+- les réparations supervisées, explicitement autorisées, vérifiées et
+  enregistrables comme expérience ;
+- le contrat compagnon Shizune, borné, révocable et sans voie d'exécution directe.
 
 Le détail exhaustif des versions et correctifs publiés est conservé dans le
 [CHANGELOG](CHANGELOG.md).
@@ -49,106 +54,95 @@ Le détail exhaustif des versions et correctifs publiés est conservé dans le
 
 **Statut : livré.**
 
-### 1.1 — Infrastructure et topologie synchronisées
+### 1.1 à 1.3 — Infrastructure, administration et plugins
 
 - Agent comme source de vérité de l'infrastructure ;
-- équipements, liaisons, layouts et positions logiques ;
-- contrat public vers Vision et synchronisation résiliente ;
-- suspension puis reprise automatique lors d'une désynchronisation initiale.
-
-**Statut : livré.**
-
-### 1.2 — Administration graphique
-
+- synchronisation résiliente des équipements, liaisons, layouts et positions ;
 - API locale d'administration protégée ;
-- gestion de l'infrastructure depuis Vision ;
-- gestion DHCP et réservations dnsmasq ;
-- découverte dynamique des services DNS et replanification sans redémarrage.
+- gestion graphique de l'infrastructure, du réseau, du DHCP et des plugins ;
+- reconfiguration et test immédiat avec restauration en cas d'échec.
 
 **Statut : livré.**
 
-### 1.3 — Plugins et administration
+### 1.4 à 1.10 — Observations spécialisées
 
-- intégration de NTP et MQTT au pipeline d'observation ;
-- inventaire des plugins réellement enregistrés ;
-- lecture, activation, modification, reconfiguration et test immédiat ;
-- restauration de la configuration en cas d'échec et protection des secrets.
-
-**Statut : livré.**
-
-### 1.4 — Présence réseau des équipements
-
-- découverte des équipements adressables ;
-- observation générique `network.reachable` ;
-- détection ICMP avec confirmation ARP locale ;
-- seuil d'échecs, état inconnu et absence d'incidence sur la santé globale.
+- présence réseau `network.reachable`, ICMP et confirmation ARP locale ;
+- observations DHCP, Z-Wave, WireGuard, NTP, MQTT et télémétrie Home Assistant ;
+- Téléinformation Linky via Home Assistant puis réception HTTP directe ;
+- cibles IPv4, noms d'hôte et noms DNS résolus au moment du contrôle ;
+- plages horaires de surveillance et état suspendu neutre.
 
 **Statut : livré.**
 
-### 1.5 — Observation DHCP
+### 1.11 et 1.12 — Stabilité opérationnelle et livraison durable
 
-- plugin DHCP intégré au Plugin Manager ;
-- observation non intrusive de dnsmasq, de sa plage et de ses baux ;
-- calcul de l'occupation et seuil de santé configurable ;
-- reconfiguration et test immédiat sans redémarrage de l'Agent.
-
-**Statut : livré.**
-
-### 1.6 et 1.7 — Z-Wave, WireGuard et télémétrie
-
-- observations Z-Wave et WireGuard ;
-- intégration Freebox WireGuard ;
-- télémétrie Shelly par service ;
-- replanification dynamique et exécution selon les services déclarés.
+- administration NetworkManager avec helper privilégié restreint ;
+- confirmation et rollback réseau ;
+- découverte Z-Wave et synthèse Home Assistant contextualisée ;
+- outbox SQLite écrite avant envoi, rejeu ordonné et poursuite hors Vision ;
+- identifiants immuables transmis au premier niveau des contrats.
 
 **Statut : livré.**
 
-### 1.8 — Téléinformation Linky
+### 1.13 et 1.14 — Sauvegardes HAOS et INFRA-01
 
-- plugin `teleinformation` intégré au Plugin Manager ;
-- contrôle contextuel de la fraîcheur de SINSTS, NTARF et des index Tempo ;
-- lecture des index EASF01 à EASF06 ;
-- administration, test immédiat et publication vers Vision.
-
-**Statut : livré.**
-
-### 1.9 — Télémétrie générique et cibles réseau
-
-- remplacement compatible de Shelly Telemetry par
-  `home_assistant_telemetry` ;
-- acceptation des noms d'hôte et noms DNS dans l'infrastructure ;
-- résolution au moment du contrôle avec conservation de la cible déclarée.
+- sauvegardes HAOS complètes et chiffrées vers iCloud ;
+- secrets conservés côté Agent et rotation après validation distante ;
+- sauvegarde logique chiffrée d'INFRA-01 et contrat de reconstruction Installer ;
+- sauvegarde des configurations Agent, Vision, dnsmasq et chrony ;
+- contrôles tmpfs, manifeste, versions Agent/Vision et erreurs structurées.
 
 **Statut : livré.**
 
-### 1.10 — Téléinformation directe et plages de surveillance
+### 1.15 à 1.18 — Workers Katsuyu et sauvegarde distribuée
 
-- réception HTTP directe des données de `teleinfo2mqtt` ;
-- indépendance fonctionnelle vis-à-vis de Home Assistant pour Linky ;
-- plages horaires héritées par la présence réseau et les services ;
-- état suspendu neutre et publication unique de la transition.
-
-**Statut : livré.**
-
-### 1.11 — Administration réseau et stabilité opérationnelle
-
-- lecture et configuration NetworkManager avec helper privilégié restreint ;
-- sauvegarde, confirmation et rollback automatique ;
-- application fiable des réservations DHCP ;
-- découverte des équipements Z-Wave et publication de leur état ;
-- stabilisation des suspensions planifiées et de la présence réseau Windows ;
-- synthèse Home Assistant stable et alertes contextualisées par équipement et
-  capacité.
+- protocole HTTPS dédié aux workers Katsuyu ;
+- appairage temporaire validé par Tsunade/Vision et confiance TLS épinglée ;
+- jobs déterministes `backup.compress`, `backup.encrypt` et `backup.verify` ;
+- worker `AVAILABLE`, `UNAVAILABLE` ou `WAKING` avec capacités déclarées ;
+- Wake-on-LAN sans shell et réveil ciblé avant les jobs distribués.
 
 **Statut : livré.**
 
-### 1.12 — Livraison durable vers Vision
+### 1.19 à 1.21 — Incidents Tsunade et santé des journaux
 
-- outbox SQLite écrite avant la première tentative d'envoi ;
-- rejeu ordonné après une indisponibilité ou un redémarrage ;
-- identifiant immuable et message transmis au premier niveau du contrat ;
-- poursuite des observations lorsque Vision devient indisponible après la
-  synchronisation initiale.
+- inférence Katsuyu structurée et contexte borné ;
+- incidents persistants dédupliqués par équipement, service et capacité ;
+- catalogue fini d'investigations déterministes et résultats journalisés ;
+- contrôle configurable `logs.health_check` pour HA-01, LINKY-01 et ZWAVE-01 ;
+- anomalies de journaux groupées sans conservation des journaux bruts.
+
+**Statut : livré.**
+
+### 1.22 à 1.23 — Expertise, mémoire et réparations supervisées
+
+- cycle Tsunade déterministe avec recours facultatif à Katsuyu AI ;
+- hypothèses, preuves, contradictions, investigations proposées et confiance ;
+- diagnostics et réparations réussies conservés après confirmation explicite ;
+- premier contrat de réparation supervisée `restart_service` pour dnsmasq ;
+- contrôle immédiat des journaux et investigation complémentaire bornée.
+
+**Statut : livré.**
+
+### 1.24 — Shizune et robustesse des sauvegardes
+
+- contrat compagnon Shizune avec association explicite et session révocable ;
+- synthèse Konoha, demandes/réponses Tsunade et activité récente ;
+- notifications APNs facultatives et non bloquantes ;
+- snapshot Vision compact avec retries SQLite ;
+- erreurs de sauvegarde distribuée localisées avant compression.
+
+**Statut : livré.**
+
+### 1.25 et 1.26 — Wake-on-LAN piloté par Katsuyu
+
+- adresse MAC WOL annoncée durablement par Katsuyu ;
+- migration contrôlée de l'identité `katsuyu-bubule` ;
+- API de politique Wake-on-LAN effective et réveil de test explicite ;
+- diagnostics opérateur qui demandent Katsuyu même si le cycle automatique
+  resterait en surveillance ;
+- timeouts prolongés pour les jobs automatiques créés pendant la fenêtre de
+  regroupement, afin d'attendre le réveil planifié de Katsuyu.
 
 **Statut : livré.**
 
@@ -156,35 +150,37 @@ Le détail exhaustif des versions et correctifs publiés est conservé dans le
 
 ## Prochaines priorités
 
-### Maintenant — Consolidation de la version 1.12
+### Maintenant — Stabilisation Tsunade, Katsuyu et sauvegardes
 
-- exposer des diagnostics exploitables sur la taille et l'âge du backlog ;
-- cadrer la rétention et la maintenance de l'outbox ;
-- renforcer les scénarios de reprise après interruption prolongée ;
-- conserver une publication Home Assistant concise et stable lors des
-  dégradations.
+- suivre en production les jobs créés dans la fenêtre Wake-on-LAN regroupée ;
+- rendre les raisons de timeout, d'absence de worker et de réveil manqué plus
+  exploitables dans les journaux et les incidents ;
+- consolider les contrôles `logs.health` pour éviter les sévérités excessives ;
+- documenter les chemins opérateur : diagnostic, investigation, autorisation,
+  vérification et expérience.
 
 **Statut : en consolidation.**
 
-### Ensuite — Actions contrôlées
+### Ensuite — Actions contrôlées étendues
 
-Objectif : passer progressivement de l'observation à l'action sans introduire
+Objectif : élargir prudemment les actions disponibles sans introduire
 d'auto-réparation implicite.
 
-- politiques explicites de remédiation ;
-- redémarrage contrôlé de services ;
-- bascule de capacités redondantes ;
-- exécution d'actions validées et suivi de leur résultat ;
-- audit, autorisation et stratégie de retour à un état sûr.
+- politiques explicites de remédiation par capacité ;
+- nouveaux types d'actions supervisées au-delà de `dnsmasq.service` ;
+- meilleure modélisation des conséquences et préconditions ;
+- stratégie de retour à un état sûr après échec d'une action ;
+- audit durable des autorisations humaines et des décisions Tsunade.
 
-**Statut : à cadrer pour une future version majeure.**
+**Statut : à cadrer.**
 
 ### Plus tard — Écosystème multi-agents
 
-- identité stable des Agents et des sites ;
+- identité stable des Agents, workers, compagnons et sites ;
 - contrats compatibles avec une vue consolidée dans Vision ;
 - prévention des conflits d'identifiants ;
-- enrichissement du SDK et de la documentation des capacités des plugins.
+- enrichissement du SDK et de la documentation des capacités des plugins ;
+- préparation d'une supervision multi-site sans changer la source de vérité.
 
 **Statut : exploration.**
 
@@ -201,4 +197,5 @@ Les évolutions d'Agent doivent préserver les règles suivantes :
 5. des plugins indépendants du cœur ;
 6. des contrats publics versionnés ;
 7. aucune action sensible sans autorisation, audit et retour à un état sûr ;
-8. un comportement testable et reproductible.
+8. aucun journal brut ni secret inutile dans les flux Tsunade, Katsuyu ou Shizune ;
+9. un comportement testable et reproductible.

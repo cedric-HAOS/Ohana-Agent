@@ -6,6 +6,18 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.11] — Réveil Katsuyu fiable — 2026-08-29
+
+## Corrigé
+
+- Le coordinateur de sauvegarde INFRA-01 attend désormais le délai réellement
+  prolongé du job distribué et ne signale plus un timeout avant le réveil
+  regroupé de Katsuyu.
+- Une détection MAC momentanément indisponible n'efface plus la dernière adresse
+  Wake-on-LAN valide annoncée par un worker.
+- La MAC et l'identité worker déclarées dans la configuration Wake-on-LAN sont
+  utilisées comme repli lors de l'enregistrement et du réveil de Katsuyu.
+
 # [1.26.10] — Fenêtre Katsuyu regroupée — 2026-08-28
 
 ## Corrigé

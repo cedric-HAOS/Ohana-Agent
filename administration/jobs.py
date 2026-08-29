@@ -510,6 +510,16 @@ class DistributedJobRepository:
                 "SELECT * FROM distributed_workers WHERE worker_id = ?",
                 (normalized.worker_id,),
             ).fetchone()
+            if (
+                normalized.wake_on_lan_mac_address is None
+                and existing is not None
+                and existing["wake_on_lan_mac_address"]
+            ):
+                normalized = normalized.model_copy(
+                    update={
+                        "wake_on_lan_mac_address": existing["wake_on_lan_mac_address"]
+                    }
+                )
             registered_at = (
                 self._parse_timestamp(existing["registered_at"]) if existing else now
             )
@@ -636,8 +646,10 @@ class DistributedJobRepository:
         job_type: str,
         *,
         minimum_interval_seconds: int = 0,
+        fallback_worker_id: str | None = None,
+        fallback_mac_address: str | None = None,
     ) -> DistributedWorkerDocument | None:
-        """Return one unavailable compatible worker that advertised a WOL MAC."""
+        """Return one unavailable compatible worker with an effective WOL MAC."""
         if minimum_interval_seconds < 0:
             raise ValueError("minimum_interval_seconds cannot be negative")
         now = self._now()
@@ -667,13 +679,26 @@ class DistributedJobRepository:
             for worker in compatible
         ):
             return None
-        return next(
+        advertised = next(
             (
                 worker
                 for worker in compatible
                 if worker.wake_on_lan_mac_address is not None
             ),
             None,
+        )
+        if advertised is not None:
+            return advertised
+        if fallback_worker_id is None or fallback_mac_address is None:
+            return None
+        configured = next(
+            (worker for worker in compatible if worker.worker_id == fallback_worker_id),
+            None,
+        )
+        if configured is None:
+            return None
+        return configured.model_copy(
+            update={"wake_on_lan_mac_address": fallback_mac_address}
         )
 
     def worker_availability(self, worker_id: str) -> DistributedWorkerDocument:

@@ -329,7 +329,7 @@ class DistributedInfraBackupCoordinator:
         self.transfer.local._upload_recovery_identity()
         backup_id = current.strftime("%Y%m%dT%H%M%SZ")
         job_id = str(uuid4())
-        self.create_job(
+        job = self.create_job(
             {
                 "protocol_version": 1,
                 "job_id": job_id,
@@ -343,7 +343,10 @@ class DistributedInfraBackupCoordinator:
                 "timeout": self.config.infra_01.katsuyu_timeout_seconds,
             }
         )
-        deadline = monotonic() + self.config.infra_01.katsuyu_timeout_seconds + 10
+        effective_timeout = int(
+            getattr(job, "timeout", self.config.infra_01.katsuyu_timeout_seconds)
+        )
+        deadline = monotonic() + effective_timeout + 10
         while monotonic() < deadline:
             document = self.read_job(job_id)
             status = DistributedJobStatus(document.status)

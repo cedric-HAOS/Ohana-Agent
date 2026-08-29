@@ -14,7 +14,10 @@ import pytest
 
 from administration.jobs import DistributedJobConflictError, DistributedJobRepository
 from plugins.backup.backup_config import BackupConfig, InfraBackupConfig
-from plugins.backup.distributed_infra_backup import DistributedInfraBackupTransfer
+from plugins.backup.distributed_infra_backup import (
+    DistributedInfraBackupCoordinator,
+    DistributedInfraBackupTransfer,
+)
 from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
 from plugins.backup.rclone_uploader import UploadReceipt
 
@@ -48,6 +51,49 @@ class FakeUploader:
 
     def check_remote(self) -> None:
         return None
+
+
+def test_coordinator_waits_for_the_effective_grouped_job_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = BackupConfig(
+        infra_01=InfraBackupConfig(enabled=True, katsuyu_timeout_seconds=3600)
+    )
+    transfer = SimpleNamespace(
+        preflight=lambda: "age1" + "q" * 58,
+        local=SimpleNamespace(_upload_recovery_identity=lambda: None),
+    )
+    created_payloads: list[dict[str, object]] = []
+
+    def create_job(payload: dict[str, object]) -> object:
+        created_payloads.append(payload)
+        return SimpleNamespace(timeout=7380)
+
+    result = {
+        "remote_path": "icloud:Ohana/Backups/infra-01/20260829T000000Z",
+        "size_bytes": 1234,
+        "sha256": "a" * 64,
+        "deleted_remote_backups": 1,
+    }
+    monotonic_values = iter((100.0, 5000.0))
+    monkeypatch.setattr(
+        "plugins.backup.distributed_infra_backup.monotonic",
+        lambda: next(monotonic_values),
+    )
+    coordinator = DistributedInfraBackupCoordinator(
+        config,
+        transfer,  # type: ignore[arg-type]
+        create_job=create_job,
+        read_job=lambda _job_id: SimpleNamespace(
+            status="SUCCEEDED", result=result, error=None
+        ),
+    )
+
+    completed = coordinator.run(now=datetime(2026, 8, 29, tzinfo=UTC))
+
+    assert created_payloads[0]["timeout"] == 3600
+    assert completed.remote_directory == result["remote_path"]
+    assert completed.sha256 == "a" * 64
 
 
 def _claimed_repository(tmp_path: Path) -> DistributedJobRepository:

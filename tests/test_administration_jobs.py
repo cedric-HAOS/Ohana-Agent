@@ -339,6 +339,120 @@ def test_worker_registration_and_progress_survive_in_sqlite(
     assert running.progress.percent == 42.5
 
 
+def test_worker_registration_keeps_the_last_known_wake_on_lan_mac(
+    repository: DistributedJobRepository,
+) -> None:
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.3",
+            "wake_on_lan_mac_address": "AA:BB:CC:DD:EE:FF",
+        }
+    )
+
+    registered = repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["system.health"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.3",
+            "wake_on_lan_mac_address": None,
+        }
+    )
+
+    assert registered.wake_on_lan_mac_address == "AA:BB:CC:DD:EE:FF"
+
+
+def test_worker_registration_uses_the_configured_wake_on_lan_mac(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_worker_id="katsuyu-bubule",
+        wake_mac_address="AA:BB:CC:DD:EE:FF",
+    )
+    try:
+        registered = service.register_worker(
+            {
+                "worker_id": "katsuyu-bubule",
+                "capabilities": ["system.health"],
+                "platform": "Windows 11",
+                "worker_version": "0.8.3",
+                "wake_on_lan_mac_address": None,
+            }
+        )
+
+        assert registered.wake_on_lan_mac_address == "AA:BB:CC:DD:EE:FF"
+    finally:
+        repository.close()
+
+
+def test_tsunade_uses_configured_mac_when_registered_worker_has_none(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(
+        tmp_path / "jobs.db", clock=clock, worker_available_seconds=30
+    )
+    repository.register_worker(
+        {
+            "worker_id": "katsuyu-bubule",
+            "capabilities": ["logs.health_check"],
+            "platform": "Windows 11",
+            "worker_version": "0.8.3",
+            "wake_on_lan_mac_address": None,
+        }
+    )
+    clock.advance(31)
+    sent: list[str] = []
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_sender=sent.append,
+        wake_enabled=True,
+        wake_planned_window_end_hour=24,
+        wake_worker_id="katsuyu-bubule",
+        wake_mac_address="AA:BB:CC:DD:EE:FF",
+    )
+    try:
+        service.create_job(
+            typed_job_payload(
+                clock,
+                JOB_ID,
+                "logs.health_check",
+                {
+                    "sources": ["ha-01"],
+                    "window_started_at": (clock.now - timedelta(hours=24)).isoformat(),
+                    "window_ended_at": clock.now.isoformat(),
+                    "max_bytes_per_source": 1024,
+                    "baseline": [],
+                    "incident_id": None,
+                },
+            )
+        )
+
+        assert sent == ["AA:BB:CC:DD:EE:FF"]
+        assert (
+            repository.worker_availability("katsuyu-bubule").availability.value
+            == "WAKING"
+        )
+    finally:
+        repository.close()
+
+
 def test_tsunade_wakes_only_an_unavailable_compatible_worker(
     tmp_path: Path,
     clock: MutableClock,

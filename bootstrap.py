@@ -2064,6 +2064,8 @@ def build_production_agent(
             wake_schedule_timezone=wake_config.schedule_timezone,
             wake_minimum_interval_seconds=wake_config.minimum_interval_seconds,
             wake_shutdown_after_completion=wake_config.shutdown_after_completion,
+            wake_worker_id=wake_config.worker_id,
+            wake_mac_address=wake_config.mac_address,
             incident_repository=incident_repository,
             investigation_executor=investigation_executor,
             log_source_broker=(

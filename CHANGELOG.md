@@ -6,6 +6,15 @@ Le projet suit les principes de **Semantic Versioning**.
 
 ---
 
+# [1.26.13] — Sauvegarde planifiée non bloquante — 2026-08-30
+
+## Corrigé
+
+- Les sauvegardes planifiées s’exécutent désormais en arrière-plan afin de ne
+  plus monopoliser le scheduler pendant l’attente d’un job distribué.
+- Le dispatcher Wake-on-LAN continue ainsi de s’exécuter toutes les cinq
+  secondes et peut réveiller Katsuyu à la fin de la fenêtre de regroupement.
+
 # [1.26.12] — Journaux propres de Tsunade — 2026-08-29
 
 ## Ajouté

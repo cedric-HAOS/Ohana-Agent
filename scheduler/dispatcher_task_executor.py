@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from threading import Thread
 from typing import Protocol
 
 from monitoring import MonitoringScheduleRegistry
 from scheduler.task import Task
 from scheduler.task_executor import TaskExecutionResult
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DispatcherLike(Protocol):
@@ -81,6 +85,8 @@ class DispatcherTaskExecutor:
                 if self.wake_dispatcher is None:
                     raise RuntimeError("distributed wake dispatcher is unavailable")
                 self.wake_dispatcher(now)
+            elif task.command == "backup.run":
+                self._dispatch_backup_in_background(task.arguments)
             else:
                 self.dispatcher.execute(task.command, task.arguments)
         except Exception as exc:
@@ -104,3 +110,26 @@ class DispatcherTaskExecutor:
             started_at=now,
             finished_at=now,
         )
+
+    def _dispatch_backup_in_background(
+        self,
+        arguments: dict[str, object],
+    ) -> None:
+        """Run one scheduled backup without blocking scheduler maintenance tasks."""
+        copied_arguments = dict(arguments)
+        target_id = str(copied_arguments.get("target_id", "unknown"))
+
+        def run() -> None:
+            try:
+                self.dispatcher.execute("backup.run", copied_arguments)
+            except Exception:  # noqa: BLE001
+                LOGGER.exception(
+                    "Scheduled backup dispatch failed for %s",
+                    target_id,
+                )
+
+        Thread(
+            target=run,
+            name=f"ohana-scheduled-backup-{target_id}",
+            daemon=True,
+        ).start()

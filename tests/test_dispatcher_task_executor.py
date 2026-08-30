@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from threading import Event
 
 from observer import Observation, ObservationPublished, ObservationStatus
 from observer.plugin_observation_dispatcher import (
@@ -102,6 +103,51 @@ def test_dispatcher_task_executor_dispatches_due_wake_requests() -> None:
     assert result.success is True
     assert calls == [now]
     assert dispatcher.executed == []
+
+
+def test_scheduled_backup_does_not_block_wake_dispatcher() -> None:
+    now = datetime(2026, 8, 30, 4, 0, tzinfo=UTC)
+    backup_started = Event()
+    release_backup = Event()
+    wake_calls: list[datetime] = []
+
+    class BlockingBackupDispatcher(FakeDispatcher):
+        def execute(
+            self,
+            command: str,
+            arguments: dict[str, object] | None = None,
+        ) -> None:
+            if command == "backup.run":
+                backup_started.set()
+                release_backup.wait(timeout=5)
+                return
+            super().execute(command, arguments)
+
+    executor = DispatcherTaskExecutor(
+        BlockingBackupDispatcher(),
+        wake_dispatcher=wake_calls.append,
+    )
+    backup_task = Task(
+        command="backup.run",
+        trigger=IntervalTrigger(timedelta(days=1)),
+        arguments={"target_id": "infra-01"},
+    )
+    wake_task = Task(
+        command="jobs.wake.dispatch",
+        trigger=IntervalTrigger(timedelta(seconds=5)),
+    )
+
+    try:
+        backup_result = executor.execute(backup_task, now)
+        assert backup_started.wait(timeout=1)
+
+        wake_result = executor.execute(wake_task, now + timedelta(hours=1))
+
+        assert backup_result.success is True
+        assert wake_result.success is True
+        assert wake_calls == [now + timedelta(hours=1)]
+    finally:
+        release_backup.set()
 
 
 def test_dispatcher_task_executor_handles_dispatcher_failure() -> None:

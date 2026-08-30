@@ -128,6 +128,7 @@ def test_infra_backup_rejects_unavailable_vision_version(body: bytes) -> None:
     coordinator = InfraBackupCoordinator(
         BackupConfig(),
         vision_version_reader=lambda url, **kwargs: FakeVersionResponse(body),
+        vision_version_wait=lambda _seconds: None,
     )
 
     with pytest.raises(
@@ -135,6 +136,37 @@ def test_infra_backup_rejects_unavailable_vision_version(body: bytes) -> None:
         match="Installed version unavailable for ohana-vision",
     ):
         coordinator._installed_version("ohana-vision")
+
+
+def test_infra_backup_retries_transient_vision_version_failures() -> None:
+    responses: list[bytes | OSError] = [
+        TimeoutError("timed out"),
+        b'{"name":"Ohana-Vision","version":""}',
+        b'{"name":"Ohana-Vision","version":"1.22.12"}',
+    ]
+    requests: list[tuple[str, float]] = []
+    waits: list[float] = []
+
+    def reader(url: str, *, timeout: float):
+        requests.append((url, timeout))
+        response = responses.pop(0)
+        if isinstance(response, OSError):
+            raise response
+        return FakeVersionResponse(response)
+
+    coordinator = InfraBackupCoordinator(
+        BackupConfig(),
+        vision_version_reader=reader,
+        vision_version_wait=waits.append,
+    )
+
+    assert coordinator._installed_version("ohana-vision") == "1.22.12"
+    assert requests == [
+        ("http://127.0.0.1:8000/api/version", 5.0),
+        ("http://127.0.0.1:8000/api/version", 5.0),
+        ("http://127.0.0.1:8000/api/version", 5.0),
+    ]
+    assert waits == [2.0, 2.0]
 
 
 def test_infra_backup_publishes_manifest_after_encrypted_archive(

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from time import sleep
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -44,6 +45,8 @@ INFRA_REQUIRED_MEMBERS = (
 )
 VISION_VERSION_URL = "http://127.0.0.1:8000/api/version"
 VISION_VERSION_TIMEOUT_SECONDS = 5.0
+VISION_VERSION_ATTEMPTS = 8
+VISION_VERSION_RETRY_DELAY_SECONDS = 2.0
 MINIMUM_ARCHIVE_HEADROOM_BYTES = 16 * 1024 * 1024
 
 
@@ -70,6 +73,7 @@ class InfraBackupCoordinator:
         vision_database: Path = VISION_DATABASE,
         version_resolver: Any | None = None,
         vision_version_reader: Any = urlopen,
+        vision_version_wait: Any = sleep,
         popen_factory: Any = subprocess.Popen,
     ) -> None:
         self._config = config
@@ -79,6 +83,7 @@ class InfraBackupCoordinator:
         self._vision_database = vision_database
         self._version_resolver = version_resolver
         self._vision_version_reader = vision_version_reader
+        self._vision_version_wait = vision_version_wait
         self._popen_factory = popen_factory
 
     def run(self, *, now: datetime | None = None) -> InfraBackupResult:
@@ -424,27 +429,25 @@ class InfraBackupCoordinator:
             ) from error
 
     def _vision_version(self) -> str:
-        try:
-            with self._vision_version_reader(
-                VISION_VERSION_URL,
-                timeout=VISION_VERSION_TIMEOUT_SECONDS,
-            ) as response:
-                payload = json.loads(response.read())
-        except (
-            OSError,
-            URLError,
-            ValueError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as error:
-            raise BackupExecutionError(
-                "inventory",
-                "Installed version unavailable for ohana-vision.",
-            ) from error
-        installed = payload.get("version") if isinstance(payload, dict) else None
-        if not isinstance(installed, str) or not installed.strip():
-            raise BackupExecutionError(
-                "inventory",
-                "Installed version unavailable for ohana-vision.",
-            )
-        return installed.strip()
+        last_error: Exception | None = None
+        for attempt in range(1, VISION_VERSION_ATTEMPTS + 1):
+            try:
+                with self._vision_version_reader(
+                    VISION_VERSION_URL,
+                    timeout=VISION_VERSION_TIMEOUT_SECONDS,
+                ) as response:
+                    payload = json.loads(response.read())
+                installed = (
+                    payload.get("version") if isinstance(payload, dict) else None
+                )
+                if not isinstance(installed, str) or not installed.strip():
+                    raise ValueError("Vision version response has no usable version")
+                return installed.strip()
+            except (OSError, URLError, ValueError, TypeError) as error:
+                last_error = error
+                if attempt < VISION_VERSION_ATTEMPTS:
+                    self._vision_version_wait(VISION_VERSION_RETRY_DELAY_SECONDS)
+        raise BackupExecutionError(
+            "inventory",
+            "Installed version unavailable for ohana-vision.",
+        ) from last_error

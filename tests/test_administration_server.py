@@ -397,6 +397,58 @@ def test_administration_service_publishes_saved_infrastructure(
     assert changes[0].services[-1].id == "dns-secondary"
 
 
+def test_infrastructure_removal_closes_active_network_incident(tmp_path: Path) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(
+        INFRASTRUCTURE_YAML.replace(
+            "      node: infra-01\n",
+            (
+                "      node: infra-01\n"
+                "    - id: esp-02\n"
+                "      label: ESP-02\n"
+                "      kind: smart_device\n"
+                "      address: 192.168.1.42\n"
+            ),
+        ),
+        encoding="utf-8",
+    )
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        incident_repository=incidents,
+    )
+    try:
+        opened = incidents.process(
+            Observation(
+                node="esp-02",
+                service="esp-02",
+                capability="network.reachable",
+                status=ObservationStatus.UNHEALTHY,
+                success=False,
+                message="ESP-02 is absent.",
+                source="network.reachable",
+                timestamp=datetime.now(UTC),
+            )
+        )
+        assert opened is not None
+        payload = service.read_infrastructure().model_dump(mode="json")
+        payload["topology"]["devices"] = [
+            device
+            for device in payload["topology"]["devices"]
+            if device["id"] != "esp-02"
+        ]
+
+        service.write_infrastructure(payload)
+
+        resolved = incidents.get(opened.incident_id)
+        assert resolved.state == "resolved"
+        assert resolved.events[-1].kind == "monitoring_removed"
+    finally:
+        incidents.close()
+
+
 class FakePluginAdministrationRepository:
     """Return deterministic plugin administration documents."""
 

@@ -264,6 +264,51 @@ class TsunadeIncidentRepository:
             self._mark_processed(observation.id)
             return incident
 
+    def resolve_removed_network_devices(
+        self, device_ids: set[str], *, occurred_at: datetime
+    ) -> list[TsunadeIncident]:
+        """Close active presence incidents for devices removed from monitoring.
+
+        This is deliberately not modelled as a healthy observation: the device
+        was removed from the declared architecture, so Shikamaru has not
+        established that it is reachable.
+        """
+        if not device_ids:
+            return []
+
+        resolved: list[TsunadeIncident] = []
+        with self._lock, self._connection:
+            rows = self._connection.execute(
+                """SELECT * FROM tsunade_incidents
+                WHERE capability_id='network.reachable' AND ended_at IS NULL""",
+            ).fetchall()
+            for row in rows:
+                if row["service_id"] not in device_ids:
+                    continue
+                incident = self._incident(row, include_events=False)
+                result = (
+                    "La surveillance de cette capacité a été retirée de l’architecture."
+                )
+                self._connection.execute(
+                    """UPDATE tsunade_incidents SET ended_at=?,message=?,final_result=?
+                    WHERE incident_id=?""",
+                    (
+                        occurred_at.isoformat(),
+                        result,
+                        result,
+                        str(incident.incident_id),
+                    ),
+                )
+                self._event(
+                    incident.incident_id,
+                    kind="monitoring_removed",
+                    occurred_at=occurred_at,
+                    summary=result,
+                    payload={"reason": "architecture_removed"},
+                )
+                resolved.append(self.get(incident.incident_id))
+        return resolved
+
     def list(self, *, state: str = "active", limit: int = 100) -> list[TsunadeIncident]:
         """Return bounded incident history without loading all rows."""
         if state not in {"active", "resolved", "all"}:

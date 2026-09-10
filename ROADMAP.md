@@ -14,7 +14,7 @@ revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.26.14 — Sauvegarde planifiée non bloquante.**
+**Version préparée : 1.26.15 — Sauvegarde planifiée non bloquante.**
 
 Le socle actuel couvre notamment :
 

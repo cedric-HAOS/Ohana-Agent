@@ -98,6 +98,49 @@ def test_incident_is_deduplicated_escalated_resolved_and_recurrent(
         repository.close()
 
 
+def test_removed_network_device_resolves_incident_without_claiming_recovery(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    started = datetime(2026, 9, 10, 10, tzinfo=UTC)
+    observation = Observation(
+        node="esp-02",
+        service="esp-02",
+        capability="network.reachable",
+        status=ObservationStatus.UNHEALTHY,
+        success=False,
+        message="ESP-02 is absent after 684 consecutive failed checks.",
+        source="network.reachable",
+        id=uuid4(),
+        timestamp=started,
+        metadata={"target_type": "device", "device_id": "esp-02"},
+    )
+    try:
+        opened = repository.process(observation)
+        assert opened is not None
+
+        resolved = repository.resolve_removed_network_devices(
+            {"esp-02"}, occurred_at=started + timedelta(minutes=1)
+        )
+
+        assert [incident.incident_id for incident in resolved] == [opened.incident_id]
+        closed = resolved[0]
+        assert closed.state == "resolved"
+        assert closed.final_result == (
+            "La surveillance de cette capacité a été retirée de l’architecture."
+        )
+        assert closed.events[-1].kind == "monitoring_removed"
+        assert closed.events[-1].payload == {"reason": "architecture_removed"}
+        assert (
+            repository.resolve_removed_network_devices(
+                {"esp-02"}, occurred_at=started + timedelta(minutes=2)
+            )
+            == []
+        )
+    finally:
+        repository.close()
+
+
 def test_incident_references_typed_records_and_observations(tmp_path: Path) -> None:
     repository = TsunadeIncidentRepository(tmp_path / "control.db")
     try:

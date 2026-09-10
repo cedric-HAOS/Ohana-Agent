@@ -58,8 +58,10 @@ from administration.network import (
     NetworkManagerRepository,
 )
 from administration.plugins import PluginAdministrationRepository
+from builder.network_configuration_builder import NetworkConfigurationBuilder
 from configuration.administration import DistributedLogAnalysisConfig
 from configuration.infrastructure import InfrastructureConfig
+from configuration.network import NetworkPluginConfig
 from plugins.backup.backup_coordinator import BackupExecutionError
 
 LOGGER = logging.getLogger(__name__)
@@ -324,7 +326,28 @@ class AdministrationService:
     ) -> InfrastructureConfig:
         """Validate, persist and publish an infrastructure definition."""
         configuration = InfrastructureConfig.model_validate(payload)
+        previous_configuration = self.infrastructure_repository.read()
         saved_configuration = self.infrastructure_repository.write(configuration)
+
+        if self.incident_repository is not None:
+            previous_network_devices = {
+                device.name
+                for device in NetworkConfigurationBuilder()
+                .build(previous_configuration, NetworkPluginConfig())
+                .devices
+                if device.enabled
+            }
+            saved_network_devices = {
+                device.name
+                for device in NetworkConfigurationBuilder()
+                .build(saved_configuration, NetworkPluginConfig())
+                .devices
+                if device.enabled
+            }
+            self.incident_repository.resolve_removed_network_devices(
+                previous_network_devices - saved_network_devices,
+                occurred_at=datetime.now(UTC),
+            )
 
         if self.on_infrastructure_changed is not None:
             self.on_infrastructure_changed(saved_configuration)

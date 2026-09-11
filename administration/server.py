@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
-from threading import Thread
+from threading import RLock, Thread
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -36,6 +36,7 @@ from administration.expertise import (
     TsunadeExpertiseConflictError,
     TsunadeExpertiseService,
 )
+from administration.incident_summary import incident_assessment
 from administration.incidents import TsunadeIncidentRepository
 from administration.infrastructure import (
     InfrastructureConfigurationRepository,
@@ -183,6 +184,7 @@ class AdministrationService:
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
         self.expertise_service = expertise_service
+        self._worker_cycle_lock = RLock()
         self.log_analysis_enabled = (
             bool(log_sources) if log_analysis_enabled is None else log_analysis_enabled
         )
@@ -326,17 +328,12 @@ class AdministrationService:
     ) -> InfrastructureConfig:
         """Validate, persist and publish an infrastructure definition."""
         configuration = InfrastructureConfig.model_validate(payload)
-        previous_configuration = self.infrastructure_repository.read()
         saved_configuration = self.infrastructure_repository.write(configuration)
 
+        if self.on_infrastructure_changed is not None:
+            self.on_infrastructure_changed(saved_configuration)
+
         if self.incident_repository is not None:
-            previous_network_devices = {
-                device.name
-                for device in NetworkConfigurationBuilder()
-                .build(previous_configuration, NetworkPluginConfig())
-                .devices
-                if device.enabled
-            }
             saved_network_devices = {
                 device.name
                 for device in NetworkConfigurationBuilder()
@@ -344,13 +341,10 @@ class AdministrationService:
                 .devices
                 if device.enabled
             }
-            self.incident_repository.resolve_removed_network_devices(
-                previous_network_devices - saved_network_devices,
-                occurred_at=datetime.now(UTC),
+            self.incident_repository.reconcile_network_devices(
+                saved_network_devices,
+                occurred_at=datetime.now(ZoneInfo("Europe/Paris")),
             )
-
-        if self.on_infrastructure_changed is not None:
-            self.on_infrastructure_changed(saved_configuration)
 
         return saved_configuration
 
@@ -471,7 +465,10 @@ class AdministrationService:
             "summary": summary,
             "log_health": latest_log_health,
             "incidents": [
-                incident.model_dump(mode="json")
+                {
+                    **incident.model_dump(mode="json"),
+                    "assessment": incident_assessment(incident),
+                }
                 for incident in self.incident_repository.list(state=state)
             ],
         }
@@ -485,7 +482,15 @@ class AdministrationService:
         """Return the smallest useful Konoha overview for a personal companion."""
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
-        incidents = self.incident_repository.list(state="active", limit=20)
+        incidents = self.incident_repository.list(state="active", limit=500)
+        incidents.sort(
+            key=lambda incident: (
+                incident_assessment(incident)["priority"],
+                incident.started_at,
+            )
+        )
+        totals = self.incident_repository.statistics()
+        active_count = totals["incident_count"] - totals["resolved_incident_count"]
         requests = self.incident_repository.list_user_requests(state="pending").requests
         severity = (
             "critical"
@@ -511,7 +516,7 @@ class AdministrationService:
                     last_checked_at = candidate
         pending_count = len(requests)
         message = (
-            "Aucune intervention requise"
+            "Aucune autorisation en attente"
             if pending_count == 0
             else f"{pending_count} décision(s) attendent votre réponse"
         )
@@ -523,8 +528,9 @@ class AdministrationService:
                 "severity": incident.severity,
                 "message": incident.message,
                 "started_at": incident.started_at.isoformat(),
+                "assessment": incident_assessment(incident),
             }
-            for incident in incidents[:5]
+            for incident in incidents[:20]
         ]
         return {
             "schema_version": 1,
@@ -533,6 +539,8 @@ class AdministrationService:
             "pending_requests": pending_count,
             "last_checked_at": last_checked_at.isoformat() if last_checked_at else None,
             "attention": attention,
+            "active_count": active_count,
+            "attention_truncated": active_count > len(attention),
         }
 
     def read_companion_requests(self, state: str = "pending") -> object:
@@ -560,9 +568,13 @@ class AdministrationService:
                         "occurred_at": latest.finished_at.isoformat(),
                         "kind": "investigation",
                         "title": "Contrôle quotidien des journaux terminé",
-                        "detail": "Konoha : OK"
+                        "detail": (
+                            "Aucune anomalie relevée dans les sources contrôlées."
+                            if latest.result and latest.result.get("status") == "OK"
+                            else "Anomalies ou sources indisponibles à examiner."
+                        )
                         if latest.status.value == "SUCCEEDED"
-                        else "Le contrôle nécessite une attention.",
+                        else "Le contrôle n’a pas abouti.",
                         "incident_id": None,
                     }
                 )
@@ -676,10 +688,26 @@ class AdministrationService:
         """Run the bounded expertise cycle explicitly requested by an operator."""
         if self.expertise_service is None:
             raise LookupError("Tsunade expertise is unavailable")
-        return self.expertise_service.diagnose(
+        with self._worker_cycle_lock:
+            return self.expertise_service.diagnose(
+                incident_id,
+                operator_requested=True,
+            )
+
+    def request_companion_diagnosis(self, incident_id: str, device_id: str) -> object:
+        """Accept a bounded diagnostic request, never a repair authorization."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        outcome = self.diagnose_incident(incident_id)
+        self.incident_repository.append_record(
             incident_id,
-            operator_requested=True,
+            {
+                "kind": "investigation",
+                "summary": "Diagnostic demandé depuis Shizune.",
+                "payload": {"source": "shizune", "requested_by": device_id},
+            },
         )
+        return {"schema_version": 1, "status": outcome.status}
 
     def propose_incident_repair(
         self, incident_id: str, payload: dict[str, Any]
@@ -1052,8 +1080,22 @@ class AdministrationService:
             raise LookupError("Distributed jobs are unavailable")
         return self.job_repository.claim(
             payload,
-            shutdown_after_completion=self.wake_shutdown_after_completion,
+            # Legacy workers cannot re-check the queue after publishing results.
+            shutdown_after_completion=False,
         )
+
+    def next_worker_job(self, payload: dict[str, Any]) -> object:
+        """Settle results before claiming work or allowing shutdown."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        with self._worker_cycle_lock:
+            for job in self.job_repository.pending_completions():
+                self._process_job_completion(job)
+            return self.job_repository.claim(
+                payload,
+                settle=True,
+                shutdown_after_completion=self.wake_shutdown_after_completion,
+            )
 
     def register_worker(
         self,
@@ -1241,7 +1283,16 @@ class AdministrationService:
         """Record a verified result from the current Katsuyu attempt."""
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
-        job = self.job_repository.complete(job_id, payload)
+        with self._worker_cycle_lock:
+            job = self.job_repository.complete(job_id, payload)
+            for pending in self.job_repository.pending_completions():
+                if str(pending.job_id) == job_id:
+                    self._process_job_completion(pending)
+            return job
+
+    def _process_job_completion(self, job: Any) -> None:
+        """Commit decisions and follow-up jobs before releasing idle workers."""
+        assert self.job_repository is not None
         if (
             job.status.value == "SUCCEEDED"
             and job.result is not None
@@ -1249,16 +1300,37 @@ class AdministrationService:
         ):
             incident_id = job.parameters.get("incident_id")
             if job.type == "logs.health_check":
-                self.incident_repository.record_log_health(
+                affected = self.incident_repository.record_log_health(
                     job.job_id,
                     job.result,
                     incident_id=incident_id,
                 )
-                if incident_id is not None and self.expertise_service is not None:
-                    self.expertise_service.start(
-                        incident_id,
-                        log_result=job.result,
-                    )
+                if self.expertise_service is not None:
+                    for target in affected:
+                        try:
+                            target_incident = self.incident_repository.get(target)
+                            if target_incident.expertise_state == "ai_queued":
+                                previous = self.job_repository.latest_for_incident(
+                                    "ai.inference", str(target)
+                                )
+                                if previous is not None and previous.status.value in {
+                                    "SUCCEEDED",
+                                    "FAILED",
+                                    "TIMEOUT",
+                                    "CANCELLED",
+                                }:
+                                    self._process_job_completion(previous)
+                                elif previous is None:
+                                    self.expertise_service.record_ai_failure(
+                                        target,
+                                        job.job_id,
+                                        "Analyse précédente introuvable",
+                                    )
+                            self.expertise_service.review_log_health(
+                                target, job.job_id, job.result
+                            )
+                        except TsunadeExpertiseConflictError:
+                            return
             elif job.type == "logs.investigate" and incident_id is not None:
                 self.incident_repository.record_log_investigation(
                     job.job_id,
@@ -1277,14 +1349,14 @@ class AdministrationService:
             job.type == "ai.inference"
             and job.parameters.get("incident_id") is not None
             and self.expertise_service is not None
-            and job.status.value == "FAILED"
+            and job.status.value in {"FAILED", "TIMEOUT", "CANCELLED"}
         ):
             self.expertise_service.record_ai_failure(
                 job.parameters["incident_id"],
                 job.job_id,
-                job.error.message if job.error is not None else "unknown failure",
+                job.error.message if job.error is not None else job.status.value,
             )
-        return job
+        self.job_repository.mark_completion_processed(str(job.job_id))
 
     def authorize_backup_transfer(
         self, job_id: str, worker_id: str, attempt: int
@@ -1675,6 +1747,24 @@ class AdministrationHTTPServer:
                             )
                         return
                     response_prefix = "/v1/incidents/requests/"
+                    diagnosis_prefix = "/v1/incidents/"
+                    if path.startswith(diagnosis_prefix) and path.endswith("/diagnose"):
+                        incident_id = path[len(diagnosis_prefix) : -len("/diagnose")]
+                        if incident_id and "/" not in incident_id:
+                            payload = self._read_json()
+                            if payload is not None:
+                                if payload:
+                                    self._write_error(
+                                        HTTPStatus.BAD_REQUEST,
+                                        "No parameters are accepted",
+                                    )
+                                else:
+                                    self._execute(
+                                        lambda: service.request_companion_diagnosis(
+                                            incident_id, identity
+                                        )
+                                    )
+                            return
                     response_suffix = "/response"
                     if path.startswith(response_prefix) and path.endswith(
                         response_suffix
@@ -1748,6 +1838,12 @@ class AdministrationHTTPServer:
                     payload = self._read_json()
                     if payload is not None and self._authorized_worker(payload):
                         self._execute(lambda: service.claim_job(payload))
+                    return
+
+                if path == "/v1/jobs/next":
+                    payload = self._read_json()
+                    if payload is not None and self._authorized_worker(payload):
+                        self._execute(lambda: service.next_worker_job(payload))
                     return
 
                 jobs_prefix = "/v1/jobs/"

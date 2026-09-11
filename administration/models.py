@@ -335,6 +335,12 @@ class DistributedJobClaimResult(AdministrationModel):
     job: DistributedJobDocument | None = None
 
 
+class DistributedJobPollResult(DistributedJobClaimResult):
+    """Atomic next-work decision, including an explicit idle shutdown grant."""
+
+    shutdown_requested: bool = False
+
+
 class DistributedJobHeartbeat(AdministrationModel):
     """Lease renewal sent only by the worker owning the attempt."""
 

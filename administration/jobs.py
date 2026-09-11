@@ -33,6 +33,7 @@ from administration.models import (
     DistributedJobCreate,
     DistributedJobDocument,
     DistributedJobHeartbeat,
+    DistributedJobPollResult,
     DistributedJobStatus,
     DistributedWorkerAvailability,
     DistributedWorkerCollection,
@@ -349,6 +350,7 @@ class DistributedJobRepository:
         payload: dict[str, Any],
         *,
         shutdown_after_completion: bool = True,
+        settle: bool = False,
     ) -> DistributedJobClaimResult:
         """Atomically lease the oldest compatible job to Katsuyu."""
         claim = DistributedJobClaim.model_validate(payload)
@@ -379,6 +381,11 @@ class DistributedJobRepository:
                 ),
             ).fetchone()
             if row is None:
+                if settle:
+                    shutdown = shutdown_after_completion and self._idle_shutdown_locked(
+                        claim.worker_id, now
+                    )
+                    return DistributedJobPollResult(shutdown_requested=shutdown)
                 return DistributedJobClaimResult(job=None)
 
             deadline = self._deadline(row)
@@ -424,14 +431,56 @@ class DistributedJobRepository:
                     compatible_types,
                     now,
                 )
-                if shutdown_after_completion
+                if shutdown_after_completion and not settle
                 else False
             )
             document = self._document(
                 self._select_required_locked(row["job_id"]),
                 shutdown_after_completion=should_shutdown,
             )
+            if settle:
+                return DistributedJobPollResult(job=document)
             return DistributedJobClaimResult(job=document)
+
+    def _idle_shutdown_locked(self, worker_id: str, now: datetime) -> bool:
+        """Stop only an Ohana-woken worker after all relevant work has settled."""
+        row = self._connection.execute(
+            "SELECT * FROM distributed_workers WHERE worker_id=?", (worker_id,)
+        ).fetchone()
+        if row is None or not self._worker_document(row, now).woken_by_ohana:
+            return False
+        pending = self._connection.execute(
+            """SELECT 1 FROM distributed_jobs
+            WHERE (status IN ('QUEUED','WAITING_WORKER','RUNNING')
+                   AND (type IN (SELECT value FROM json_each(?)) OR worker_id=?))
+               OR completion_processed=0 LIMIT 1""",
+            (row["capabilities_json"], worker_id),
+        ).fetchone()
+        if pending is not None:
+            return False
+        self._connection.execute(
+            """UPDATE distributed_workers SET woken_by_ohana=0,
+            wake_requested_at=NULL, wake_deadline_at=NULL WHERE worker_id=?""",
+            (worker_id,),
+        )
+        return True
+
+    def pending_completions(self) -> list[DistributedJobDocument]:
+        """Resume durable result processing before considering a worker idle."""
+        with self._lock, self._connection:
+            self._recover_locked(self._now())
+            rows = self._connection.execute(
+                """SELECT * FROM distributed_jobs WHERE completion_processed=0
+                ORDER BY julianday(finished_at), job_id LIMIT 16"""
+            ).fetchall()
+            return [self._document(row) for row in rows]
+
+    def mark_completion_processed(self, job_id: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE distributed_jobs SET completion_processed=1 WHERE job_id=?",
+                (job_id,),
+            )
 
     def wake_ready_job_types(
         self,
@@ -1017,6 +1066,11 @@ class DistributedJobRepository:
                 raise DistributedJobConflictError("job already has a different result")
 
             self._require_owner(row, completion.worker_id, completion.attempt)
+            if row["type"] in {"logs.health_check", "logs.investigate", "ai.inference"}:
+                self._connection.execute(
+                    "UPDATE distributed_jobs SET completion_processed=0 WHERE job_id=?",
+                    (job_id,),
+                )
             self._connection.execute(
                 """
                 UPDATE distributed_jobs
@@ -1081,6 +1135,11 @@ class DistributedJobRepository:
             if "progress_json" not in columns:
                 self._connection.execute(
                     "ALTER TABLE distributed_jobs ADD COLUMN progress_json TEXT"
+                )
+            if "completion_processed" not in columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_jobs ADD COLUMN "
+                    "completion_processed INTEGER NOT NULL DEFAULT 1"
                 )
             self._connection.execute(
                 """
@@ -1336,6 +1395,11 @@ class DistributedJobRepository:
             ),
         )
         previous = DistributedJobStatus(row["status"])
+        if status in TERMINAL_STATUSES and row["type"] == "ai.inference":
+            self._connection.execute(
+                "UPDATE distributed_jobs SET completion_processed=0 WHERE job_id=?",
+                (row["job_id"],),
+            )
         self._event_locked(row["job_id"], previous, status, now, detail)
         LOGGER.info(
             "Distributed job %s transitioned %s -> %s (%s)",

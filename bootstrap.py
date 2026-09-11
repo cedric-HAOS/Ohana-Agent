@@ -1945,6 +1945,10 @@ def build_production_agent(
         incident_repository = TsunadeIncidentRepository(
             administration_config.jobs.database_path
         )
+        incident_repository.reconcile_network_devices(
+            {device.name for device in network_config.devices if device.enabled},
+            occurred_at=resolved_clock.now().astimezone(ZoneInfo("Europe/Paris")),
+        )
         companion_repository = None
         companion_tls_config = None
         companion_ca_sha256 = None

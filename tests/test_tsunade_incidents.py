@@ -1,5 +1,6 @@
 """Tests for Tsunade's persistent, deduplicated incident lifecycle."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -134,6 +135,44 @@ def test_removed_network_device_resolves_incident_without_claiming_recovery(
         assert (
             repository.resolve_removed_network_devices(
                 {"esp-02"}, occurred_at=started + timedelta(minutes=2)
+            )
+            == []
+        )
+    finally:
+        repository.close()
+
+
+def test_reconcile_persisted_network_incidents_after_restart(tmp_path: Path) -> None:
+    path = tmp_path / "control.db"
+    repository = TsunadeIncidentRepository(path)
+    started = datetime(2026, 9, 10, 10, tzinfo=UTC)
+    fault = _observation(ObservationStatus.UNHEALTHY, started)
+    dns = repository.process(fault)
+    network = replace(
+        fault,
+        id=uuid4(),
+        service="esp-02",
+        node="esp-02",
+        capability="network.reachable",
+    )
+    removed = repository.process(network)
+    retained = repository.process(
+        replace(network, id=uuid4(), service="esp-01", node="esp-01")
+    )
+    repository.close()
+    repository = TsunadeIncidentRepository(path)
+    try:
+        closed = repository.reconcile_network_devices(
+            {"esp-01"}, occurred_at=started + timedelta(days=1)
+        )
+        assert removed is not None and retained is not None and dns is not None
+        assert [item.incident_id for item in closed] == [removed.incident_id]
+        assert repository.get(retained.incident_id).state == "active"
+        assert repository.get(dns.incident_id).state == "active"
+        assert closed[0].last_observation_id == removed.last_observation_id
+        assert (
+            repository.reconcile_network_devices(
+                {"esp-01"}, occurred_at=started + timedelta(days=2)
             )
             == []
         )

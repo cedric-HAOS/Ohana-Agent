@@ -826,3 +826,6 @@ Le code courant comprend notamment :
 # Licence
 
 Projet distribué sous licence MIT.
+
+Voir [le cycle journaux → Tsunade → Katsuyu](docs/tsunade-worker-cycle.md) pour
+la reprise des résultats, l’arrêt différé et les incidents des équipements retirés.

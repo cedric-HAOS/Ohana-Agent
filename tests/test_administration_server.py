@@ -397,7 +397,10 @@ def test_administration_service_publishes_saved_infrastructure(
     assert changes[0].services[-1].id == "dns-secondary"
 
 
-def test_infrastructure_removal_closes_active_network_incident(tmp_path: Path) -> None:
+@pytest.mark.parametrize("already_removed", [False, True])
+def test_infrastructure_removal_closes_active_network_incident(
+    tmp_path: Path, already_removed: bool
+) -> None:
     infrastructure_path = tmp_path / "infrastructure.yaml"
     infrastructure_path.write_text(
         INFRASTRUCTURE_YAML.replace(
@@ -440,6 +443,10 @@ def test_infrastructure_removal_closes_active_network_incident(tmp_path: Path) -
             if device["id"] != "esp-02"
         ]
 
+        if already_removed:
+            service.infrastructure_repository.write(
+                service.read_infrastructure().model_validate(payload)
+            )
         service.write_infrastructure(payload)
 
         resolved = incidents.get(opened.incident_id)

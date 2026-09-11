@@ -7,10 +7,11 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from threading import Lock, Thread
 from typing import Any, Literal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
@@ -207,7 +208,13 @@ class TsunadeExpertiseService:
                 )
             procedure = self._known_procedure(incident)
             experiences = self.incidents.matching_experiences(incident)
-            investigation_results = self._run_investigations(incident, procedure)
+            # A completed log collection is already bounded evidence. Reviewing it
+            # must not block worker completion on another round of network probes.
+            investigation_results = (
+                []
+                if log_result is not None and incident.capability_id == "logs.health"
+                else self._run_investigations(incident, procedure)
+            )
             facts = self._facts(incident, investigation_results, log_result)
             failures = [
                 result
@@ -350,6 +357,53 @@ class TsunadeExpertiseService:
             with self._lock:
                 self._inflight.discard(key)
 
+    def review_log_health(
+        self, incident_id: UUID | str, job_id: UUID | str, result: dict[str, Any]
+    ) -> None:
+        """Review each source once per collection, synchronously before idle polling."""
+        incident = self.incidents.get(incident_id)
+        if incident.state != "active" or any(
+            event.payload.get("review_job_id") == str(job_id)
+            for event in incident.events
+        ):
+            return
+        if result.get("sources") and incident.capability_id == "logs.health":
+            if str(incident.last_observation_id) != str(job_id):
+                # A newer global collection has already replaced this evidence.
+                if any(
+                    event.payload.get("job_id") == str(job_id)
+                    and "result" in event.payload
+                    for event in incident.events
+                ):
+                    return
+        if incident.expertise_state == "ai_queued":
+            # The existing bounded AI job retains the worker; do not duplicate it.
+            raise TsunadeExpertiseConflictError("An AI analysis is already pending")
+        sources = result.get("sources", [])
+        source = next(
+            (item for item in sources if item.get("source") == incident.equipment_id),
+            None,
+        )
+        if source is None:
+            return
+        evidence = {
+            **source,
+            "correlations": [
+                item
+                for item in result.get("correlations", [])
+                if incident.equipment_id in item.get("sources", [])
+            ],
+        }
+        self.diagnose(incident_id, log_result=evidence)
+        self.incidents.append_record(
+            incident_id,
+            {
+                "kind": "investigation",
+                "summary": "Tsunade a réévalué le dernier contrôle des journaux.",
+                "payload": {"review_job_id": str(job_id)},
+            },
+        )
+
     @staticmethod
     def _decision_from_ai_result(
         result: AiInferenceResult,
@@ -417,6 +471,12 @@ class TsunadeExpertiseService:
         evidence: list[dict[str, Any]] | None = None,
     ) -> None:
         """Persist hypotheses as proposals; never promote them to facts or results."""
+        if any(
+            event.payload.get("job_id") == str(job_id)
+            and event.payload.get("cycle_status") == "ai_completed"
+            for event in self.incidents.get(incident_id).events
+        ):
+            return
         result = AiInferenceResult.model_validate(payload)
         decision = self._decision_from_ai_result(result)
         hypotheses = [
@@ -426,6 +486,15 @@ class TsunadeExpertiseService:
             result,
             evidence=evidence,
         )
+        basis_observed_at = None
+        for item in evidence or []:
+            if item.get("source") == "shikamaru.observation":
+                try:
+                    basis_observed_at = json.loads(item["content"]).get(
+                        "last_observed_at"
+                    )
+                except (ValueError, TypeError, KeyError):
+                    pass
         self.incidents.append_record(
             incident_id,
             {
@@ -436,6 +505,7 @@ class TsunadeExpertiseService:
                 ),
                 "payload": {
                     "cycle_status": "ai_completed",
+                    "basis_observed_at": basis_observed_at,
                     "origin": "katsuyu_ai",
                     "epistemic_status": "hypothesis",
                     "decision": decision.decision,
@@ -617,7 +687,17 @@ class TsunadeExpertiseService:
         log_result: dict[str, Any] | None,
     ) -> TsunadeDecisionResult:
         payload = log_result or incident.context
-        findings = cls._compact_logs(payload)
+        # Routing uses every bounded finding, not the shorter AI excerpt.
+        sources = payload.get("sources", [])
+        if isinstance(payload.get("findings"), list):
+            sources = [payload]
+        findings = [
+            finding
+            for source in sources[:4]
+            if isinstance(source, dict)
+            for finding in source.get("findings", [])[:64]
+            if isinstance(finding, dict)
+        ]
         correlations = cls._compact_correlations(payload)
 
         if not findings:
@@ -852,7 +932,7 @@ class TsunadeExpertiseService:
             "protocol_version": 1,
             "job_id": str(uuid4()),
             "type": "ai.inference",
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(),
             "parameters": request.model_dump(mode="json"),
             "timeout": 900,
         }

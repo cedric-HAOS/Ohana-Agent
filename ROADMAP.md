@@ -14,7 +14,12 @@ revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-**Version préparée : 1.26.15 — Sauvegarde planifiée non bloquante.**
+**Version : 1.26.16 — Cycle Tsunade complet et incidents persistés réconciliés.**
+
+Le contrôle des journaux réévalue les sources avant l’arrêt de Katsuyu. Les
+résultats en attente survivent au redémarrage. Les incidents réseau des équipements
+retirés sont clôturés au démarrage et à l’enregistrement de l’architecture.
+Voir [le contrat du cycle](docs/tsunade-worker-cycle.md).
 
 Le socle actuel couvre notamment :
 

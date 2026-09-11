@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## [1.26.16] — 2026-09-11 — Cycle Tsunade et synthèse des incidents
+
+- Le contrôle global des journaux réévalue chaque source concernée avant la
+  décision d’arrêt de Katsuyu ; seules les règles de Tsunade déclenchent l’IA.
+- Les résultats à traiter sont persistés et repris au prochain passage du worker.
+- Nouveau polling `/v1/jobs/next` : l’arrêt est autorisé uniquement à vide, après
+  les résultats et leurs suites, pour un worker réveillé par Ohana.
+- Synthèse commune Vision/Shizune : priorité, fraîcheur, conclusion et prochaine
+  action ; l’absence d’autorisation ne signifie plus absence d’incident.
+- Les incidents réseau persistés des équipements supprimés sont clôturés au
+  démarrage et à chaque enregistrement de l’architecture ; leur historique est conservé.
+- Demande de diagnostic Shizune authentifiée, sans commande libre ni réparation.
+
 Toutes les évolutions importantes d'Ohana-Agent sont documentées dans ce fichier.
 
 Le projet suit les principes de **Semantic Versioning**.

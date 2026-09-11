@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -18,6 +19,74 @@ from administration.notifications import APNsNotificationPublisher
 from administration.server import AdministrationHTTPServer, AdministrationService
 from configuration.administration import APNsConfig
 from observer import Observation, ObservationStatus
+
+
+def test_companion_diagnosis_is_authenticated_bounded_and_operator_requested(tmp_path):
+    companions = CompanionRepository(tmp_path / "control.db")
+    token = _pair(companions)
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = incidents.process(
+        Observation(
+            node="infra-01",
+            service="dnsmasq",
+            capability="dns.resolve",
+            status=ObservationStatus.DEGRADED,
+            success=False,
+            message="DNS dégradé",
+            source="dns.resolve",
+            timestamp=datetime.now(UTC),
+        )
+    )
+    calls = []
+
+    class Expertise:
+        def diagnose(self, incident_id, *, operator_requested):
+            calls.append((incident_id, operator_requested))
+            return SimpleNamespace(status="DETERMINISTIC")
+
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            tmp_path / "infra.yaml"
+        ),
+        incident_repository=incidents,
+        companion_repository=companions,
+        expertise_service=Expertise(),
+    )
+    server = AdministrationHTTPServer(
+        service=service, token="admin-test", companion_only=True, port=0
+    )
+    server.start()
+    try:
+        path = f"/v1/incidents/{incident.incident_id}/diagnose"
+        with pytest.raises(HTTPError) as unauthenticated:
+            _companion_request(server, path, method="POST", payload={})
+        assert unauthenticated.value.code == 401
+        with pytest.raises(HTTPError) as arbitrary:
+            _companion_request(
+                server,
+                path,
+                method="POST",
+                payload={"command": "anything"},
+                device_id="iphone-cedric",
+                token=token,
+            )
+        assert arbitrary.value.code == 400
+        assert not calls
+        result = _companion_request(
+            server,
+            path,
+            method="POST",
+            payload={},
+            device_id="iphone-cedric",
+            token=token,
+        )
+        assert result == {"schema_version": 1, "status": "DETERMINISTIC"}
+        assert calls == [(str(incident.incident_id), True)]
+    finally:
+        server.stop()
+        incidents.close()
+        companions.close()
+
 
 INFRASTRUCTURE = """\
 infrastructure:

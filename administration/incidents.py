@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
@@ -126,6 +127,7 @@ class TsunadeIncident(AdministrationModel):
     occurrence_count: int = Field(ge=1)
     recurrence_count: int = Field(ge=0)
     context: dict[str, Any] = Field(default_factory=dict)
+    latest_decision: dict[str, Any] | None = None
     final_result: str | None = None
     events: list[TsunadeIncidentEvent] = Field(default_factory=list)
     repairs: list[TsunadeRepair] = Field(default_factory=list)
@@ -264,6 +266,20 @@ class TsunadeIncidentRepository:
             self._mark_processed(observation.id)
             return incident
 
+    def reconcile_network_devices(
+        self, device_ids: set[str], *, occurred_at: datetime
+    ) -> list[TsunadeIncident]:
+        """Reconcile persisted presence incidents against current monitoring targets."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT DISTINCT service_id FROM tsunade_incidents
+                WHERE capability_id='network.reachable' AND ended_at IS NULL"""
+            ).fetchall()
+            removed = {row["service_id"] for row in rows} - device_ids
+            return self.resolve_removed_network_devices(
+                removed, occurred_at=occurred_at
+            )
+
     def resolve_removed_network_devices(
         self, device_ids: set[str], *, occurred_at: datetime
     ) -> list[TsunadeIncident]:
@@ -323,7 +339,9 @@ class TsunadeIncidentRepository:
         with self._lock:
             rows = self._connection.execute(
                 f"""SELECT * FROM tsunade_incidents WHERE {condition}
-                ORDER BY (ended_at IS NULL) DESC, started_at DESC LIMIT ?""",  # noqa: S608
+                ORDER BY (ended_at IS NULL) DESC,
+                (ended_at IS NULL AND severity='critical') DESC,
+                started_at DESC LIMIT ?""",  # noqa: S608
                 (limit,),
             ).fetchall()
         return [self._incident(row, include_events=False) for row in rows]
@@ -595,7 +613,7 @@ class TsunadeIncidentRepository:
         """Attach investigation, diagnostic, proposed action or final result."""
         request = TsunadeIncidentRecordRequest.model_validate(payload)
         incident = self.get(incident_id)
-        now = datetime.now(UTC)
+        now = datetime.now(ZoneInfo("Europe/Paris"))
         with self._lock, self._connection:
             self._event(
                 incident.incident_id,
@@ -924,9 +942,14 @@ class TsunadeIncidentRepository:
         result: dict[str, Any],
         *,
         incident_id: UUID | str | None = None,
-    ) -> None:
+    ) -> list[UUID]:
         """Attach a compact Katsuyu synthesis or maintain its log incident."""
         if incident_id is not None:
+            incident = self.get(incident_id)
+            if any(
+                event.payload.get("job_id") == str(job_id) for event in incident.events
+            ):
+                return [incident.incident_id]
             self.append_record(
                 incident_id,
                 {
@@ -935,11 +958,12 @@ class TsunadeIncidentRepository:
                         "Contrôle des journaux par Katsuyu : "
                         f"{result.get('status', 'KO')}"
                     ),
-                    "payload": result,
+                    "payload": {**result, "job_id": str(job_id)},
                 },
             )
-            return
-        now = datetime.now(UTC)
+            return [incident.incident_id]
+        now = datetime.now(ZoneInfo("Europe/Paris"))
+        affected: list[UUID] = []
         with self._lock, self._connection:
             for source in result.get("sources", []):
                 if not isinstance(source, dict):
@@ -960,6 +984,22 @@ class TsunadeIncidentRepository:
                     continue
                 key = (source_id, "home-assistant", "logs.health")
                 current = self._active(key)
+                recorded = self._connection.execute(
+                    """SELECT i.incident_id, i.ended_at FROM tsunade_incident_events e
+                    JOIN tsunade_incidents i ON i.incident_id=e.incident_id
+                    WHERE i.equipment_id=? AND i.capability_id='logs.health'
+                    AND json_extract(e.payload_json, '$.job_id')=? LIMIT 1""",
+                    (source_id, str(job_id)),
+                ).fetchone()
+                if recorded is not None:
+                    if recorded["ended_at"] is None:
+                        affected.append(UUID(recorded["incident_id"]))
+                    continue
+                if current is not None and str(current.last_observation_id) == str(
+                    job_id
+                ):
+                    affected.append(current.incident_id)
+                    continue
                 findings = source.get("findings", [])
                 if source.get("status") == "OK":
                     if current is not None:
@@ -1024,6 +1064,8 @@ class TsunadeIncidentRepository:
                     summary=message,
                     payload={"job_id": str(job_id), "result": source},
                 )
+                affected.append(target_id)
+        return affected
 
     def record_log_investigation(
         self, job_id: UUID | str, incident_id: UUID | str, result: dict[str, Any]
@@ -1434,7 +1476,7 @@ class TsunadeIncidentRepository:
         if include_events:
             rows = self._connection.execute(
                 """SELECT * FROM tsunade_incident_events
-                WHERE incident_id=? ORDER BY event_id LIMIT 1000""",
+                WHERE incident_id=? ORDER BY event_id DESC LIMIT 1000""",
                 (row["incident_id"],),
             ).fetchall()
             events = [
@@ -1447,7 +1489,7 @@ class TsunadeIncidentRepository:
                     summary=event["summary"],
                     payload=json.loads(event["payload_json"]),
                 )
-                for event in rows
+                for event in reversed(rows)
             ]
         if row["ended_at"]:
             workflow_state = "resolved"
@@ -1492,11 +1534,43 @@ class TsunadeIncidentRepository:
                 )
         expertise_state = {
             "deterministic": "deterministic",
+            "deterministic_decision": "deterministic",
             "ai_queued": "ai_queued",
             "ai_completed": "hypotheses_ready",
             "ai_failed": "insufficient_context",
             "insufficient_context": "insufficient_context",
         }.get(cycle_status or "", "investigating" if handled else "idle")
+        decision_row = self._connection.execute(
+            """SELECT payload_json, occurred_at FROM tsunade_incident_events
+            WHERE incident_id=? AND kind='diagnostic'
+            ORDER BY event_id DESC LIMIT 1""",
+            (row["incident_id"],),
+        ).fetchone()
+        latest_decision = (
+            {
+                **{
+                    key: value
+                    for key, value in json.loads(decision_row["payload_json"]).items()
+                    if key
+                    in {
+                        "decision",
+                        "decision_source",
+                        "confidence",
+                        "conclusion",
+                        "reason",
+                        "recommended_action",
+                        "reevaluate_after",
+                        "cycle_status",
+                        "basis_observed_at",
+                        "verdict",
+                        "ai_job_id",
+                    }
+                },
+                "occurred_at": decision_row["occurred_at"],
+            }
+            if decision_row
+            else None
+        )
         incident = TsunadeIncident(
             incident_id=row["incident_id"],
             state="resolved" if row["ended_at"] else "active",
@@ -1517,6 +1591,7 @@ class TsunadeIncidentRepository:
             occurrence_count=int(row["occurrence_count"]),
             recurrence_count=int(row["recurrence_count"]),
             context=json.loads(row["context_json"]),
+            latest_decision=latest_decision,
             final_result=row["final_result"],
             events=events,
             repairs=repairs,

@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from builder import BackupConfigurationBuilder
-from configuration.backup import BackupPluginConfig
-from loader import BackupConfigLoader
+from ohana_agent.configuration.backup import BackupPluginConfig
+from ohana_agent.configuration.builders import BackupConfigurationBuilder
+from ohana_agent.configuration.loaders import BackupConfigLoader
 
 
 def test_backup_example_configuration_builds_three_targets() -> None:

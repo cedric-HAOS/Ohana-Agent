@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from core import Runtime
+from ohana_agent.core import Runtime
 
 
 def test_runtime_defaults() -> None:

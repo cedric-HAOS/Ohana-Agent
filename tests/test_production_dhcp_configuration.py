@@ -1,14 +1,16 @@
 from pathlib import Path
 
-from builder.dhcp_configuration_builder import DHCPConfigurationBuilder
-from loader import DHCPConfigLoader, InfrastructureLoader
+from ohana_agent.configuration.builders.dhcp import (
+    DHCPConfigurationBuilder,
+)
+from ohana_agent.configuration.loaders import DHCPConfigLoader, InfrastructureLoader
 
 
 def test_production_dhcp_configuration_is_enabled() -> None:
     plugin_config = DHCPConfigLoader().load(Path("config/plugins/dhcp.yaml"))
     infrastructure = InfrastructureLoader().load(Path("config/infrastructure.yaml"))
 
-    from builder import InfrastructureBuilder
+    from ohana_agent.configuration.builders import InfrastructureBuilder
 
     runtime = DHCPConfigurationBuilder().build(
         InfrastructureBuilder().build(infrastructure),

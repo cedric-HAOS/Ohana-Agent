@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from plugins.dhcp.dhcp_check import DHCPCheck
+from ohana_agent.plugins.dhcp.check import DHCPCheck
 
 
 def write_state(tmp_path: Path) -> tuple[Path, Path]:

@@ -1,5 +1,9 @@
 # Ohana-Agent
 
+L’organisation du code et le parcours de collecte complémentaire sont décrits
+dans [Architecture et investigations Tsunade](docs/architecture-evolution.md).
+L’ensemble des guides est accessible depuis [l’index de documentation](docs/README.md).
+
 > Garantir les capacités de l'infrastructure, plutôt que surveiller des équipements.
 
 Ohana-Agent est le moteur d'observation de l'écosystème Ohana. Il charge une infrastructure déclarative, exécute les plugins de capacité, produit des observations normalisées et les transmet à Ohana-Vision.
@@ -801,6 +805,10 @@ Le code courant est validé par :
 ruff check .
 pytest -q
 ```
+
+Les tests de packaging construisent les sources courantes dans un répertoire
+temporaire. `OHANA_TEST_DIST` permet de tester explicitement un autre jeu
+d’artefacts. Le code applicatif se trouve exclusivement sous `src/ohana_agent`.
 
 ---
 

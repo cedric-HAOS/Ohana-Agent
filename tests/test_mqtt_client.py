@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from core.mqtt.client import (
+from ohana_agent.core.mqtt.client import (
     MQTTClient,
     MQTTClientNotConnectedError,
     MQTTConnectionState,

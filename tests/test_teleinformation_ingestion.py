@@ -4,10 +4,10 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from plugins.teleinformation.teleinformation_frame_store import (
+from ohana_agent.plugins.teleinformation.frame_store import (
     TeleinformationFrameStore,
 )
-from plugins.teleinformation.teleinformation_ingestion import (
+from ohana_agent.plugins.teleinformation.ingestion import (
     TeleinformationIngestionHTTPServer,
 )
 

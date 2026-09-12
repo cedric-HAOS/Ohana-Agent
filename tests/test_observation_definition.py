@@ -1,7 +1,7 @@
 from datetime import timedelta
 
-from observer import ObservationDefinition, ObservationRuntime
-from observer.checks import FakeCheck
+from ohana_agent.observation import ObservationDefinition, ObservationRuntime
+from ohana_agent.observation.checks import FakeCheck
 
 
 def test_observation_stores_identifier() -> None:

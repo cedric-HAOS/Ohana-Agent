@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import NTPConfigLoader
+from ohana_agent.configuration.loaders import NTPConfigLoader
 
 
 def test_ntp_config_loader_reads_yaml(tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from observer.exporters import (
+from ohana_agent.observation.exporters import (
     HttpVisionClient,
     VisionClient,
     VisionClientError,

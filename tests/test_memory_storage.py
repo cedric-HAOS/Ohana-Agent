@@ -1,9 +1,9 @@
 import json
 
-from memory.memory_entry import MemoryEntry
-from memory.memory_scope import MemoryScope
-from memory.memory_serializer import MemorySerializer
-from memory.memory_storage import MemoryStorage
+from ohana_agent.persistence.memory_entry import MemoryEntry
+from ohana_agent.persistence.memory_scope import MemoryScope
+from ohana_agent.persistence.memory_serializer import MemorySerializer
+from ohana_agent.persistence.memory_storage import MemoryStorage
 
 
 def test_storage_file_does_not_exist_initially(tmp_path) -> None:

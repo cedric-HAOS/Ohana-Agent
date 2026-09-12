@@ -1,4 +1,10 @@
-from infrastructure import Endpoint, EndpointType, HealthStatus, Service, ServiceType
+from ohana_agent.infrastructure import (
+    Endpoint,
+    EndpointType,
+    HealthStatus,
+    Service,
+    ServiceType,
+)
 
 
 def test_service_can_be_created() -> None:

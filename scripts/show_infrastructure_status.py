@@ -1,6 +1,6 @@
 """Display a visual infrastructure status demo."""
 
-from infrastructure import (
+from ohana_agent.infrastructure import (
     HealthStatus,
     Infrastructure,
     InfrastructureCapabilityCalculator,

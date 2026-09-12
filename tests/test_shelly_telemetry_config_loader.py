@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import ShellyTelemetryConfigLoader
+from ohana_agent.configuration.loaders import ShellyTelemetryConfigLoader
 
 
 def test_shelly_telemetry_loader_reads_devices(tmp_path: Path) -> None:

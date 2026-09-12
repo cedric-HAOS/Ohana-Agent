@@ -1,7 +1,7 @@
 # tests/test_dns_statistics.py
 
-from plugins.dns.dns_runtime import DNSRuntime
-from plugins.dns.dns_statistics import DNSStatistics
+from ohana_agent.plugins.dns.runtime import DNSRuntime
+from ohana_agent.plugins.dns.statistics import DNSStatistics
 
 
 def test_dns_statistics_from_empty_runtime() -> None:

@@ -2,12 +2,12 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from observer import Observation, ObservationPublished, ObservationStatus
-from observer.observer_result import ObserverResult
-from observer.plugin_observation_dispatcher import (
+from ohana_agent.observation import Observation, ObservationPublished, ObservationStatus
+from ohana_agent.observation.observer_result import ObserverResult
+from ohana_agent.observation.plugin_observation_dispatcher import (
     PluginObservationDispatcher,
 )
-from plugin.plugin_command import PluginCommand
+from ohana_agent.plugins.runtime.plugin_command import PluginCommand
 
 
 @dataclass

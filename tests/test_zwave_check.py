@@ -1,7 +1,7 @@
 """Tests for Z-Wave health retry behavior."""
 
-from plugins.zwave.zwave_check import ZWaveCheck
-from plugins.zwave.zwave_result import ZWaveHealthResult
+from ohana_agent.plugins.zwave.check import ZWaveCheck
+from ohana_agent.plugins.zwave.result import ZWaveHealthResult
 
 
 class FakeZWaveClient:

@@ -1,7 +1,7 @@
 import pytest
 
-from observer import Observer, ObserverResult, ObserverRuntime
-from observer.checks import FakeCheck
+from ohana_agent.observation import Observer, ObserverResult, ObserverRuntime
+from ohana_agent.observation.checks import FakeCheck
 
 
 def test_observer_creates_default_runtime() -> None:

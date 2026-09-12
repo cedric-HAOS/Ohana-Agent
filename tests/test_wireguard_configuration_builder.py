@@ -2,9 +2,9 @@
 
 import pytest
 
-from builder import WireGuardConfigurationBuilder
-from configuration.wireguard import WireGuardPluginConfig
-from infrastructure import (
+from ohana_agent.configuration.builders import WireGuardConfigurationBuilder
+from ohana_agent.configuration.wireguard import WireGuardPluginConfig
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointType,
     Infrastructure,

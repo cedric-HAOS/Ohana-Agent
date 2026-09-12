@@ -1,7 +1,7 @@
 """Tests for NTP retry behavior."""
 
-from plugins.ntp.ntp_check import NTPCheck
-from plugins.ntp.ntp_result import NTPResult
+from ohana_agent.plugins.ntp.check import NTPCheck
+from ohana_agent.plugins.ntp.result import NTPResult
 
 
 class FakeNTPClient:

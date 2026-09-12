@@ -1,6 +1,6 @@
 # tests/test_dns_runtime.py
 
-from plugins.dns.dns_runtime import DNSRuntime
+from ohana_agent.plugins.dns.runtime import DNSRuntime
 
 
 def test_dns_runtime_initial_state() -> None:

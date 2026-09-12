@@ -77,7 +77,7 @@ from enum import Enum
 import yaml
 
 # Internal imports
-from core.lifecycle import Lifecycle
+from ohana_agent.core.lifecycle import Lifecycle
 ```
 
 ---

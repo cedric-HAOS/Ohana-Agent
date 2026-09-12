@@ -2,15 +2,15 @@
 
 import pytest
 
-from plugin.plugin_context import PluginContext
-from plugin.plugin_runtime import PluginState
-from plugins.mqtt.mqtt_check_result import MQTTCheckResult
-from plugins.mqtt.mqtt_config import (
+from ohana_agent.plugins.mqtt.check_result import MQTTCheckResult
+from ohana_agent.plugins.mqtt.config import (
     MQTTAuthenticationConfig,
     MQTTConfig,
     MQTTTLSConfig,
 )
-from plugins.mqtt.mqtt_plugin import MQTTPlugin
+from ohana_agent.plugins.mqtt.plugin import MQTTPlugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 
 
 class FakeMQTTCheck:

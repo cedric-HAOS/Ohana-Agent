@@ -1,4 +1,9 @@
-from infrastructure import Endpoint, EndpointRuntime, EndpointType, HealthStatus
+from ohana_agent.infrastructure import (
+    Endpoint,
+    EndpointRuntime,
+    EndpointType,
+    HealthStatus,
+)
 
 
 def test_endpoint_runtime_can_be_created() -> None:

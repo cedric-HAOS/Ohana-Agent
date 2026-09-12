@@ -3,7 +3,7 @@
 import json
 from urllib.request import Request
 
-from plugins.home_assistant_telemetry.home_assistant_telemetry_client import (
+from ohana_agent.plugins.home_assistant_telemetry.client import (
     HomeAssistantTelemetryClient,
 )
 
@@ -40,7 +40,7 @@ def test_home_assistant_client_prefers_last_reported(monkeypatch) -> None:
         return FakeHTTPResponse()
 
     monkeypatch.setattr(
-        "plugins.home_assistant_telemetry.home_assistant_telemetry_client.urlopen",
+        "ohana_agent.plugins.home_assistant_telemetry.client.urlopen",
         fake_urlopen,
     )
 

@@ -1,4 +1,4 @@
-from observer import ObserverResult, ObserverStatistics
+from ohana_agent.observation import ObserverResult, ObserverStatistics
 
 
 def test_observer_statistics_defaults() -> None:

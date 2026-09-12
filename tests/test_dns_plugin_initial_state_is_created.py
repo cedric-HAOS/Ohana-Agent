@@ -1,6 +1,6 @@
-from plugin.plugin_context import PluginContext
-from plugin.plugin_runtime import PluginState
-from plugins.dns.dns_plugin import DNSPlugin
+from ohana_agent.plugins.dns.plugin import DNSPlugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 
 
 class FakeEventBus:

@@ -1,4 +1,4 @@
-from infrastructure import (
+from ohana_agent.infrastructure import (
     HealthStatus,
     Infrastructure,
     InfrastructureCapability,

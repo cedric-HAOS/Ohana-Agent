@@ -1,4 +1,6 @@
-from plugin.discovery.local_directory_provider import LocalDirectoryProvider
+from ohana_agent.plugins.runtime.discovery.local_directory_provider import (
+    LocalDirectoryProvider,
+)
 
 
 def test_local_directory_provider_returns_empty_tuple_when_root_does_not_exist(

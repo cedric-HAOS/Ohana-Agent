@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from health.monitor import HealthResult, HealthStatus
-from recovery.engine import RecoveryEngine
-from recovery.result import RecoveryResult
+from ohana_agent.observation.health.monitor import HealthResult, HealthStatus
+from ohana_agent.recovery.engine import RecoveryEngine
+from ohana_agent.recovery.result import RecoveryResult
 
 
 @dataclass

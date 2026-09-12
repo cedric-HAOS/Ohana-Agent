@@ -1,6 +1,6 @@
 import pytest
 
-from infrastructure import (
+from ohana_agent.infrastructure import (
     HealthStatus,
     Infrastructure,
     InfrastructureRuntime,
@@ -8,13 +8,10 @@ from infrastructure import (
     Service,
     ServiceType,
 )
-from infrastructure.infrastructure_health_update import (
+from ohana_agent.infrastructure.infrastructure_health_update import (
     InfrastructureHealthUpdate,
 )
-from observer import (
-    InfrastructureObservationMapper,
-    ObservationStatus,
-)
+from ohana_agent.observation import InfrastructureObservationMapper, ObservationStatus
 
 
 def test_mapper_converts_healthy_infrastructure_update() -> None:

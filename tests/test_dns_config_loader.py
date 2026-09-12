@@ -4,8 +4,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from configuration.dns import DNSPluginConfig
-from loader import DNSConfigLoader
+from ohana_agent.configuration.dns import DNSPluginConfig
+from ohana_agent.configuration.loaders import DNSConfigLoader
 
 
 def test_dns_config_loader_loads_dns_yaml() -> None:

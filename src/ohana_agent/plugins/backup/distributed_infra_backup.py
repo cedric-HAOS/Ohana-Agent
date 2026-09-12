@@ -1,0 +1,370 @@
+"""Job-bound INFRA-01 backup transfers over the existing Katsuyu HTTPS channel."""
+
+from __future__ import annotations
+
+import io
+import logging
+import shutil
+import sqlite3
+import tarfile
+import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from time import monotonic, sleep
+from typing import Any, BinaryIO
+from uuid import uuid4
+
+from ohana_agent.contracts.administration import DistributedJobStatus
+from ohana_agent.jobs.repository import DistributedJobRepository
+from ohana_agent.plugins.backup.config import BackupConfig
+from ohana_agent.plugins.backup.coordinator import BackupExecutionError
+from ohana_agent.plugins.backup.infra_backup_coordinator import (
+    INFRA_EXCLUDED_MEMBERS,
+    INFRA_SOURCES,
+    VISION_DATABASE,
+    InfraBackupCoordinator,
+    InfraBackupResult,
+)
+from ohana_agent.plugins.backup.rclone_uploader import RcloneStreamUploader
+
+LOGGER = logging.getLogger(__name__)
+
+
+class DistributedInfraBackupTransfer:
+    """Serve one allowlisted source tar and accept its encrypted job artifact."""
+
+    def __init__(
+        self,
+        config: BackupConfig,
+        repository: DistributedJobRepository,
+        *,
+        sources: tuple[Path, ...] = INFRA_SOURCES,
+        vision_database: Path = VISION_DATABASE,
+        uploader: RcloneStreamUploader | None = None,
+        version_resolver: Any | None = None,
+        vision_version_reader: Any | None = None,
+        snapshot_attempts: int = 3,
+        snapshot_retry_delay_seconds: float = 1.0,
+        wait: Callable[[float], None] = sleep,
+    ) -> None:
+        self.config = config
+        self.repository = repository
+        self.sources = sources
+        self.vision_database = vision_database
+        self.uploader = uploader or RcloneStreamUploader(config)
+        self.snapshot_attempts = max(1, snapshot_attempts)
+        self.snapshot_retry_delay_seconds = max(0.0, snapshot_retry_delay_seconds)
+        self.wait = wait
+        arguments: dict[str, Any] = {
+            "sources": sources,
+            "vision_database": vision_database,
+            "uploader": self.uploader,
+            "version_resolver": version_resolver,
+        }
+        if vision_version_reader is not None:
+            arguments["vision_version_reader"] = vision_version_reader
+        self.local = InfraBackupCoordinator(config, **arguments)
+
+    def authorize(self, job_id: str, worker_id: str, attempt: int) -> object:
+        return self.repository.authorize_job_transfer(
+            job_id, worker_id=worker_id, attempt=attempt
+        )
+
+    def stream_source(
+        self, job_id: str, worker_id: str, attempt: int, output: BinaryIO
+    ) -> None:
+        """Stream an uncompressed deterministic source archive without staging it."""
+        with self.open_source(job_id, worker_id, attempt) as stream:
+            stream(output)
+
+    @contextmanager
+    def open_source(
+        self, job_id: str, worker_id: str, attempt: int
+    ) -> Iterator[Callable[[BinaryIO], None]]:
+        """Prepare bounded source files before allowing HTTP streaming to start."""
+        job = self.repository.authorize_job_transfer(
+            job_id, worker_id=worker_id, attempt=attempt
+        )
+        backup_id = str(job.parameters["backup_id"])
+        temporary_root = Path(self.config.temporary_directory)
+        RcloneStreamUploader._require_tmpfs(temporary_root)
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        self._ensure_snapshot_capacity(temporary_root)
+        with tempfile.TemporaryDirectory(
+            prefix="infra-source-", dir=temporary_root
+        ) as directory:
+            self._validate_source_inventory()
+            runtime = Path(directory)
+            snapshot = runtime / "vision.db"
+            self._snapshot_vision(snapshot)
+            if not snapshot.is_file():
+                raise BackupExecutionError(
+                    "snapshot", "The Vision database snapshot was not created."
+                )
+            current = datetime.strptime(backup_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+            descriptor = runtime / "descriptor.json"
+            descriptor.write_bytes(
+                self.local._descriptor(
+                    backup_id=backup_id,
+                    current=current,
+                    agent_version=self.local._installed_version("ohana-agent"),
+                    vision_version=self.local._installed_version("ohana-vision"),
+                )
+            )
+
+            def stream(output: BinaryIO) -> None:
+                with tarfile.open(fileobj=output, mode="w|") as archive:
+                    for source in self.sources:
+                        archive.add(
+                            source,
+                            arcname=source.as_posix().lstrip("/"),
+                            recursive=True,
+                            filter=self.local._regular_member,
+                        )
+                    if snapshot.is_file():
+                        archive.add(
+                            snapshot,
+                            arcname="var/lib/ohana-vision/vision.db",
+                            recursive=False,
+                            filter=self.local._regular_member,
+                        )
+                    archive.add(
+                        descriptor,
+                        arcname="ohana-backup/descriptor.json",
+                        recursive=False,
+                        filter=self.local._regular_member,
+                    )
+
+            yield stream
+
+    def receive_artifact(
+        self,
+        job_id: str,
+        worker_id: str,
+        attempt: int,
+        stream: BinaryIO,
+        *,
+        size_bytes: int,
+        expected_sha256: str,
+    ) -> dict[str, object]:
+        """Stream a bounded artifact directly into rclone and publish its manifest."""
+        job = self.repository.authorize_job_transfer(
+            job_id, worker_id=worker_id, attempt=attempt
+        )
+        # Resolve metadata before accepting the payload. A slow/unavailable Vision
+        # must never turn an already uploaded archive into an orphaned backup.
+        agent_version = self.local._installed_version("ohana-agent")
+        vision_version = self.local._installed_version("ohana-vision")
+        if size_bytes < 1 or size_bytes > self.config.infra_01.max_artifact_bytes:
+            raise ValueError("distributed backup artifact size is invalid")
+        if len(expected_sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in expected_sha256
+        ):
+            raise ValueError("distributed backup artifact SHA-256 is invalid")
+        backup_id = str(job.parameters["backup_id"])
+        # Installer's existing restore contract identifies INFRA archives by this
+        # stable public suffix; the encrypted payload remains a gzip-compressed tar.
+        filename = f"{backup_id}.tar.age"
+        remote_directory = f"{self.config.rclone_remote}/infra-01/{backup_id}"
+        receipt = self.uploader.upload(
+            stream,
+            size_bytes=size_bytes,
+            remote_path=f"{remote_directory}/{filename}",
+        )
+        if receipt.sha256 != expected_sha256:
+            raise BackupExecutionError(
+                "integrity", "Katsuyu artifact SHA-256 does not match the upload."
+            )
+        current = datetime.strptime(backup_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        manifest = self.local._manifest(
+            backup_id=backup_id,
+            current=current,
+            filename=filename,
+            size_bytes=receipt.size_bytes,
+            sha256=receipt.sha256,
+            agent_version=agent_version,
+            vision_version=vision_version,
+        )
+        self.uploader.upload(
+            io.BytesIO(manifest),
+            size_bytes=len(manifest),
+            remote_path=f"{remote_directory}/manifest.json",
+        )
+        deleted = self.uploader.prune_complete_backup_directories(
+            f"{self.config.rclone_remote}/infra-01",
+            keep_count=self.config.infra_01.remote_retention_count,
+            protected_directory=backup_id,
+        )
+        return {
+            "remote_path": remote_directory,
+            "sha256": receipt.sha256,
+            "size_bytes": receipt.size_bytes,
+            "deleted_remote_backups": deleted,
+        }
+
+    def preflight(self) -> str:
+        """Validate only work that remains on INFRA-01 for the distributed flow."""
+        if not self.config.infra_01.enabled:
+            raise BackupExecutionError("configuration", "INFRA-01 backup is disabled.")
+        missing = tuple(path for path in self.sources if not path.exists())
+        if missing:
+            raise BackupExecutionError(
+                "inventory",
+                "Missing INFRA-01 backup source(s): "
+                + ", ".join(str(path) for path in missing),
+            )
+        self._validate_source_inventory()
+        recipient = self.local._age_recipient()
+        temporary_root = Path(self.config.temporary_directory)
+        RcloneStreamUploader._require_tmpfs(temporary_root)
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        self._ensure_snapshot_capacity(temporary_root)
+        self.uploader.check_remote()
+        return recipient
+
+    def _validate_source_inventory(self) -> None:
+        """Fail before streaming when one required source cannot be read completely."""
+
+        if not self.vision_database.is_file():
+            raise BackupExecutionError(
+                "inventory",
+                f"Missing INFRA-01 backup source: {self.vision_database}",
+            )
+        unreadable: list[str] = []
+        for source in self.sources:
+            candidates = source.rglob("*") if source.is_dir() else (source,)
+            try:
+                for candidate in candidates:
+                    archive_name = candidate.as_posix().lstrip("/")
+                    if (
+                        archive_name in INFRA_EXCLUDED_MEMBERS
+                        or candidate.is_symlink()
+                        or not candidate.is_file()
+                    ):
+                        continue
+                    try:
+                        with candidate.open("rb") as stream:
+                            stream.read(1)
+                    except OSError:
+                        unreadable.append(str(candidate))
+            except OSError:
+                unreadable.append(str(source))
+        if unreadable:
+            raise BackupExecutionError(
+                "inventory",
+                "Unreadable INFRA-01 backup source(s): " + ", ".join(unreadable),
+            )
+
+    def _ensure_snapshot_capacity(self, temporary_root: Path) -> None:
+        required = self.local._compact_database_size() + 16 * 1024 * 1024
+        available = shutil.disk_usage(temporary_root).free
+        if available < required:
+            raise BackupExecutionError(
+                "storage",
+                "Insufficient tmpfs space for the distributed SQLite snapshot: "
+                f"{available} bytes available, at least {required} required.",
+            )
+
+    def _snapshot_vision(self, destination: Path) -> None:
+        if not self.vision_database.is_file():
+            return
+        for attempt in range(1, self.snapshot_attempts + 1):
+            destination.unlink(missing_ok=True)
+            source = sqlite3.connect(
+                f"file:{self.vision_database.as_posix()}?mode=ro",
+                uri=True,
+                timeout=10,
+            )
+            try:
+                source.execute("PRAGMA busy_timeout=10000")
+                source.execute("VACUUM INTO ?", (destination.as_posix(),))
+                return
+            except sqlite3.Error as error:
+                detail = str(error).lower()
+                retryable = "locked" in detail or "busy" in detail
+                if retryable and attempt < self.snapshot_attempts:
+                    LOGGER.warning(
+                        "Vision snapshot attempt %s/%s was busy; retrying",
+                        attempt,
+                        self.snapshot_attempts,
+                    )
+                    self.wait(self.snapshot_retry_delay_seconds)
+                    continue
+                stage = "storage" if "full" in detail else "snapshot"
+                raise BackupExecutionError(
+                    stage,
+                    f"Impossible de créer le snapshot compact de Vision : {error}",
+                ) from error
+            finally:
+                source.close()
+        raise AssertionError("unreachable Vision snapshot retry state")
+
+
+class DistributedInfraBackupCoordinator:
+    """Queue, wait for, and verify the single deterministic Katsuyu backup job."""
+
+    def __init__(
+        self,
+        config: BackupConfig,
+        transfer: DistributedInfraBackupTransfer,
+        *,
+        create_job: Callable[[dict[str, object]], object],
+        read_job: Callable[[str], object],
+        wait: Callable[[float], None] = sleep,
+    ) -> None:
+        self.config = config
+        self.transfer = transfer
+        self.create_job = create_job
+        self.read_job = read_job
+        self.wait = wait
+
+    def preflight(self) -> None:
+        self.transfer.preflight()
+
+    def run(self, *, now: datetime | None = None) -> InfraBackupResult:
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        recipient = self.transfer.preflight()
+        self.transfer.local._upload_recovery_identity()
+        backup_id = current.strftime("%Y%m%dT%H%M%SZ")
+        job_id = str(uuid4())
+        job = self.create_job(
+            {
+                "protocol_version": 1,
+                "job_id": job_id,
+                "type": "backup.infra",
+                "created_at": current.isoformat(),
+                "parameters": {
+                    "backup_id": backup_id,
+                    "recipient": recipient,
+                    "compression_level": 6,
+                },
+                "timeout": self.config.infra_01.katsuyu_timeout_seconds,
+            }
+        )
+        effective_timeout = int(
+            getattr(job, "timeout", self.config.infra_01.katsuyu_timeout_seconds)
+        )
+        deadline = monotonic() + effective_timeout + 10
+        while monotonic() < deadline:
+            document = self.read_job(job_id)
+            status = DistributedJobStatus(document.status)
+            if status == DistributedJobStatus.SUCCEEDED:
+                result = document.result
+                return InfraBackupResult(
+                    backup_id=backup_id,
+                    remote_directory=str(result["remote_path"]),
+                    size_bytes=int(result["size_bytes"]),
+                    sha256=str(result["sha256"]),
+                    deleted_remote_backups=int(result["deleted_remote_backups"]),
+                )
+            if status in {
+                DistributedJobStatus.FAILED,
+                DistributedJobStatus.CANCELLED,
+                DistributedJobStatus.TIMEOUT,
+            }:
+                detail = document.error.message if document.error else status.value
+                raise BackupExecutionError("katsuyu", detail)
+            self.wait(2)
+        raise BackupExecutionError("katsuyu", "Distributed backup wait timed out.")

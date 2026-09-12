@@ -2,12 +2,12 @@
 
 import pytest
 
-from infrastructure import HealthStatus
-from plugin.plugin_context import PluginContext
-from plugin.plugin_runtime import PluginState
-from plugins.network.network_config import NetworkConfig
-from plugins.network.network_plugin import NetworkPlugin
-from plugins.network.network_probe_result import NetworkProbeResult
+from ohana_agent.infrastructure import HealthStatus
+from ohana_agent.plugins.network.config import NetworkConfig
+from ohana_agent.plugins.network.plugin import NetworkPlugin
+from ohana_agent.plugins.network.probe_result import NetworkProbeResult
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 
 
 class FakeNetworkCheck:

@@ -2,8 +2,8 @@
 
 import pytest
 
-from plugins.mqtt.mqtt_check import MQTTCheck
-from plugins.mqtt.mqtt_result import MQTTResult
+from ohana_agent.plugins.mqtt.check import MQTTCheck
+from ohana_agent.plugins.mqtt.result import MQTTResult
 
 
 class FakeMQTTClient:

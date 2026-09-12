@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC
 from uuid import UUID
 
-from core.event import Event
+from ohana_agent.core.event import Event
 
 
 @dataclass(slots=True)

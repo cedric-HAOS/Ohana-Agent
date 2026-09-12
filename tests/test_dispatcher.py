@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from core.command import Command
-from core.dispatcher import (
+from ohana_agent.core.command import Command
+from ohana_agent.core.dispatcher import (
     CommandAlreadyRegisteredError,
     CommandDispatched,
     CommandDispatcher,
@@ -13,7 +13,7 @@ from core.dispatcher import (
     CommandNotFoundError,
     CommandSucceeded,
 )
-from core.events import EventBus
+from ohana_agent.core.events import EventBus
 
 
 @dataclass(slots=True)

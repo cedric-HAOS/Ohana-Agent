@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from scheduler import (
+from ohana_agent.scheduler import (
     DryRunTaskExecutor,
     FailingTaskExecutor,
     IntervalTrigger,

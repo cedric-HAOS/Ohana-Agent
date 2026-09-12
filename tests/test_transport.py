@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from core.mqtt.transport import (
+from ohana_agent.core.mqtt.transport import (
     MQTTLastWill,
     MQTTTransport,
     MQTTTransportNotConnectedError,

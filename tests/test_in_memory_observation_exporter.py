@@ -1,5 +1,5 @@
-from observer import Observation, ObservationStatus
-from observer.exporters import InMemoryObservationExporter
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.observation.exporters import InMemoryObservationExporter
 
 
 def build_observation(

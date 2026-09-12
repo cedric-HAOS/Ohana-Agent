@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import NetworkConfigLoader
+from ohana_agent.configuration.loaders import NetworkConfigLoader
 
 
 def test_network_config_loader_reads_yaml(tmp_path: Path) -> None:

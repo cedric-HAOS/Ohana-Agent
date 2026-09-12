@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from loader import InfrastructureLoader
+from ohana_agent.configuration.loaders import InfrastructureLoader
 
 
 def test_production_infrastructure_declares_infrastructure_nodes() -> None:

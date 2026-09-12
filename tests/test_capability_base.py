@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.capability.base import BaseCapability
+from ohana_agent.core.capability.base import BaseCapability
 
 
 def test_base_capability_cannot_be_instantiated() -> None:

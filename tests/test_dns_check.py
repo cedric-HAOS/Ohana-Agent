@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from observer.checks import DNSCheck
+from ohana_agent.observation.checks import DNSCheck
 
 
 @dataclass(slots=True)

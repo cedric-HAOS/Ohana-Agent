@@ -1,4 +1,4 @@
-from infrastructure import Endpoint, EndpointType
+from ohana_agent.infrastructure import Endpoint, EndpointType
 
 
 def test_endpoint_can_be_created() -> None:

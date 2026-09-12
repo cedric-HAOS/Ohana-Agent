@@ -1,4 +1,4 @@
-from memory.runtime_memory import RuntimeMemory
+from ohana_agent.persistence.runtime_memory import RuntimeMemory
 
 
 def test_memory_is_empty() -> None:

@@ -4,7 +4,7 @@ import subprocess
 from collections.abc import Sequence
 from typing import Any
 
-from plugins.network.system_network_probe import SystemNetworkProbe
+from ohana_agent.plugins.network.system_network_probe import SystemNetworkProbe
 
 
 class FakeRunner:

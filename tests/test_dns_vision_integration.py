@@ -1,17 +1,17 @@
 from typing import Any
 
-from core.events import EventBus
-from infrastructure import (
+from ohana_agent.core.events import EventBus
+from ohana_agent.infrastructure import (
     Infrastructure,
     InfrastructureRuntime,
     Node,
     Service,
     ServiceType,
 )
-from infrastructure.infrastructure_health_manager import (
+from ohana_agent.infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from observer import (
+from ohana_agent.observation import (
     InfrastructureObservationMapper,
     ObservationEngine,
     ObservationEventPublisher,
@@ -21,14 +21,14 @@ from observer import (
     ObserverResultMapper,
     PluginObservationExecutor,
 )
-from observer.exporters import VisionObservationMapper
-from observer.exporters.vision_observation_exporter import (
+from ohana_agent.observation.exporters import VisionObservationMapper
+from ohana_agent.observation.exporters.vision_observation_exporter import (
     VisionObservationExporter,
 )
-from plugin.plugin_context import PluginContext
-from plugin.plugin_manager import PluginManager
-from plugins.dns.dns_check_result import DNSCheckResult
-from plugins.dns.dns_plugin import DNSPlugin
+from ohana_agent.plugins.dns.check_result import DNSCheckResult
+from ohana_agent.plugins.dns.plugin import DNSPlugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_manager import PluginManager
 
 
 class FakeDNSCheck:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from main import (
+from ohana_agent.runtime.cli import (
     configure_logging,
     get_application_version,
     install_signal_handlers,
@@ -329,19 +329,19 @@ def test_main_builds_and_runs_production_agent(
         )
 
     monkeypatch.setattr(
-        "main.configure_logging",
+        "ohana_agent.runtime.cli.configure_logging",
         fake_configure_logging,
     )
     monkeypatch.setattr(
-        "main.build_production_agent",
+        "ohana_agent.runtime.cli.build_production_agent",
         fake_build_production_agent,
     )
     monkeypatch.setattr(
-        "main.install_signal_handlers",
+        "ohana_agent.runtime.cli.install_signal_handlers",
         fake_install_signal_handlers,
     )
 
-    from main import main
+    from ohana_agent.runtime.cli import main
 
     result = main()
 
@@ -378,7 +378,7 @@ def test_get_application_version_returns_installed_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "main.package_version",
+        "ohana_agent.runtime.cli.package_version",
         lambda package_name: "1.0.0",
     )
 
@@ -394,7 +394,7 @@ def test_get_application_version_returns_unknown_when_package_is_missing(
         raise PackageNotFoundError(package_name)
 
     monkeypatch.setattr(
-        "main.package_version",
+        "ohana_agent.runtime.cli.package_version",
         raise_package_not_found,
     )
 
@@ -406,7 +406,7 @@ def test_parse_arguments_displays_version(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr(
-        "main.get_application_version",
+        "ohana_agent.runtime.cli.get_application_version",
         lambda: "1.0.0",
     )
     monkeypatch.setattr(

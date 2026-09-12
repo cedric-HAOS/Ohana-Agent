@@ -4,7 +4,7 @@ import json
 from typing import Any
 from urllib.request import Request
 
-from plugins.wireguard.wireguard_client import FreeboxWireGuardClient
+from ohana_agent.plugins.wireguard.client import FreeboxWireGuardClient
 
 
 class FakeHTTPResponse:
@@ -55,7 +55,7 @@ def test_freebox_wireguard_client_opens_session_and_reads_vpn_server(
         return FakeHTTPResponse(next(responses))
 
     monkeypatch.setattr(
-        "plugins.wireguard.wireguard_client.urlopen",
+        "ohana_agent.plugins.wireguard.client.urlopen",
         fake_urlopen,
     )
 

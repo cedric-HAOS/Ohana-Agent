@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [1.27.0] — 2026-09-12 — Architecture et investigations complémentaires
+
+- Migration de tout le code applicatif sous `src/ohana_agent` : jobs, compagnons,
+  API, runtime, configuration, observation, plugins et stockage regroupés.
+- Serveur HTTP séparé du service applicatif ; noms de modules des plugins,
+  builders et loaders simplifiés. Commandes publiques conservées.
+- Guides thématiques regroupés sous `docs/` avec un index ; anciens paquets
+  génériques retirés du packaging.
+- Tests de distribution construits depuis les sources courantes, sans dépendre
+  d’anciens artefacts locaux.
+- Contrôle d’import de tous les modules du wheel ; ancien doublon inutilisable
+  `core/event_bus.py` retiré au profit du bus existant dans `core/events.py`.
+
+- Domaine Tsunade extrait vers `src/ohana_agent/tsunade`, packaging et imports adaptés.
+- Collecte complémentaire des journaux proposée dans Shizune, autorisée sur un
+  plan borné puis exécutée par Katsuyu et réévaluée par Tsunade.
+- Autorisation et intention persistées, reprise après interruption, protection
+  contre les doubles réponses et les boucles ; refus et expiration explicites.
+- Réconciliation des suggestions persistées encore actuelles ; annulations et
+  délais dépassés des collectes traités avant l’arrêt du worker.
+
 ## [1.26.16] — 2026-09-11 — Cycle Tsunade et synthèse des incidents
 
 - Le contrôle global des journaux réévalue chaque source concernée avant la

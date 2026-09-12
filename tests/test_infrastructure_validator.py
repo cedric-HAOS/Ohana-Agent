@@ -1,11 +1,11 @@
 import pytest
 
-from configuration.enums import (
+from ohana_agent.configuration.enums import (
     TopologyDeviceKind,
     TopologyLayoutKind,
     TopologyLinkKind,
 )
-from configuration.infrastructure import (
+from ohana_agent.configuration.infrastructure import (
     InfrastructureConfig,
     InfrastructureIdentityConfig,
     NodeConfig,
@@ -17,7 +17,7 @@ from configuration.infrastructure import (
     TopologyLayoutConfig,
     TopologyLinkConfig,
 )
-from configuration.infrastructure_validator import (
+from ohana_agent.configuration.infrastructure_validator import (
     InfrastructureValidationError,
     InfrastructureValidator,
 )

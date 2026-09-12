@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from loader.dhcp_config_loader import DHCPConfigLoader
+from ohana_agent.configuration.loaders.dhcp import DHCPConfigLoader
 
 
 def test_dhcp_config_loader_reads_yaml(tmp_path: Path) -> None:

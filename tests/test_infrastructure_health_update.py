@@ -1,5 +1,5 @@
-from infrastructure import HealthStatus
-from infrastructure.infrastructure_health_update import (
+from ohana_agent.infrastructure import HealthStatus
+from ohana_agent.infrastructure.infrastructure_health_update import (
     InfrastructureHealthUpdate,
 )
 

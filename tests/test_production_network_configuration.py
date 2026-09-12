@@ -3,9 +3,12 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from bootstrap import _build_network_tasks
-from loader import NetworkConfigLoader
-from plugins.network.network_config import NetworkConfig, NetworkDeviceConfig
+from ohana_agent.configuration.loaders import NetworkConfigLoader
+from ohana_agent.plugins.network.config import (
+    NetworkConfig,
+    NetworkDeviceConfig,
+)
+from ohana_agent.runtime.bootstrap import _build_network_tasks
 
 
 def test_production_network_configuration_uses_expected_settings() -> None:

@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 
-from plugins.home_assistant_telemetry.home_assistant_telemetry_check import (
+from ohana_agent.plugins.home_assistant_telemetry.check import (
     HomeAssistantTelemetryCheck,
 )
-from plugins.home_assistant_telemetry.home_assistant_telemetry_client import (
+from ohana_agent.plugins.home_assistant_telemetry.client import (
     HomeAssistantEntityState,
 )
 

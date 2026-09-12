@@ -2,8 +2,8 @@
 
 import pytest
 
-from plugins.zwave.zwave_client import ZWaveHealthClient
-from plugins.zwave.zwave_result import ZWaveHealthResult
+from ohana_agent.plugins.zwave.client import ZWaveHealthClient
+from ohana_agent.plugins.zwave.result import ZWaveHealthResult
 
 
 def test_zwave_client_uses_websocket_query() -> None:

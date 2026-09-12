@@ -1,4 +1,4 @@
-from observer import ObservationState
+from ohana_agent.observation import ObservationState
 
 
 def test_observation_state_idle() -> None:

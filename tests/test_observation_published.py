@@ -1,10 +1,6 @@
 from datetime import UTC
 
-from observer import (
-    Observation,
-    ObservationPublished,
-    ObservationStatus,
-)
+from ohana_agent.observation import Observation, ObservationPublished, ObservationStatus
 
 
 def build_observation() -> Observation:

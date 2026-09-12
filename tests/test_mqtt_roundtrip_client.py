@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from plugins.mqtt.mqtt_client import MQTTRoundTripClient
+from ohana_agent.plugins.mqtt.client import MQTTRoundTripClient
 
 
 @dataclass

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from configuration.dhcp import DHCPPluginConfig
+from ohana_agent.configuration.dhcp import DHCPPluginConfig
 
 
 def test_dhcp_plugin_config_defaults() -> None:

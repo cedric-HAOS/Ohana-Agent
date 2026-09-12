@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from builder import (
+from ohana_agent.configuration.builders import (
     DNSConfigurationBuilder,
     InfrastructureBuilder,
 )
-from loader import DNSConfigLoader, InfrastructureLoader
+from ohana_agent.configuration.loaders import DNSConfigLoader, InfrastructureLoader
 
 
 def test_production_dns_service_resolves_to_infra_01() -> None:

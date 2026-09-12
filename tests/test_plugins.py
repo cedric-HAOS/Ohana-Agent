@@ -2,8 +2,8 @@
 
 import pytest
 
-from core.events import EventBus
-from core.plugins import (
+from ohana_agent.core.events import EventBus
+from ohana_agent.core.plugins import (
     InvalidPluginStateError,
     Plugin,
     PluginAlreadyRegisteredError,
@@ -16,7 +16,7 @@ from core.plugins import (
     PluginStopped,
     PluginUnloaded,
 )
-from core.services import ServiceRegistry
+from ohana_agent.core.services import ServiceRegistry
 
 
 class DummyPlugin(Plugin):

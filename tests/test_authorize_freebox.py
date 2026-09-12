@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from plugins.wireguard import authorize_freebox as authorization
+from ohana_agent.plugins.wireguard import authorize_freebox as authorization
 
 
 class FakeFreeboxClient:

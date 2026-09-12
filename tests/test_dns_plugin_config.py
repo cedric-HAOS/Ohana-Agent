@@ -1,10 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from configuration.dns import (
-    DNSPluginConfig,
-    DNSPolicyConfig,
-)
+from ohana_agent.configuration.dns import DNSPluginConfig, DNSPolicyConfig
 
 
 def test_dns_plugin_config_has_defaults() -> None:

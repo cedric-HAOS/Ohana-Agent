@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from configuration.mqtt_plugin import MQTTPluginConfig
+from ohana_agent.configuration.mqtt_plugin import MQTTPluginConfig
 
 
 def test_mqtt_plugin_config_uses_safe_defaults() -> None:

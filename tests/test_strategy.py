@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from health.monitor import HealthResult, HealthStatus
-from recovery.action import NoopRecoveryAction
-from recovery.strategy import StaticRecoveryStrategy
+from ohana_agent.observation.health.monitor import HealthResult, HealthStatus
+from ohana_agent.recovery.action import NoopRecoveryAction
+from ohana_agent.recovery.strategy import StaticRecoveryStrategy
 
 
 def test_static_strategy_matches_source_and_default_statuses() -> None:

@@ -1,4 +1,4 @@
-from observer import ObservationRuntime, ObservationState
+from ohana_agent.observation import ObservationRuntime, ObservationState
 
 
 def test_observation_runtime_defaults() -> None:

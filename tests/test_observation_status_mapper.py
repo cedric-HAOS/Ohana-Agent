@@ -1,4 +1,4 @@
-from observer import ObservationStatus, ObservationStatusMapper
+from ohana_agent.observation import ObservationStatus, ObservationStatusMapper
 
 
 def test_mapper_returns_unknown_when_success_is_none() -> None:

@@ -1,9 +1,11 @@
 import pytest
 
-from plugin.factory.python_plugin_factory import PythonPluginFactory
-from plugin.plugin import Plugin
-from plugin.plugin_descriptor import PluginDescriptor
-from plugin.plugin_errors import PluginLoadError
+from ohana_agent.plugins.runtime.factory.python_plugin_factory import (
+    PythonPluginFactory,
+)
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_descriptor import PluginDescriptor
+from ohana_agent.plugins.runtime.plugin_errors import PluginLoadError
 
 
 def test_python_plugin_factory_creates_plugin(tmp_path) -> None:
@@ -12,9 +14,9 @@ def test_python_plugin_factory_creates_plugin(tmp_path) -> None:
 
     (plugin_dir / "plugin.py").write_text(
         """
-from observer.observer_result import ObserverResult
-from plugin.plugin import Plugin
-from plugin.plugin_manifest import PluginManifest
+from ohana_agent.observation.observer_result import ObserverResult
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
 
 
 class EchoPlugin(Plugin):

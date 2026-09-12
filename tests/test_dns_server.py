@@ -1,7 +1,7 @@
-from plugins.dns.dns_check_result import DNSCheckResult
-from plugins.dns.dns_config import DNSServerConfig
-from plugins.dns.dns_server import DNSServer
-from plugins.dns.dns_server_runtime import DNSServerRuntime
+from ohana_agent.plugins.dns.check_result import DNSCheckResult
+from ohana_agent.plugins.dns.config import DNSServerConfig
+from ohana_agent.plugins.dns.server import DNSServer
+from ohana_agent.plugins.dns.server_runtime import DNSServerRuntime
 
 
 class FakeDNSCheck:

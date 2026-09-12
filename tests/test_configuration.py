@@ -19,8 +19,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from configuration.enums import Environment, LogLevel
-from configuration.loader import ConfigurationLoader
+from ohana_agent.configuration.enums import Environment, LogLevel
+from ohana_agent.configuration.loader import ConfigurationLoader
 
 
 def test_load_shikamaru_configuration() -> None:

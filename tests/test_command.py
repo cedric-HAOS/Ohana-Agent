@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC
 from uuid import UUID
 
-from core.command import Command
+from ohana_agent.core.command import Command
 
 
 @dataclass(slots=True)

@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
-from loader import HomeAssistantTelemetryConfigLoader, ShellyTelemetryConfigLoader
+from ohana_agent.configuration.loaders import (
+    HomeAssistantTelemetryConfigLoader,
+    ShellyTelemetryConfigLoader,
+)
 
 
 def test_home_assistant_telemetry_loader_reads_connection_policy(

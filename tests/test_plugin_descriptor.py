@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from plugin.plugin_descriptor import PluginDescriptor
-from plugin.plugin_manifest import PluginManifest
+from ohana_agent.plugins.runtime.plugin_descriptor import PluginDescriptor
+from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
 
 
 def test_plugin_descriptor_stores_plugin_information() -> None:

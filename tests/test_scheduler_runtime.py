@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from scheduler import SchedulerRuntime, SchedulerState
+from ohana_agent.scheduler import SchedulerRuntime, SchedulerState
 
 
 def test_scheduler_runtime_defaults_to_stopped() -> None:

@@ -10,16 +10,14 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from administration import (
-    AdministrationHTTPServer,
-    AdministrationService,
-    DistributedJobRepository,
-    InfrastructureConfigurationRepository,
-)
-from administration.dhcp import DnsmasqDHCPRepository
-from administration.expertise import TsunadeExpertiseConflictError
-from administration.incidents import TsunadeIncidentRepository
-from observer import Observation, ObservationStatus
+from ohana_agent.api.http import AdministrationHTTPServer
+from ohana_agent.api.service import AdministrationService
+from ohana_agent.host.dhcp import DnsmasqDHCPRepository
+from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
+from ohana_agent.jobs.repository import DistributedJobRepository
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.tsunade.expertise import TsunadeExpertiseConflictError
+from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 
 INFRASTRUCTURE_YAML = """\
 infrastructure:

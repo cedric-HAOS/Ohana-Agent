@@ -2,12 +2,12 @@
 
 import pytest
 
-from core.capability.base import BaseCapability
-from core.capability.capability import Capability
-from core.capability.capability_health import CapabilityHealth
-from core.capability.capability_manager import CapabilityManager
-from core.capability.capability_state import CapabilityState
-from core.capability.exceptions import (
+from ohana_agent.core.capability.base import BaseCapability
+from ohana_agent.core.capability.capability import Capability
+from ohana_agent.core.capability.capability_health import CapabilityHealth
+from ohana_agent.core.capability.capability_manager import CapabilityManager
+from ohana_agent.core.capability.capability_state import CapabilityState
+from ohana_agent.core.capability.exceptions import (
     CapabilityAlreadyRegisteredError,
     CapabilityDependencyError,
     CapabilityNotFoundError,

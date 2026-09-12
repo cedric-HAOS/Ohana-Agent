@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.26.16"
+    assert project["version"] == "1.27.0"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"
@@ -80,10 +80,14 @@ def test_package_declares_console_entry_point() -> None:
     project = load_pyproject()["project"]
 
     assert project["scripts"] == {
-        "ohana-agent": "main:main",
-        "ohana-agent-authorize-freebox": ("plugins.wireguard.authorize_freebox:main"),
-        "ohana-agent-dhcp-reload-helper": "dhcp_reload_entrypoint:main",
-        "ohana-agent-network-helper": "administration.network_helper:main",
+        "ohana-agent": "ohana_agent.runtime.cli:main",
+        "ohana-agent-authorize-freebox": (
+            "ohana_agent.plugins.wireguard.authorize_freebox:main"
+        ),
+        "ohana-agent-dhcp-reload-helper": (
+            "ohana_agent.host.dhcp_reload_entrypoint:main"
+        ),
+        "ohana-agent-network-helper": "ohana_agent.host.network_helper:main",
     }
 
 
@@ -104,3 +108,6 @@ def test_package_excludes_tests_and_demo_scripts() -> None:
 
     assert "tests*" in package_find["exclude"]
     assert "scripts*" in package_find["exclude"]
+    assert package_find["where"] == ["src"]
+    assert package_find["include"] == ["ohana_agent*"]
+    assert "py-modules" not in load_pyproject()["tool"]["setuptools"]

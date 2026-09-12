@@ -1,4 +1,4 @@
-from configuration.infrastructure import (
+from ohana_agent.configuration.infrastructure import (
     InfrastructureConfig,
     InfrastructureIdentityConfig,
     InfrastructureMetadataConfig,

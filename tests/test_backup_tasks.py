@@ -1,16 +1,16 @@
 from datetime import UTC, datetime
 
-from bootstrap import (
+from ohana_agent.configuration.administration import (
+    DistributedJobsConfig,
+    DistributedLogAnalysisConfig,
+)
+from ohana_agent.plugins.backup.config import BackupConfig, BackupTarget
+from ohana_agent.runtime.bootstrap import (
     _build_backup_tasks,
     _build_log_analysis_tasks,
     _build_wake_dispatch_tasks,
 )
-from configuration.administration import (
-    DistributedJobsConfig,
-    DistributedLogAnalysisConfig,
-)
-from plugins.backup.backup_config import BackupConfig, BackupTarget
-from scheduler import CronTrigger
+from ohana_agent.scheduler import CronTrigger
 
 
 def test_backup_tasks_are_staggered_and_target_devices() -> None:

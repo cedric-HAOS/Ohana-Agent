@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from plugins.dhcp.dhcp_check_result import DHCPCheckResult
-from plugins.dhcp.dhcp_config import (
+from ohana_agent.plugins.dhcp.check_result import DHCPCheckResult
+from ohana_agent.plugins.dhcp.config import (
     DHCPConfig,
     DHCPPolicyConfig,
     DHCPServerConfig,
 )
-from plugins.dhcp.dhcp_plugin import DHCPPlugin
+from ohana_agent.plugins.dhcp.plugin import DHCPPlugin
 
 
 class FakeDHCPCheck:

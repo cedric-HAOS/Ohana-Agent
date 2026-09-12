@@ -1,4 +1,4 @@
-from core import Statistics
+from ohana_agent.core import Statistics
 
 
 def test_statistics_can_be_instantiated() -> None:

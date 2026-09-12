@@ -12,14 +12,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from administration.jobs import DistributedJobConflictError, DistributedJobRepository
-from plugins.backup.backup_config import BackupConfig, InfraBackupConfig
-from plugins.backup.distributed_infra_backup import (
+from ohana_agent.jobs.repository import (
+    DistributedJobConflictError,
+    DistributedJobRepository,
+)
+from ohana_agent.plugins.backup.config import BackupConfig, InfraBackupConfig
+from ohana_agent.plugins.backup.distributed_infra_backup import (
     DistributedInfraBackupCoordinator,
     DistributedInfraBackupTransfer,
 )
-from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
-from plugins.backup.rclone_uploader import UploadReceipt
+from ohana_agent.plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
+from ohana_agent.plugins.backup.rclone_uploader import UploadReceipt
 
 
 class FakeUploader:
@@ -77,7 +80,7 @@ def test_coordinator_waits_for_the_effective_grouped_job_timeout(
     }
     monotonic_values = iter((100.0, 5000.0))
     monkeypatch.setattr(
-        "plugins.backup.distributed_infra_backup.monotonic",
+        "ohana_agent.plugins.backup.distributed_infra_backup.monotonic",
         lambda: next(monotonic_values),
     )
     coordinator = DistributedInfraBackupCoordinator(
@@ -223,7 +226,7 @@ def test_source_archive_is_uncompressed_and_contains_only_allowlisted_sources(
         infra_01=InfraBackupConfig(enabled=True),
     )
     monkeypatch.setattr(
-        "plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
+        "ohana_agent.plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
         lambda _path: None,
     )
     transfer = DistributedInfraBackupTransfer(
@@ -271,7 +274,7 @@ def test_source_archive_requires_vision_database(
     source.mkdir(parents=True)
     temporary = tmp_path / "tmpfs"
     monkeypatch.setattr(
-        "plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
+        "ohana_agent.plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
         lambda _path: None,
     )
     transfer = DistributedInfraBackupTransfer(
@@ -315,7 +318,7 @@ def test_source_snapshot_fits_when_database_contains_many_free_pages(
         infra_01=InfraBackupConfig(enabled=True),
     )
     monkeypatch.setattr(
-        "plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
+        "ohana_agent.plugins.backup.distributed_infra_backup.RcloneStreamUploader._require_tmpfs",
         lambda _path: None,
     )
     transfer = DistributedInfraBackupTransfer(
@@ -330,7 +333,7 @@ def test_source_snapshot_fits_when_database_contains_many_free_pages(
     available = compact_size + 17 * 1024 * 1024
     assert database.stat().st_size > available
     monkeypatch.setattr(
-        "plugins.backup.distributed_infra_backup.shutil.disk_usage",
+        "ohana_agent.plugins.backup.distributed_infra_backup.shutil.disk_usage",
         lambda _path: SimpleNamespace(free=available),
     )
     output = io.BytesIO()
@@ -376,7 +379,7 @@ def test_vision_snapshot_retries_a_transient_sqlite_lock(
         return real_connect(*args, **kwargs)
 
     monkeypatch.setattr(
-        "plugins.backup.distributed_infra_backup.sqlite3.connect",
+        "ohana_agent.plugins.backup.distributed_infra_backup.sqlite3.connect",
         connect,
     )
     waits: list[float] = []

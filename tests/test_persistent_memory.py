@@ -1,5 +1,5 @@
-from memory.memory_scope import MemoryScope
-from memory.persistent_memory import PersistentMemory
+from ohana_agent.persistence.memory_scope import MemoryScope
+from ohana_agent.persistence.persistent_memory import PersistentMemory
 
 
 def test_persistent_memory_stores_persistent_scope() -> None:

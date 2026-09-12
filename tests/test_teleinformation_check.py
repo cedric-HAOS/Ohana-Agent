@@ -2,8 +2,12 @@
 
 from datetime import UTC, datetime
 
-from plugins.teleinformation.teleinformation_check import TeleinformationCheck
-from plugins.teleinformation.teleinformation_client import HomeAssistantEntityState
+from ohana_agent.plugins.teleinformation.check import (
+    TeleinformationCheck,
+)
+from ohana_agent.plugins.teleinformation.client import (
+    HomeAssistantEntityState,
+)
 
 
 class FakeHomeAssistantClient:
@@ -271,7 +275,7 @@ def test_teleinformation_rejects_unknown_ntarf_value() -> None:
 
 
 def test_direct_teleinformation_uses_agent_reception_time() -> None:
-    from plugins.teleinformation.teleinformation_frame_store import (
+    from ohana_agent.plugins.teleinformation.frame_store import (
         TeleinformationFrameStore,
     )
 
@@ -307,7 +311,7 @@ def test_direct_teleinformation_uses_agent_reception_time() -> None:
 
 
 def test_direct_teleinformation_rejects_stale_frame() -> None:
-    from plugins.teleinformation.teleinformation_frame_store import (
+    from ohana_agent.plugins.teleinformation.frame_store import (
         TeleinformationFrameStore,
     )
 

@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from health.monitor import HealthStatus
-from health.watchdog import Watchdog, WatchdogRegistry
+from ohana_agent.observation.health.monitor import HealthStatus
+from ohana_agent.observation.health.watchdog import Watchdog, WatchdogRegistry
 
 
 def test_watchdog_is_unknown_without_heartbeat() -> None:

@@ -5,8 +5,8 @@ from email.message import Message
 
 import pytest
 
-from plugins.backup.backup_config import BackupAction, BackupTarget
-from plugins.backup.home_assistant_backup_client import (
+from ohana_agent.plugins.backup.config import BackupAction, BackupTarget
+from ohana_agent.plugins.backup.home_assistant_backup_client import (
     HomeAssistantBackup,
     HomeAssistantBackupClient,
     HomeAssistantBackupError,
@@ -127,7 +127,7 @@ def test_home_assistant_client_requires_a_known_size_for_streaming(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "plugins.backup.home_assistant_backup_client.urlopen",
+        "ohana_agent.plugins.backup.home_assistant_backup_client.urlopen",
         lambda *args, **kwargs: FakeResponse(b"archive"),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
@@ -146,7 +146,7 @@ def test_home_assistant_client_exposes_exact_download_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "plugins.backup.home_assistant_backup_client.urlopen",
+        "ohana_agent.plugins.backup.home_assistant_backup_client.urlopen",
         lambda *args, **kwargs: FakeResponse(b"archive", content_length=7),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
@@ -165,7 +165,7 @@ def test_home_assistant_client_uses_inventory_size_for_chunked_download(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "plugins.backup.home_assistant_backup_client.urlopen",
+        "ohana_agent.plugins.backup.home_assistant_backup_client.urlopen",
         lambda *args, **kwargs: FakeResponse(b"archive"),
     )
     client = HomeAssistantBackupClient(make_target(), "secret")
@@ -230,7 +230,7 @@ def test_home_assistant_client_accepts_state_list_from_pre_backup_action(
         ),
     )
     monkeypatch.setattr(
-        "plugins.backup.home_assistant_backup_client.urlopen",
+        "ohana_agent.plugins.backup.home_assistant_backup_client.urlopen",
         lambda *args, **kwargs: FakeResponse(b"[]"),
     )
 

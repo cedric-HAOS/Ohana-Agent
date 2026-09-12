@@ -1,8 +1,10 @@
-from plugin.discovery.local_directory_provider import LocalDirectoryProvider
-from plugin.plugin_context import PluginContext
-from plugin.plugin_discovery import PluginDiscovery
-from plugin.plugin_manager import PluginManager
-from plugin.plugin_state import PluginState
+from ohana_agent.plugins.runtime.discovery.local_directory_provider import (
+    LocalDirectoryProvider,
+)
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_discovery import PluginDiscovery
+from ohana_agent.plugins.runtime.plugin_manager import PluginManager
+from ohana_agent.plugins.runtime.plugin_state import PluginState
 
 
 class FakeEventBus:
@@ -27,9 +29,9 @@ def test_plugin_sdk_end_to_end(tmp_path) -> None:
 
     (echo_dir / "plugin.py").write_text(
         """
-from plugin.plugin import Plugin
-from plugin.plugin_manifest import PluginManifest
-from observer.observer_result import ObserverResult
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
+from ohana_agent.observation.observer_result import ObserverResult
 
 
 class EchoPlugin(Plugin):

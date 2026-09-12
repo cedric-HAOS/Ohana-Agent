@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scheduler import IntervalTrigger, OneShotTrigger, Task, TaskRegistry
+from ohana_agent.scheduler import IntervalTrigger, OneShotTrigger, Task, TaskRegistry
 
 
 def test_task_registry_can_add_and_get_task() -> None:

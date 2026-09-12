@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from recovery.action import NoopRecoveryAction
+from ohana_agent.recovery.action import NoopRecoveryAction
 
 
 def test_noop_recovery_action_executes_successfully() -> None:

@@ -1,17 +1,17 @@
 """Tests for the Shikamaru application runtime."""
 
-from application import Application
-from core.application_events import (
+from ohana_agent.core.application_events import (
     ApplicationStarted,
     ApplicationStopped,
     ApplicationTicked,
 )
-from core.dispatcher import CommandDispatcher
-from core.events import EventBus
-from core.plugins import PluginManager
-from core.services import ServiceRegistry
-from memory import MemoryManager, MemoryScope
-from scheduler import DispatcherTaskExecutor, Scheduler, SchedulerStarted
+from ohana_agent.core.dispatcher import CommandDispatcher
+from ohana_agent.core.events import EventBus
+from ohana_agent.core.plugins import PluginManager
+from ohana_agent.core.services import ServiceRegistry
+from ohana_agent.persistence import MemoryManager, MemoryScope
+from ohana_agent.runtime.application import Application
+from ohana_agent.scheduler import DispatcherTaskExecutor, Scheduler, SchedulerStarted
 
 
 def test_application_creates_service_registry() -> None:

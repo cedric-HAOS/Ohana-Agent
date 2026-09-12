@@ -2,9 +2,12 @@
 
 import pytest
 
-from builder import InfrastructureBuilder, ShellyTelemetryConfigurationBuilder
-from configuration.infrastructure import InfrastructureConfig
-from configuration.shelly_telemetry import ShellyTelemetryPluginConfig
+from ohana_agent.configuration.builders import (
+    InfrastructureBuilder,
+    ShellyTelemetryConfigurationBuilder,
+)
+from ohana_agent.configuration.infrastructure import InfrastructureConfig
+from ohana_agent.configuration.shelly_telemetry import ShellyTelemetryPluginConfig
 
 
 def infrastructure_with_shelly_service(

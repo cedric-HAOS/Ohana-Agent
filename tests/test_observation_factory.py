@@ -1,4 +1,4 @@
-from observer import ObservationFactory, ObservationStatus
+from ohana_agent.observation import ObservationFactory, ObservationStatus
 
 
 def test_factory_creates_observation() -> None:

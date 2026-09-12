@@ -11,14 +11,15 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from administration.companions import CompanionRepository
-from administration.dhcp import DnsmasqDHCPRepository
-from administration.incidents import TsunadeIncidentRepository
-from administration.infrastructure import InfrastructureConfigurationRepository
-from administration.notifications import APNsNotificationPublisher
-from administration.server import AdministrationHTTPServer, AdministrationService
-from configuration.administration import APNsConfig
-from observer import Observation, ObservationStatus
+from ohana_agent.api.http import AdministrationHTTPServer
+from ohana_agent.api.service import AdministrationService
+from ohana_agent.companions.notifications import APNsNotificationPublisher
+from ohana_agent.companions.repository import CompanionRepository
+from ohana_agent.configuration.administration import APNsConfig
+from ohana_agent.host.dhcp import DnsmasqDHCPRepository
+from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 
 
 def test_companion_diagnosis_is_authenticated_bounded_and_operator_requested(tmp_path):

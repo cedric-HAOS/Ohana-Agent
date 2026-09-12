@@ -1,7 +1,7 @@
 """Tests for the network presence check retry policy."""
 
-from plugins.network.network_check import NetworkCheck
-from plugins.network.network_probe_result import NetworkProbeResult
+from ohana_agent.plugins.network.check import NetworkCheck
+from ohana_agent.plugins.network.probe_result import NetworkProbeResult
 
 
 class FakeProbe:

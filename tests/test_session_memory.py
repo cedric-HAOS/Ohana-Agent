@@ -1,5 +1,5 @@
-from memory.memory_scope import MemoryScope
-from memory.session_memory import SessionMemory
+from ohana_agent.persistence.memory_scope import MemoryScope
+from ohana_agent.persistence.session_memory import SessionMemory
 
 
 def test_session_memory_stores_session_scope() -> None:

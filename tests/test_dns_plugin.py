@@ -1,11 +1,19 @@
 import pytest
 
-from plugins.dns.dns_capability_runtime import DNSCapabilityRuntime
-from plugins.dns.dns_check_result import DNSCheckResult
-from plugins.dns.dns_config import DNSConfig, DNSPolicyConfig, DNSServerConfig
-from plugins.dns.dns_events import DNSCheckFailed, DNSCheckStarted, DNSCheckSucceeded
-from plugins.dns.dns_plugin import DNSPlugin
-from plugins.dns.dns_runtime import DNSRuntime
+from ohana_agent.plugins.dns.capability_runtime import DNSCapabilityRuntime
+from ohana_agent.plugins.dns.check_result import DNSCheckResult
+from ohana_agent.plugins.dns.config import (
+    DNSConfig,
+    DNSPolicyConfig,
+    DNSServerConfig,
+)
+from ohana_agent.plugins.dns.events import (
+    DNSCheckFailed,
+    DNSCheckStarted,
+    DNSCheckSucceeded,
+)
+from ohana_agent.plugins.dns.plugin import DNSPlugin
+from ohana_agent.plugins.dns.runtime import DNSRuntime
 
 
 class FakeDNSCheck:

@@ -1,7 +1,7 @@
 import pytest
 
-from observer.checks import BaseCheck
-from observer.observer_result import ObserverResult
+from ohana_agent.observation.checks import BaseCheck
+from ohana_agent.observation.observer_result import ObserverResult
 
 
 def test_base_check_cannot_be_instantiated() -> None:

@@ -1,6 +1,6 @@
-from memory.memory_entry import MemoryEntry
-from memory.memory_scope import MemoryScope
-from memory.memory_serializer import MemorySerializer
+from ohana_agent.persistence.memory_entry import MemoryEntry
+from ohana_agent.persistence.memory_scope import MemoryScope
+from ohana_agent.persistence.memory_serializer import MemorySerializer
 
 
 def test_serialize_entry() -> None:

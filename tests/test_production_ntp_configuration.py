@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import NTPConfigLoader
+from ohana_agent.configuration.loaders import NTPConfigLoader
 
 
 def test_production_ntp_configuration_uses_expected_policy() -> None:

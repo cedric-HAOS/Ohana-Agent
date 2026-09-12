@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from configuration.vision import VisionConfig
+from ohana_agent.configuration.vision import VisionConfig
 
 
 def test_vision_config_has_production_defaults() -> None:

@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from infrastructure import (
+from ohana_agent.infrastructure import (
     HealthStatus,
     Infrastructure,
     InfrastructureRuntime,
@@ -11,10 +11,10 @@ from infrastructure import (
     Service,
     ServiceType,
 )
-from infrastructure.infrastructure_health_manager import (
+from ohana_agent.infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from observer import (
+from ohana_agent.observation import (
     InfrastructureObservationMapper,
     ObservationEngine,
     ObservationEventPublisher,
@@ -22,13 +22,17 @@ from observer import (
     ObserverResult,
     ObserverResultMapper,
 )
-from observer.plugin_observation_executor import (
+from ohana_agent.observation.plugin_observation_executor import (
     PluginObservationExecutor,
 )
-from plugin import PluginManager, PluginManifest, PluginNotFoundError
-from plugin.plugin import Plugin
-from plugin.plugin_command import PluginCommand
-from plugin.plugin_context import PluginContext
+from ohana_agent.plugins.runtime import (
+    PluginManager,
+    PluginManifest,
+    PluginNotFoundError,
+)
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_command import PluginCommand
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
 
 
 @dataclass

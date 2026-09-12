@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.mqtt.reconnect import MQTTReconnectPolicy
+from ohana_agent.core.mqtt.reconnect import MQTTReconnectPolicy
 
 
 def test_default_policy_is_enabled() -> None:

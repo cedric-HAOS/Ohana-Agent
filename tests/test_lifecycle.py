@@ -15,7 +15,11 @@ from __future__ import annotations
 
 import pytest
 
-from core.lifecycle import AgentState, InvalidStateTransitionError, Lifecycle
+from ohana_agent.core.lifecycle import (
+    AgentState,
+    InvalidStateTransitionError,
+    Lifecycle,
+)
 
 
 def test_initial_state_is_created() -> None:

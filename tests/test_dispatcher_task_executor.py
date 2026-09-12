@@ -2,12 +2,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from threading import Event
 
-from observer import Observation, ObservationPublished, ObservationStatus
-from observer.plugin_observation_dispatcher import (
+from ohana_agent.observation import Observation, ObservationPublished, ObservationStatus
+from ohana_agent.observation.plugin_observation_dispatcher import (
     PluginObservationDispatcher,
 )
-from plugin.plugin_command import PluginCommand
-from scheduler import (
+from ohana_agent.plugins.runtime.plugin_command import PluginCommand
+from ohana_agent.scheduler import (
     DispatcherTaskExecutor,
     IntervalTrigger,
     Task,
@@ -213,7 +213,7 @@ def test_dispatcher_task_executor_executes_plugin_observation_command() -> None:
 def test_dispatcher_task_executor_suspends_once_and_resumes() -> None:
     from types import SimpleNamespace
 
-    from monitoring import MonitoringScheduleRegistry
+    from ohana_agent.observation.monitoring import MonitoringScheduleRegistry
 
     class ScheduleDispatcher(FakeDispatcher):
         def __init__(self) -> None:

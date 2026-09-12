@@ -1,5 +1,5 @@
-from plugin.plugin_runtime import PluginRuntime
-from plugin.plugin_state import PluginState
+from ohana_agent.plugins.runtime.plugin_runtime import PluginRuntime
+from ohana_agent.plugins.runtime.plugin_state import PluginState
 
 
 def test_plugin_runtime_is_empty_by_default() -> None:

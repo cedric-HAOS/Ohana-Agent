@@ -3,8 +3,8 @@ from uuid import UUID
 
 import pytest
 
-from observer import Observation, ObservationStatus
-from observer.exporters import VisionObservationMapper
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.observation.exporters import VisionObservationMapper
 
 
 def build_observation(

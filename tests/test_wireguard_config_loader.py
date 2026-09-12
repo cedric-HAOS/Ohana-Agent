@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import WireGuardConfigLoader
+from ohana_agent.configuration.loaders import WireGuardConfigLoader
 
 
 def test_wireguard_config_loader_reads_freebox_credentials(tmp_path: Path) -> None:

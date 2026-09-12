@@ -1,10 +1,13 @@
 import pytest
 
-from observer import ObserverResult
-from plugin.plugin import Plugin
-from plugin.plugin_errors import PluginAlreadyLoadedError, PluginNotFoundError
-from plugin.plugin_manifest import PluginManifest
-from plugin.plugin_registry import PluginRegistry
+from ohana_agent.observation import ObserverResult
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_errors import (
+    PluginAlreadyLoadedError,
+    PluginNotFoundError,
+)
+from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
+from ohana_agent.plugins.runtime.plugin_registry import PluginRegistry
 
 
 class FakePlugin(Plugin):

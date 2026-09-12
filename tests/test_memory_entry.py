@@ -1,5 +1,5 @@
-from memory.memory_entry import MemoryEntry
-from memory.memory_scope import MemoryScope
+from ohana_agent.persistence.memory_entry import MemoryEntry
+from ohana_agent.persistence.memory_scope import MemoryScope
 
 
 def test_create_memory_entry() -> None:

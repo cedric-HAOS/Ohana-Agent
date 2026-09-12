@@ -1,4 +1,9 @@
-from infrastructure import HealthStatus, Service, ServiceRuntime, ServiceType
+from ohana_agent.infrastructure import (
+    HealthStatus,
+    Service,
+    ServiceRuntime,
+    ServiceType,
+)
 
 
 def test_service_runtime_can_be_created() -> None:

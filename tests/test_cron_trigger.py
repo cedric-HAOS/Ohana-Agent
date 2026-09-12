@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from scheduler import CronTrigger
+from ohana_agent.scheduler import CronTrigger
 
 
 def test_cron_trigger_rejects_invalid_expression() -> None:

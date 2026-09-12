@@ -8,14 +8,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from builder import DNSConfigurationBuilder, InfrastructureBuilder
-from core.events import EventBus
-from infrastructure import InfrastructureRuntime, ServiceType
-from infrastructure.infrastructure_health_manager import (
+from ohana_agent.configuration.builders import (
+    DNSConfigurationBuilder,
+    InfrastructureBuilder,
+)
+from ohana_agent.configuration.loaders import DNSConfigLoader, InfrastructureLoader
+from ohana_agent.core.events import EventBus
+from ohana_agent.infrastructure import InfrastructureRuntime, ServiceType
+from ohana_agent.infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from loader import DNSConfigLoader, InfrastructureLoader
-from observer import (
+from ohana_agent.observation import (
     InfrastructureObservationMapper,
     ObservationEngine,
     ObservationEventPublisher,
@@ -27,19 +30,19 @@ from observer import (
     PluginObservationDispatcher,
     PluginObservationExecutor,
 )
-from observer.exporters.vision_observation_exporter import (
+from ohana_agent.observation.exporters.vision_observation_exporter import (
     VisionObservationExporter,
 )
-from plugin.plugin_context import PluginContext
-from plugin.plugin_manager import PluginManager
-from plugins.dns.dns_check import DNSCheck
-from plugins.dns.dns_check_result import DNSCheckResult
-from plugins.dns.dns_plugin import DNSPlugin
-from scheduler.clock import FakeClock
-from scheduler.dispatcher_task_executor import DispatcherTaskExecutor
-from scheduler.oneshot_trigger import OneShotTrigger
-from scheduler.scheduler import Scheduler
-from scheduler.task import Task
+from ohana_agent.plugins.dns.check import DNSCheck
+from ohana_agent.plugins.dns.check_result import DNSCheckResult
+from ohana_agent.plugins.dns.plugin import DNSPlugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_manager import PluginManager
+from ohana_agent.scheduler.clock import FakeClock
+from ohana_agent.scheduler.dispatcher_task_executor import DispatcherTaskExecutor
+from ohana_agent.scheduler.oneshot_trigger import OneShotTrigger
+from ohana_agent.scheduler.scheduler import Scheduler
+from ohana_agent.scheduler.task import Task
 
 
 class ConfiguredDNSCheck:

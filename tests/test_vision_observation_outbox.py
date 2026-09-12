@@ -3,7 +3,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from observer.exporters import VisionObservationOutbox
+from ohana_agent.observation.exporters import VisionObservationOutbox
 
 
 def payload() -> dict[str, object]:

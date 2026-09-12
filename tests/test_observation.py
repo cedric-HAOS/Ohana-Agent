@@ -1,7 +1,7 @@
 from datetime import UTC
 from uuid import UUID
 
-from observer import Observation, ObservationStatus
+from ohana_agent.observation import Observation, ObservationStatus
 
 
 def test_observation_can_be_created() -> None:

@@ -2,7 +2,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from plugin.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
 
 
 def test_plugin_context_stores_services() -> None:

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from infrastructure import (
+from ohana_agent.infrastructure import (
     HealthStatus,
     Infrastructure,
     InfrastructureRuntime,
@@ -10,13 +10,13 @@ from infrastructure import (
     Service,
     ServiceType,
 )
-from infrastructure.infrastructure_health_manager import (
+from ohana_agent.infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from infrastructure.infrastructure_health_update import (
+from ohana_agent.infrastructure.infrastructure_health_update import (
     InfrastructureHealthUpdate,
 )
-from observer import (
+from ohana_agent.observation import (
     InfrastructureObservationMapper,
     ObservationEngine,
     ObservationEventPublisher,

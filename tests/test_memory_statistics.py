@@ -1,4 +1,4 @@
-from memory.memory_statistics import MemoryStatistics
+from ohana_agent.persistence.memory_statistics import MemoryStatistics
 
 
 def test_memory_statistics_defaults_to_zero() -> None:

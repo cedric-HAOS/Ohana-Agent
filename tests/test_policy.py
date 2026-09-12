@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from health.monitor import HealthResult, HealthStatus
-from recovery.action import NoopRecoveryAction
-from recovery.policy import (
+from ohana_agent.observation.health.monitor import HealthResult, HealthStatus
+from ohana_agent.recovery.action import NoopRecoveryAction
+from ohana_agent.recovery.policy import (
     RecoveryHistory,
     SequentialRecoveryPolicy,
     select_policy,
 )
-from recovery.result import RecoveryResult
+from ohana_agent.recovery.result import RecoveryResult
 
 
 def test_recovery_history_records_result() -> None:

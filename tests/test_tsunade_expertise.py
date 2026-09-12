@@ -5,10 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
-from administration.expertise import TsunadeExpertiseService
-from administration.incidents import TsunadeIncidentRepository
-from administration.investigations import InvestigationResult
-from observer import Observation, ObservationStatus
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.tsunade.expertise import TsunadeExpertiseService
+from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.investigations import InvestigationResult
 
 
 def _incident(

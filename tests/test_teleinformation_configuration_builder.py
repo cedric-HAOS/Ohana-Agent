@@ -2,9 +2,12 @@
 
 import pytest
 
-from builder import InfrastructureBuilder, TeleinformationConfigurationBuilder
-from configuration.infrastructure import InfrastructureConfig
-from configuration.teleinformation import TeleinformationPluginConfig
+from ohana_agent.configuration.builders import (
+    InfrastructureBuilder,
+    TeleinformationConfigurationBuilder,
+)
+from ohana_agent.configuration.infrastructure import InfrastructureConfig
+from ohana_agent.configuration.teleinformation import TeleinformationPluginConfig
 
 
 def infrastructure_with_teleinformation_service(

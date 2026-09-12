@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from observer import ObserverResult
-from plugin.plugin import Plugin
-from plugin.plugin_descriptor import PluginDescriptor
-from plugin.plugin_loader import PluginLoader
-from plugin.plugin_manifest import PluginManifest
+from ohana_agent.observation import ObserverResult
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_descriptor import PluginDescriptor
+from ohana_agent.plugins.runtime.plugin_loader import PluginLoader
+from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
 
 
 class FakePlugin(Plugin):

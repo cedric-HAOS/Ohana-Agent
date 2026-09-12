@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from observer import (
+from ohana_agent.observation import (
     Observation,
     ObservationEventPublisher,
     ObservationPublished,

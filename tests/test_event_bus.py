@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.events import EventBus, EventHandlerNotFoundError
+from ohana_agent.core.events import EventBus, EventHandlerNotFoundError
 
 
 class DummyEvent:

@@ -2,8 +2,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scheduler import FakeClock, IntervalTrigger, OneShotTrigger, Scheduler, Task
-from scheduler.task_executor import FailingTaskExecutor
+from ohana_agent.scheduler import (
+    FakeClock,
+    IntervalTrigger,
+    OneShotTrigger,
+    Scheduler,
+    Task,
+)
+from ohana_agent.scheduler.task_executor import FailingTaskExecutor
 
 
 def test_scheduler_is_stopped_by_default() -> None:

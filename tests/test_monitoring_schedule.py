@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from monitoring import MonitoringScheduleRegistry
+from ohana_agent.observation.monitoring import MonitoringScheduleRegistry
 
 
 def configuration_with_schedule(schedule: dict[str, object]) -> SimpleNamespace:

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import TeleinformationConfigLoader
+from ohana_agent.configuration.loaders import TeleinformationConfigLoader
 
 
 def test_teleinformation_loader_reads_home_assistant_settings(tmp_path: Path) -> None:

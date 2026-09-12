@@ -2,9 +2,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from infrastructure import HealthStatus
-from observer import ObserverResult
-from observer.observer_result_mapper import ObserverResultMapper
+from ohana_agent.infrastructure import HealthStatus
+from ohana_agent.observation import ObserverResult
+from ohana_agent.observation.observer_result_mapper import ObserverResultMapper
 
 
 def test_mapper_converts_successful_observer_result() -> None:

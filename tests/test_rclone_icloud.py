@@ -4,7 +4,7 @@ import json
 import os
 from subprocess import CompletedProcess
 
-from plugins.backup.rclone_icloud import RcloneICloudConfigurator
+from ohana_agent.plugins.backup.rclone_icloud import RcloneICloudConfigurator
 
 
 def test_icloud_configuration_requires_and_completes_two_factor(tmp_path) -> None:

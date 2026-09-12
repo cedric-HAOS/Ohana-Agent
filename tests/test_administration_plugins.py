@@ -8,21 +8,21 @@ from time import sleep
 import pytest
 import yaml
 
-from administration import (
+from ohana_agent.configuration.backup import BackupPluginConfig
+from ohana_agent.configuration.dns import DNSPluginConfig
+from ohana_agent.configuration.mqtt_plugin import MQTTPluginConfig
+from ohana_agent.observation import ObserverResult
+from ohana_agent.plugins.administration import (
     PluginAdministrationBinding,
     PluginAdministrationRepository,
 )
-from configuration.backup import BackupPluginConfig
-from configuration.dns import DNSPluginConfig
-from configuration.mqtt_plugin import MQTTPluginConfig
-from observer import ObserverResult
-from plugin.plugin_context import PluginContext
-from plugin.plugin_manager import PluginManager
-from plugins.backup.backup_plugin import BackupPlugin
-from plugins.dns.dns_plugin import DNSPlugin
-from plugins.mqtt.mqtt_plugin import MQTTPlugin
-from scheduler import IntervalTrigger, Scheduler, Task
-from scheduler.clock import FakeClock
+from ohana_agent.plugins.backup.plugin import BackupPlugin
+from ohana_agent.plugins.dns.plugin import DNSPlugin
+from ohana_agent.plugins.mqtt.plugin import MQTTPlugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_manager import PluginManager
+from ohana_agent.scheduler import IntervalTrigger, Scheduler, Task
+from ohana_agent.scheduler.clock import FakeClock
 
 
 class FakeEventBus:

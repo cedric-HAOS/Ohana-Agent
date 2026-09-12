@@ -2,9 +2,9 @@
 
 import pytest
 
-from plugins.zwave.zwave_config import ZWaveConfig
-from plugins.zwave.zwave_plugin import ZWavePlugin
-from plugins.zwave.zwave_result import ZWaveHealthResult, ZWaveNodeResult
+from ohana_agent.plugins.zwave.config import ZWaveConfig
+from ohana_agent.plugins.zwave.plugin import ZWavePlugin
+from ohana_agent.plugins.zwave.result import ZWaveHealthResult, ZWaveNodeResult
 
 
 class FakeZWaveCheck:

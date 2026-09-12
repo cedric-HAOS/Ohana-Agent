@@ -7,13 +7,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from administration import (
+from ohana_agent.contracts.administration import (
     DHCPConfiguration,
-    DHCPConfigurationError,
     DHCPReservation,
     DHCPSettings,
-    DnsmasqDHCPRepository,
 )
+from ohana_agent.host.dhcp import DHCPConfigurationError, DnsmasqDHCPRepository
 
 
 def make_repository(

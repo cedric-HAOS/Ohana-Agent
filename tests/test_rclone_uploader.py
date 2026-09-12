@@ -7,8 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from plugins.backup.backup_config import BackupConfig
-from plugins.backup.rclone_uploader import RcloneStreamUploader, RcloneUploadError
+from ohana_agent.plugins.backup.config import BackupConfig
+from ohana_agent.plugins.backup.rclone_uploader import (
+    RcloneStreamUploader,
+    RcloneUploadError,
+)
 
 
 class InputSink:
@@ -51,9 +54,11 @@ def test_rclone_uploader_streams_exact_size_and_validates_remote(
         processes.append(process)
         return process
 
-    monkeypatch.setattr("plugins.backup.rclone_uploader.subprocess.Popen", fake_popen)
     monkeypatch.setattr(
-        "plugins.backup.rclone_uploader.subprocess.run",
+        "ohana_agent.plugins.backup.rclone_uploader.subprocess.Popen", fake_popen
+    )
+    monkeypatch.setattr(
+        "ohana_agent.plugins.backup.rclone_uploader.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0,
             stdout=json.dumps({"Size": 6}),
@@ -105,7 +110,9 @@ def test_rclone_remote_check_uses_remote_root(
         commands.append(command)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("plugins.backup.rclone_uploader.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "ohana_agent.plugins.backup.rclone_uploader.subprocess.run", fake_run
+    )
     uploader = RcloneStreamUploader(BackupConfig(rclone_remote="icloud:Ohana/Backups"))
 
     uploader.check_remote()
@@ -140,7 +147,9 @@ def test_remote_rotation_deletes_only_old_complete_backups(
             )
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("plugins.backup.rclone_uploader.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "ohana_agent.plugins.backup.rclone_uploader.subprocess.run", fake_run
+    )
     uploader = RcloneStreamUploader(BackupConfig())
 
     deleted = uploader.prune_complete_backup_directories(

@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scheduler import IntervalTrigger, OneShotTrigger, Task, TaskState
+from ohana_agent.scheduler import IntervalTrigger, OneShotTrigger, Task, TaskState
 
 
 def test_task_uses_command_as_default_name() -> None:

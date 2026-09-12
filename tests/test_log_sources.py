@@ -6,9 +6,9 @@ from uuid import uuid4
 
 import pytest
 
-from administration.jobs import DistributedJobRepository
-from administration.log_sources import LogSourceBroker
-from plugins.backup.backup_config import BackupConfig, BackupTarget
+from ohana_agent.jobs.log_sources import LogSourceBroker
+from ohana_agent.jobs.repository import DistributedJobRepository
+from ohana_agent.plugins.backup.config import BackupConfig, BackupTarget
 
 
 def test_log_source_secret_is_job_bound_and_never_persisted_in_parameters(

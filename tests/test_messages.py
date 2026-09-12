@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.mqtt.messages import (
+from ohana_agent.core.mqtt.messages import (
     MQTTAvailabilityMessage,
     MQTTAvailabilityStatus,
     MQTTCommandMessage,

@@ -5,27 +5,27 @@ from typing import Any
 
 import yaml
 
-from bootstrap import build_production_agent
-from configuration.infrastructure import (
+from ohana_agent.configuration.infrastructure import (
     NodeConfig,
     NodeEndpointConfig,
     ServiceConfig,
 )
-from loader import InfrastructureLoader
-from observer.exporters import VisionInfrastructureMapper
-from plugins.dhcp.dhcp_check_result import DHCPCheckResult
-from plugins.network.network_probe_result import NetworkProbeResult
-from plugins.shelly_telemetry.shelly_telemetry_result import (
+from ohana_agent.configuration.loaders import InfrastructureLoader
+from ohana_agent.observation.exporters import VisionInfrastructureMapper
+from ohana_agent.plugins.dhcp.check_result import DHCPCheckResult
+from ohana_agent.plugins.network.probe_result import NetworkProbeResult
+from ohana_agent.plugins.shelly_telemetry.result import (
     ShellyTelemetryCheckResult,
     ShellyTelemetryValue,
 )
-from plugins.teleinformation.teleinformation_result import (
+from ohana_agent.plugins.teleinformation.result import (
     TeleinformationCheckResult,
     TeleinformationTariff,
     TeleinformationValue,
 )
-from plugins.zwave.zwave_result import ZWaveHealthResult, ZWaveNodeResult
-from scheduler.clock import FakeClock
+from ohana_agent.plugins.zwave.result import ZWaveHealthResult, ZWaveNodeResult
+from ohana_agent.runtime.bootstrap import build_production_agent
+from ohana_agent.scheduler.clock import FakeClock
 
 
 @dataclass

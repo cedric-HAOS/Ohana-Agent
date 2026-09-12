@@ -1,9 +1,9 @@
 """Tests for capability model."""
 
-from core.capability.base import BaseCapability
-from core.capability.capability import Capability
-from core.capability.capability_health import CapabilityHealth
-from core.capability.capability_state import CapabilityState
+from ohana_agent.core.capability.base import BaseCapability
+from ohana_agent.core.capability.capability import Capability
+from ohana_agent.core.capability.capability_health import CapabilityHealth
+from ohana_agent.core.capability.capability_state import CapabilityState
 
 
 def test_capability_implements_base_capability() -> None:

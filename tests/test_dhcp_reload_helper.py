@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from administration import dhcp_reload_helper
+from ohana_agent.host import dhcp_reload_helper
 
 
 def test_production_entrypoint_does_not_import_pydantic() -> None:
@@ -23,7 +23,7 @@ def guarded_import(name, *args, **kwargs):
     return original_import(name, *args, **kwargs)
 
 builtins.__import__ = guarded_import
-import dhcp_reload_entrypoint
+from ohana_agent.host import dhcp_reload_entrypoint
 assert callable(dhcp_reload_entrypoint.main)
 """
     result = subprocess.run(

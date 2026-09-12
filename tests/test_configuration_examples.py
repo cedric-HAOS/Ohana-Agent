@@ -2,20 +2,24 @@
 
 from pathlib import Path
 
-from configuration.administration import WakeOnLanConfig
-from configuration.loader import ConfigurationLoader
-from loader.dhcp_config_loader import DHCPConfigLoader
-from loader.dns_config_loader import DNSConfigLoader
-from loader.home_assistant_telemetry_config_loader import (
+from ohana_agent.configuration.administration import WakeOnLanConfig
+from ohana_agent.configuration.loader import ConfigurationLoader
+from ohana_agent.configuration.loaders.dhcp import DHCPConfigLoader
+from ohana_agent.configuration.loaders.dns import DNSConfigLoader
+from ohana_agent.configuration.loaders.home_assistant_telemetry import (
     HomeAssistantTelemetryConfigLoader,
 )
-from loader.infrastructure_loader import InfrastructureLoader
-from loader.mqtt_config_loader import MQTTConfigLoader
-from loader.network_config_loader import NetworkConfigLoader
-from loader.ntp_config_loader import NTPConfigLoader
-from loader.teleinformation_config_loader import TeleinformationConfigLoader
-from loader.wireguard_config_loader import WireGuardConfigLoader
-from loader.zwave_config_loader import ZWaveConfigLoader
+from ohana_agent.configuration.loaders.infrastructure_loader import InfrastructureLoader
+from ohana_agent.configuration.loaders.mqtt import MQTTConfigLoader
+from ohana_agent.configuration.loaders.network import NetworkConfigLoader
+from ohana_agent.configuration.loaders.ntp import NTPConfigLoader
+from ohana_agent.configuration.loaders.teleinformation import (
+    TeleinformationConfigLoader,
+)
+from ohana_agent.configuration.loaders.wireguard import (
+    WireGuardConfigLoader,
+)
+from ohana_agent.configuration.loaders.zwave import ZWaveConfigLoader
 
 
 def test_shikamaru_example_configuration_is_valid() -> None:

@@ -1,5 +1,5 @@
-from observer import ObserverResult
-from observer.checks import FakeCheck
+from ohana_agent.observation import ObserverResult
+from ohana_agent.observation.checks import FakeCheck
 
 
 def test_fake_check_returns_success_by_default() -> None:

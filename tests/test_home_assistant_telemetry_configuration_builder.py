@@ -2,9 +2,14 @@
 
 import pytest
 
-from builder import HomeAssistantTelemetryConfigurationBuilder, InfrastructureBuilder
-from configuration.home_assistant_telemetry import HomeAssistantTelemetryPluginConfig
-from configuration.infrastructure import InfrastructureConfig
+from ohana_agent.configuration.builders import (
+    HomeAssistantTelemetryConfigurationBuilder,
+    InfrastructureBuilder,
+)
+from ohana_agent.configuration.home_assistant_telemetry import (
+    HomeAssistantTelemetryPluginConfig,
+)
+from ohana_agent.configuration.infrastructure import InfrastructureConfig
 
 
 def infrastructure_with_telemetry_service(

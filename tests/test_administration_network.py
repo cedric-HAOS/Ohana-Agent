@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from administration import network_helper
-from administration.models import AgentNetworkSettings
-from administration.network import NetworkManagerRepository
+from ohana_agent.contracts.administration import AgentNetworkSettings
+from ohana_agent.host import network_helper
+from ohana_agent.host.network import NetworkManagerRepository
 
 
 def network_state() -> dict[str, object]:

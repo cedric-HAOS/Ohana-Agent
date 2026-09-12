@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from scheduler import OneShotTrigger
+from ohana_agent.scheduler import OneShotTrigger
 
 
 def test_oneshot_trigger_is_due_at_run_date() -> None:

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from plugin.plugin_descriptor import PluginDescriptor
-from plugin.plugin_discovery import PluginDiscovery
+from ohana_agent.plugins.runtime.plugin_descriptor import PluginDescriptor
+from ohana_agent.plugins.runtime.plugin_discovery import PluginDiscovery
 
 
 class FakeDiscoveryProvider:

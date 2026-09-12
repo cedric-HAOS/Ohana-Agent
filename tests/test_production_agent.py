@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from observer.exporters import VisionClientError
-from production_agent import ProductionAgent
-from scheduler import Scheduler
+from ohana_agent.observation.exporters import VisionClientError
+from ohana_agent.runtime.agent import ProductionAgent
+from ohana_agent.scheduler import Scheduler
 
 
 @dataclass

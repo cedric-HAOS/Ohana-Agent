@@ -1,11 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from observer import (
-    Observation,
-    ObservationStatus,
-)
-from observer.exporters import (
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.observation.exporters import (
     VisionObservationExporter,
     VisionObservationMapper,
 )

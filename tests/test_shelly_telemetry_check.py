@@ -2,8 +2,12 @@
 
 from datetime import UTC, datetime
 
-from plugins.shelly_telemetry.shelly_telemetry_check import ShellyTelemetryCheck
-from plugins.shelly_telemetry.shelly_telemetry_client import HomeAssistantEntityState
+from ohana_agent.plugins.shelly_telemetry.check import (
+    ShellyTelemetryCheck,
+)
+from ohana_agent.plugins.shelly_telemetry.client import (
+    HomeAssistantEntityState,
+)
 
 
 class FakeHomeAssistantClient:

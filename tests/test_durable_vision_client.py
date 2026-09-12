@@ -6,7 +6,7 @@ from time import monotonic, sleep
 from typing import Any
 from uuid import uuid4
 
-from observer.exporters import (
+from ohana_agent.observation.exporters import (
     DurableVisionClient,
     VisionClientError,
     VisionObservationOutbox,

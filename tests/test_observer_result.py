@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from observer import ObserverResult
+from ohana_agent.observation import ObserverResult
 
 
 def test_observer_result_stores_success() -> None:

@@ -6,7 +6,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from health.monitor import HealthMonitor, HealthResult, HealthStatus
+from ohana_agent.observation.health.monitor import (
+    HealthMonitor,
+    HealthResult,
+    HealthStatus,
+)
 
 
 @dataclass

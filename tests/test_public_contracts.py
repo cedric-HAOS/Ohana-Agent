@@ -1,8 +1,12 @@
 """Tests for the supported public imports of Ohana-Agent."""
 
-from builder import DNSConfigurationBuilder, InfrastructureBuilder
-from core import Executor, Registry, Runtime, Statistics
-from infrastructure import (
+from ohana_agent.configuration.builders import (
+    DNSConfigurationBuilder,
+    InfrastructureBuilder,
+)
+from ohana_agent.configuration.loaders import DNSConfigLoader, InfrastructureLoader
+from ohana_agent.core import Executor, Registry, Runtime, Statistics
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointRuntime,
     EndpointType,
@@ -20,19 +24,7 @@ from infrastructure import (
     ServiceRuntime,
     ServiceType,
 )
-from loader import DNSConfigLoader, InfrastructureLoader
-from memory import (
-    MemoryEntry,
-    MemoryManager,
-    MemoryScope,
-    MemorySerializer,
-    MemoryStatistics,
-    MemoryStorage,
-    PersistentMemory,
-    RuntimeMemory,
-    SessionMemory,
-)
-from observer import (
+from ohana_agent.observation import (
     EventPublisher,
     InfrastructureObservationMapper,
     Observation,
@@ -58,8 +50,8 @@ from observer import (
     PluginObservationDispatcher,
     PluginObservationExecutor,
 )
-from observer.checks import BaseCheck, DNSCheck, FakeCheck
-from observer.exporters import (
+from ohana_agent.observation.checks import BaseCheck, DNSCheck, FakeCheck
+from ohana_agent.observation.exporters import (
     HttpVisionClient,
     InMemoryObservationExporter,
     VisionClient,
@@ -67,25 +59,18 @@ from observer.exporters import (
     VisionObservationExporter,
     VisionObservationMapper,
 )
-from plugin import (
-    Plugin,
-    PluginAlreadyLoadedError,
-    PluginCommand,
-    PluginDescriptor,
-    PluginDiscovery,
-    PluginError,
-    PluginLoader,
-    PluginLoadError,
-    PluginLoadFailed,
-    PluginManager,
-    PluginManifest,
-    PluginNotFoundError,
-    PluginRegistered,
-    PluginUnregistered,
+from ohana_agent.persistence import (
+    MemoryEntry,
+    MemoryManager,
+    MemoryScope,
+    MemorySerializer,
+    MemoryStatistics,
+    MemoryStorage,
+    PersistentMemory,
+    RuntimeMemory,
+    SessionMemory,
 )
-from plugin.discovery import DiscoveryProvider, LocalDirectoryProvider
-from plugin.factory import PluginFactory, PythonPluginFactory
-from plugins.dns import (
+from ohana_agent.plugins.dns import (
     ConfiguredDNSCheck,
     DNSCapabilityRuntime,
     DNSCheckFailed,
@@ -103,7 +88,28 @@ from plugins.dns import (
     DNSServerRuntime,
     DNSStatistics,
 )
-from scheduler import (
+from ohana_agent.plugins.runtime import (
+    Plugin,
+    PluginAlreadyLoadedError,
+    PluginCommand,
+    PluginDescriptor,
+    PluginDiscovery,
+    PluginError,
+    PluginLoader,
+    PluginLoadError,
+    PluginLoadFailed,
+    PluginManager,
+    PluginManifest,
+    PluginNotFoundError,
+    PluginRegistered,
+    PluginUnregistered,
+)
+from ohana_agent.plugins.runtime.discovery import (
+    DiscoveryProvider,
+    LocalDirectoryProvider,
+)
+from ohana_agent.plugins.runtime.factory import PluginFactory, PythonPluginFactory
+from ohana_agent.scheduler import (
     BaseTrigger,
     Clock,
     CronTrigger,

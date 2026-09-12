@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from core.mqtt.subscriber import MQTTMessageReceivedEvent, MQTTSubscriber
+from ohana_agent.core.mqtt.subscriber import MQTTMessageReceivedEvent, MQTTSubscriber
 
 
 class FakeBackendSubscriber:

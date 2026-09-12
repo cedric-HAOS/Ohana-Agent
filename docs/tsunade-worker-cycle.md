@@ -1,5 +1,9 @@
 # Contrôle des journaux, diagnostics et arrêt Katsuyu
 
+Le [parcours de collecte complémentaire](architecture-evolution.md) prolonge
+ce cycle par une autorisation Shizune, une collecte Katsuyu et une réévaluation
+unique. Les intentions et les résultats sont repris après redémarrage.
+
 Le contrôle quotidien termine un cycle borné avant de libérer le worker :
 
 1. Katsuyu transmet le résultat validé de `logs.health_check`.

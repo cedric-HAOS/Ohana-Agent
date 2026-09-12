@@ -2,9 +2,9 @@
 
 import pytest
 
-from plugins.wireguard.wireguard_config import WireGuardConfig
-from plugins.wireguard.wireguard_plugin import WireGuardPlugin
-from plugins.wireguard.wireguard_result import WireGuardCheckResult
+from ohana_agent.plugins.wireguard.config import WireGuardConfig
+from ohana_agent.plugins.wireguard.plugin import WireGuardPlugin
+from ohana_agent.plugins.wireguard.result import WireGuardCheckResult
 
 
 class FakeWireGuardCheck:

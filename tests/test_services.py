@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.services import (
+from ohana_agent.core.services import (
     ServiceAlreadyRegisteredError,
     ServiceNotFoundError,
     ServiceRegistry,

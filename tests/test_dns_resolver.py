@@ -3,7 +3,7 @@ import socket
 import dns.exception
 import dns.resolver
 
-from plugins.dns.dns_resolver import DNSResolver
+from ohana_agent.plugins.dns.resolver import DNSResolver
 
 
 class FakeAnswer:

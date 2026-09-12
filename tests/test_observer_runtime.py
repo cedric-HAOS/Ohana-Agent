@@ -1,4 +1,4 @@
-from observer import ObserverResult, ObserverRuntime, ObserverState
+from ohana_agent.observation import ObserverResult, ObserverRuntime, ObserverState
 
 
 def test_observer_runtime_initial_state_is_idle() -> None:

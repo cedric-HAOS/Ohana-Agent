@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scheduler import IntervalTrigger
+from ohana_agent.scheduler import IntervalTrigger
 
 
 def test_interval_trigger_rejects_zero_interval() -> None:

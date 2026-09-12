@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from administration.wake_on_lan import WakeOnLanSender
+from ohana_agent.jobs.wake_on_lan import WakeOnLanSender
 
 
 class FakeSocket:

@@ -1,4 +1,4 @@
-from scheduler import SchedulerState
+from ohana_agent.scheduler import SchedulerState
 
 
 def test_scheduler_state_values() -> None:

@@ -1,4 +1,4 @@
-from scheduler import SchedulerStatistics
+from ohana_agent.scheduler import SchedulerStatistics
 
 
 def test_scheduler_statistics_defaults() -> None:

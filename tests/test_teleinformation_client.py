@@ -3,7 +3,7 @@
 import json
 from urllib.request import Request
 
-from plugins.teleinformation.teleinformation_client import (
+from ohana_agent.plugins.teleinformation.client import (
     HomeAssistantTeleinformationClient,
 )
 
@@ -39,7 +39,7 @@ def test_teleinformation_client_reads_linky_state(monkeypatch) -> None:
         return FakeHTTPResponse()
 
     monkeypatch.setattr(
-        "plugins.teleinformation.teleinformation_client.urlopen",
+        "ohana_agent.plugins.teleinformation.client.urlopen",
         fake_urlopen,
     )
 

@@ -2,7 +2,7 @@ import json
 from datetime import UTC, datetime
 from uuid import UUID
 
-from observer import (
+from ohana_agent.observation import (
     Observation,
     ObservationSerializer,
     ObservationStatus,

@@ -2,9 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from builder.dhcp_configuration_builder import DHCPConfigurationBuilder
-from configuration.dhcp import DHCPPluginConfig, DHCPPolicyConfig
-from infrastructure import (
+from ohana_agent.configuration.builders.dhcp import (
+    DHCPConfigurationBuilder,
+)
+from ohana_agent.configuration.dhcp import DHCPPluginConfig, DHCPPolicyConfig
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointType,
     Infrastructure,

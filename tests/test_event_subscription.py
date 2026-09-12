@@ -1,6 +1,6 @@
 """Tests for event subscriptions."""
 
-from core.event_subscription import EventSubscription
+from ohana_agent.core.event_subscription import EventSubscription
 
 
 class DummyEvent:

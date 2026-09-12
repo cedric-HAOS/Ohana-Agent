@@ -2,13 +2,13 @@
 
 import pytest
 
-from plugins.home_assistant_telemetry.home_assistant_telemetry_config import (
+from ohana_agent.plugins.home_assistant_telemetry.config import (
     HomeAssistantTelemetryConfig,
 )
-from plugins.home_assistant_telemetry.home_assistant_telemetry_plugin import (
+from ohana_agent.plugins.home_assistant_telemetry.plugin import (
     HomeAssistantTelemetryPlugin,
 )
-from plugins.home_assistant_telemetry.home_assistant_telemetry_result import (
+from ohana_agent.plugins.home_assistant_telemetry.result import (
     HomeAssistantTelemetryCheckResult,
     HomeAssistantTelemetryValue,
 )

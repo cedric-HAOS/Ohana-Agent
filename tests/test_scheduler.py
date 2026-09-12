@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
-from core.events import EventBus
-from core.scheduler import Scheduler, SchedulerJobExecuted
+from ohana_agent.core.events import EventBus
+from ohana_agent.core.scheduler import Scheduler, SchedulerJobExecuted
 
 
 def test_register_job() -> None:

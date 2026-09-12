@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from recovery.result import RecoveryResult
+from ohana_agent.recovery.result import RecoveryResult
 
 
 def test_recovery_result_contains_required_fields() -> None:

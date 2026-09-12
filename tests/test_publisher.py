@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from core.mqtt.publisher import MQTTPublisher
+from ohana_agent.core.mqtt.publisher import MQTTPublisher
 
 
 class HealthStatus(StrEnum):

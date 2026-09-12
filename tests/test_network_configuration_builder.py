@@ -1,8 +1,8 @@
 """Tests for network presence target discovery."""
 
-from builder import NetworkConfigurationBuilder
-from configuration.infrastructure import InfrastructureConfig
-from configuration.network import NetworkPluginConfig
+from ohana_agent.configuration.builders import NetworkConfigurationBuilder
+from ohana_agent.configuration.infrastructure import InfrastructureConfig
+from ohana_agent.configuration.network import NetworkPluginConfig
 
 
 def test_network_configuration_builder_discovers_addressable_devices() -> None:

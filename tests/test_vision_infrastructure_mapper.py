@@ -1,10 +1,10 @@
-from configuration.enums import (
+from ohana_agent.configuration.enums import (
     TopologyDeviceKind,
     TopologyLayoutKind,
     TopologyLinkDirection,
     TopologyLinkKind,
 )
-from configuration.infrastructure import (
+from ohana_agent.configuration.infrastructure import (
     InfrastructureConfig,
     InfrastructureIdentityConfig,
     InfrastructureMetadataConfig,
@@ -17,7 +17,7 @@ from configuration.infrastructure import (
     TopologyLayoutConfig,
     TopologyLinkConfig,
 )
-from observer.exporters import VisionInfrastructureMapper
+from ohana_agent.observation.exporters import VisionInfrastructureMapper
 
 
 def build_infrastructure_config() -> InfrastructureConfig:

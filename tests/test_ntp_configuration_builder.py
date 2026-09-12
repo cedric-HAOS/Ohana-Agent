@@ -2,9 +2,9 @@
 
 import pytest
 
-from builder import NTPConfigurationBuilder
-from configuration.ntp import NTPPluginConfig, NTPPolicyConfig
-from infrastructure import (
+from ohana_agent.configuration.builders import NTPConfigurationBuilder
+from ohana_agent.configuration.ntp import NTPPluginConfig, NTPPolicyConfig
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointType,
     Infrastructure,

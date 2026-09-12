@@ -2,9 +2,9 @@
 
 import pytest
 
-from builder import MQTTConfigurationBuilder
-from configuration.mqtt_plugin import MQTTPluginConfig
-from infrastructure import (
+from ohana_agent.configuration.builders import MQTTConfigurationBuilder
+from ohana_agent.configuration.mqtt_plugin import MQTTPluginConfig
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointType,
     Infrastructure,

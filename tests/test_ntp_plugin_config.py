@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from configuration.ntp import NTPPluginConfig
+from ohana_agent.configuration.ntp import NTPPluginConfig
 
 
 def test_ntp_plugin_config_uses_safe_defaults() -> None:

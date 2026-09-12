@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from infrastructure.enums import HealthStatus
-from plugins.zwave.zwave_discovery import ZWaveDiscoveryHandler
+from ohana_agent.infrastructure.enums import HealthStatus
+from ohana_agent.plugins.zwave.discovery import ZWaveDiscoveryHandler
 
 
 @dataclass

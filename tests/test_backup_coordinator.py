@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from plugins.backup.backup_config import BackupConfig, BackupTarget
-from plugins.backup.backup_coordinator import (
+from ohana_agent.plugins.backup.config import BackupConfig, BackupTarget
+from ohana_agent.plugins.backup.coordinator import (
     BackupCoordinator,
     BackupExecutionError,
 )
-from plugins.backup.home_assistant_backup_client import HomeAssistantBackup
-from plugins.backup.rclone_uploader import UploadReceipt
+from ohana_agent.plugins.backup.home_assistant_backup_client import HomeAssistantBackup
+from ohana_agent.plugins.backup.rclone_uploader import UploadReceipt
 
 
 class FakeBackupClient:

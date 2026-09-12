@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import MQTTConfigLoader
+from ohana_agent.configuration.loaders import MQTTConfigLoader
 
 
 def test_mqtt_config_loader_loads_yaml(tmp_path: Path) -> None:

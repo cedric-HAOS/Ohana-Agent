@@ -3,11 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from core.mqtt.heartbeat import MQTTHeartbeatConfig, MQTTHeartbeatService
-from core.mqtt.messages import (
-    MQTTAvailabilityStatus,
-    MQTTHealthStatus,
-)
+from ohana_agent.core.mqtt.heartbeat import MQTTHeartbeatConfig, MQTTHeartbeatService
+from ohana_agent.core.mqtt.messages import MQTTAvailabilityStatus, MQTTHealthStatus
 
 
 class FakePublisher:

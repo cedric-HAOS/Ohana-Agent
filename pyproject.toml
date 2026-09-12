@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ohana-agent"
-version = "1.26.16"
+version = "1.27.0"
 description = "Infrastructure observation agent for the Ohana platform."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -55,10 +55,10 @@ Issues = "https://github.com/cedric-HAOS/Ohana-Agent/issues"
 
 
 [project.scripts]
-ohana-agent = "main:main"
-ohana-agent-authorize-freebox = "plugins.wireguard.authorize_freebox:main"
-ohana-agent-dhcp-reload-helper = "dhcp_reload_entrypoint:main"
-ohana-agent-network-helper = "administration.network_helper:main"
+ohana-agent = "ohana_agent.runtime.cli:main"
+ohana-agent-authorize-freebox = "ohana_agent.plugins.wireguard.authorize_freebox:main"
+ohana-agent-dhcp-reload-helper = "ohana_agent.host.dhcp_reload_entrypoint:main"
+ohana-agent-network-helper = "ohana_agent.host.network_helper:main"
 
 
 [project.optional-dependencies]
@@ -69,39 +69,11 @@ development = [
 ]
 
 
-[tool.setuptools]
-py-modules = [
-    "application",
-    "bootstrap",
-    "dhcp_reload_entrypoint",
-    "main",
-    "production_agent",
-]
-
-
 [tool.setuptools.packages.find]
-where = ["."]
-include = [
-    "administration*",
-    "builder*",
-    "configuration*",
-    "core*",
-    "health*",
-    "infrastructure*",
-    "loader*",
-    "memory*",
-    "monitoring*",
-    "mqtt*",
-    "observer*",
-    "plugin*",
-    "plugins*",
-    "recovery*",
-    "scheduler*",
-]
-exclude = [
-    "tests*",
-    "scripts*",
-]
+where = ["src"]
+include = ["ohana_agent*"]
+exclude = ["tests*", "scripts*"]
+namespaces = false
 
 
 [tool.ruff]
@@ -121,6 +93,7 @@ ignore = []
 
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
 testpaths = [
     "tests",
 ]

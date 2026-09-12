@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from core import Registry
+from ohana_agent.core import Registry
 
 
 @dataclass

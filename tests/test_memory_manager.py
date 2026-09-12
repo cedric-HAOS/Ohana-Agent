@@ -1,10 +1,10 @@
-from memory.memory_entry import MemoryEntry
-from memory.memory_manager import MemoryManager
-from memory.memory_scope import MemoryScope
-from memory.memory_storage import MemoryStorage
-from memory.persistent_memory import PersistentMemory
-from memory.runtime_memory import RuntimeMemory
-from memory.session_memory import SessionMemory
+from ohana_agent.persistence.memory_entry import MemoryEntry
+from ohana_agent.persistence.memory_manager import MemoryManager
+from ohana_agent.persistence.memory_scope import MemoryScope
+from ohana_agent.persistence.memory_storage import MemoryStorage
+from ohana_agent.persistence.persistent_memory import PersistentMemory
+from ohana_agent.persistence.runtime_memory import RuntimeMemory
+from ohana_agent.persistence.session_memory import SessionMemory
 
 
 def test_memory_manager_is_empty() -> None:

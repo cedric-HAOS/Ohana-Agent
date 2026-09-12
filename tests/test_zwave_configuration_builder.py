@@ -1,8 +1,8 @@
 """Tests for Z-Wave runtime configuration construction."""
 
-from builder import ZWaveConfigurationBuilder
-from configuration.zwave import ZWavePluginConfig
-from infrastructure import (
+from ohana_agent.configuration.builders import ZWaveConfigurationBuilder
+from ohana_agent.configuration.zwave import ZWavePluginConfig
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointType,
     Infrastructure,

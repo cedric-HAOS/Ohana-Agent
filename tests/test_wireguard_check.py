@@ -1,7 +1,7 @@
 """Tests for Freebox WireGuard server checks."""
 
-from plugins.wireguard.wireguard_check import WireGuardCheck
-from plugins.wireguard.wireguard_client import FreeboxWireGuardResponse
+from ohana_agent.plugins.wireguard.check import WireGuardCheck
+from ohana_agent.plugins.wireguard.client import FreeboxWireGuardResponse
 
 
 class FakeFreeboxWireGuardClient:

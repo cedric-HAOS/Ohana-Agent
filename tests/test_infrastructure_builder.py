@@ -1,6 +1,6 @@
-from builder import InfrastructureBuilder
-from infrastructure.enums import EndpointType, ServiceType
-from loader import InfrastructureLoader
+from ohana_agent.configuration.builders import InfrastructureBuilder
+from ohana_agent.configuration.loaders import InfrastructureLoader
+from ohana_agent.infrastructure.enums import EndpointType, ServiceType
 
 
 def build_infrastructure():

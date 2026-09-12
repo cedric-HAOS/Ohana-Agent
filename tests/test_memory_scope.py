@@ -1,4 +1,4 @@
-from memory.memory_scope import MemoryScope
+from ohana_agent.persistence.memory_scope import MemoryScope
 
 
 def test_runtime_scope_exists() -> None:

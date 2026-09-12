@@ -7,16 +7,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from configuration.infrastructure import InfrastructureConfig
-from observer.observation import Observation
-from observer.observation_status import ObservationStatus
-from plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
-from plugins.mqtt.host_health import HostHealthSnapshot
-from plugins.mqtt.mqtt_config import (
+from ohana_agent.configuration.infrastructure import InfrastructureConfig
+from ohana_agent.observation.observation import Observation
+from ohana_agent.observation.observation_status import ObservationStatus
+from ohana_agent.plugins.mqtt.config import (
     MQTTBrokerConfig,
     MQTTConfig,
     MQTTHomeAssistantConfig,
 )
+from ohana_agent.plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
+from ohana_agent.plugins.mqtt.host_health import HostHealthSnapshot
 
 
 @dataclass

@@ -1,4 +1,8 @@
-from plugins.dns.dns_config import DNSConfig, DNSPolicyConfig, DNSServerConfig
+from ohana_agent.plugins.dns.config import (
+    DNSConfig,
+    DNSPolicyConfig,
+    DNSServerConfig,
+)
 
 
 def test_dns_server_config_defaults_to_enabled() -> None:

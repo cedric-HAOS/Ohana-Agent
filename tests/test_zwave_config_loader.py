@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import ZWaveConfigLoader
+from ohana_agent.configuration.loaders import ZWaveConfigLoader
 
 
 def test_zwave_config_loader_reads_yaml(tmp_path: Path) -> None:

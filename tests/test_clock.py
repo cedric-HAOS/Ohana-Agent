@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from scheduler import FakeClock, SystemClock
+from ohana_agent.scheduler import FakeClock, SystemClock
 
 
 def test_system_clock_returns_datetime() -> None:

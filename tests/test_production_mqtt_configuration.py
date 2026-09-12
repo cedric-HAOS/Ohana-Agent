@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from loader import MQTTConfigLoader
+from ohana_agent.configuration.loaders import MQTTConfigLoader
 
 
 def test_production_mqtt_configuration_uses_expected_settings() -> None:

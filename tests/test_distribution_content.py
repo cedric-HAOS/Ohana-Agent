@@ -1,44 +1,12 @@
 """Tests for the contents of built distribution artifacts."""
 
+import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
-
-DIST_DIRECTORY = Path("dist")
-
-
-@pytest.fixture(scope="session")
-def wheel_path() -> Path:
-    """Return the unique wheel available in the distribution directory."""
-    wheels = list(DIST_DIRECTORY.glob("ohana_agent-*.whl"))
-
-    assert DIST_DIRECTORY.is_dir(), (
-        "The dist directory does not exist. Run `python -m build` before pytest."
-    )
-    assert len(wheels) == 1, (
-        "Exactly one Ohana-Agent wheel must exist in dist/. "
-        "Clean dist/ and run `python -m build` again."
-    )
-
-    return wheels[0]
-
-
-@pytest.fixture(scope="session")
-def sdist_path() -> Path:
-    """Return the unique source distribution available in dist."""
-    source_distributions = list(DIST_DIRECTORY.glob("ohana_agent-*.tar.gz"))
-
-    assert DIST_DIRECTORY.is_dir(), (
-        "The dist directory does not exist. Run `python -m build` before pytest."
-    )
-    assert len(source_distributions) == 1, (
-        "Exactly one Ohana-Agent source distribution must exist in dist/. "
-        "Clean dist/ and run `python -m build` again."
-    )
-
-    return source_distributions[0]
 
 
 @pytest.fixture(scope="session")
@@ -83,52 +51,87 @@ def test_wheel_contains_runtime_modules(
 ) -> None:
     """Include the application modules required at runtime."""
     required_modules = {
-        "main.py",
-        "application.py",
-        "bootstrap.py",
-        "production_agent.py",
-        "builder/dhcp_configuration_builder.py",
-        "configuration/configuration.py",
-        "configuration/dhcp.py",
-        "core/event_bus.py",
-        "infrastructure/infrastructure.py",
-        "loader/dhcp_config_loader.py",
-        "observer/observation.py",
-        "plugins/dhcp/dhcp_plugin.py",
-        "plugins/zwave/zwave_plugin.py",
-        "plugins/wireguard/wireguard_plugin.py",
-        "plugins/wireguard/authorize_freebox.py",
-        "plugins/home_assistant_telemetry/home_assistant_telemetry_plugin.py",
-        "plugins/shelly_telemetry/shelly_telemetry_plugin.py",
-        "plugins/teleinformation/teleinformation_plugin.py",
-        "plugins/teleinformation/teleinformation_ingestion.py",
-        "plugins/teleinformation/teleinformation_frame_store.py",
-        "monitoring/schedule.py",
+        "ohana_agent/runtime/cli.py",
+        "ohana_agent/runtime/application.py",
+        "ohana_agent/runtime/bootstrap.py",
+        "ohana_agent/runtime/agent.py",
+        "ohana_agent/configuration/builders/dhcp.py",
+        "ohana_agent/configuration/configuration.py",
+        "ohana_agent/configuration/dhcp.py",
+        "ohana_agent/core/events.py",
+        "ohana_agent/infrastructure/infrastructure.py",
+        "ohana_agent/configuration/loaders/dhcp.py",
+        "ohana_agent/observation/observation.py",
+        "ohana_agent/plugins/dhcp/plugin.py",
+        "ohana_agent/plugins/zwave/plugin.py",
+        "ohana_agent/plugins/wireguard/plugin.py",
+        "ohana_agent/plugins/wireguard/authorize_freebox.py",
+        "ohana_agent/plugins/home_assistant_telemetry/plugin.py",
+        "ohana_agent/plugins/shelly_telemetry/plugin.py",
+        "ohana_agent/plugins/teleinformation/plugin.py",
+        "ohana_agent/plugins/teleinformation/ingestion.py",
+        "ohana_agent/plugins/teleinformation/frame_store.py",
+        "ohana_agent/observation/monitoring/schedule.py",
     }
 
     assert required_modules <= wheel_members
+    assert all(
+        member.startswith("ohana_agent/")
+        for member in wheel_members
+        if member.endswith(".py")
+    )
 
     required_packages = (
-        "builder/",
-        "configuration/",
-        "core/",
-        "health/",
-        "infrastructure/",
-        "loader/",
-        "memory/",
-        "monitoring/",
-        "mqtt/",
-        "observer/",
-        "plugin/",
-        "plugins/",
-        "recovery/",
-        "scheduler/",
+        "ohana_agent/api/",
+        "ohana_agent/companions/",
+        "ohana_agent/configuration/",
+        "ohana_agent/contracts/",
+        "ohana_agent/core/",
+        "ohana_agent/host/",
+        "ohana_agent/infrastructure/",
+        "ohana_agent/jobs/",
+        "ohana_agent/observation/",
+        "ohana_agent/persistence/",
+        "ohana_agent/plugins/",
+        "ohana_agent/recovery/",
+        "ohana_agent/runtime/",
+        "ohana_agent/scheduler/",
+        "ohana_agent/tsunade/",
     )
 
     for package_prefix in required_packages:
         assert any(member.startswith(package_prefix) for member in wheel_members), (
             f"Missing runtime package in wheel: {package_prefix}"
         )
+
+
+def test_wheel_runtime_imports_without_checkout_modules(
+    wheel_path: Path, tmp_path: Path
+) -> None:
+    """Catch unused broken modules and imports hidden by the source checkout."""
+    with ZipFile(wheel_path) as archive:
+        archive.extractall(tmp_path)
+    script = """
+import importlib
+from pathlib import Path
+import sys
+site = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(site))
+for path in (site / 'ohana_agent').rglob('*.py'):
+    name = '.'.join(path.relative_to(site).with_suffix('').parts)
+    if name.endswith('.__init__'):
+        name = name[:-9]
+    module = importlib.import_module(name)
+    assert Path(module.__file__).resolve().is_relative_to(site), module.__file__
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_wheel_contains_distribution_metadata(
@@ -181,10 +184,10 @@ def test_sdist_contains_project_sources(
         "LICENSE",
         "MANIFEST.in",
         "pyproject.toml",
-        "main.py",
-        "application.py",
-        "bootstrap.py",
-        "production_agent.py",
+        "src/ohana_agent/runtime/cli.py",
+        "src/ohana_agent/runtime/application.py",
+        "src/ohana_agent/runtime/bootstrap.py",
+        "src/ohana_agent/runtime/agent.py",
     }
 
     assert required_files <= sdist_members
@@ -249,6 +252,8 @@ def test_sdist_contains_tests_without_generated_artifacts(
 ) -> None:
     """Include tests while excluding caches and build outputs."""
     required_tests = {
+        "tests/__init__.py",
+        "tests/conftest.py",
         "tests/test_package_metadata.py",
         "tests/test_distribution_content.py",
     }

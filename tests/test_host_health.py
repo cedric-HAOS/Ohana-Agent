@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from plugins.mqtt.host_health import (
+from ohana_agent.plugins.mqtt.host_health import (
     HostHealthMonitor,
     HostHealthObservationMapper,
     HostHealthReporter,
@@ -38,7 +38,7 @@ def test_system_host_probe_reads_linux_metrics(
     (proc_root / "uptime").write_text("3600.50 100.00\n", encoding="utf-8")
     (thermal_zone / "type").write_text("cpu-thermal\n", encoding="utf-8")
     (thermal_zone / "temp").write_text("78000\n", encoding="utf-8")
-    monkeypatch.setattr("plugins.mqtt.host_health.os.cpu_count", lambda: 4)
+    monkeypatch.setattr("ohana_agent.plugins.mqtt.host_health.os.cpu_count", lambda: 4)
     disk_usage = namedtuple("DiskUsage", "total used free")
     clock_values = iter((100.0, 110.0, 120.0))
     probe = SystemHostProbe(

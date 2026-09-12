@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import pytest
 
-from plugins.ntp.ntp_client import NTP_EPOCH_DELTA, NTPClient
+from ohana_agent.plugins.ntp.client import NTP_EPOCH_DELTA, NTPClient
 
 
 def pack_timestamp(timestamp: float) -> bytes:

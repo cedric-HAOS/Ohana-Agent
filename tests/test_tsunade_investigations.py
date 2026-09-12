@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from administration.investigations import InvestigationExecutor
+from ohana_agent.tsunade.investigations import InvestigationExecutor
 
 
 class FakePlugins:

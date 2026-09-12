@@ -1,0 +1,204 @@
+"""Command-line entry point for Ohana-Agent."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import signal
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
+from pathlib import Path
+from types import FrameType
+
+from ohana_agent.runtime.agent import ProductionAgent
+from ohana_agent.runtime.bootstrap import build_production_agent
+
+
+def get_application_version() -> str:
+    """Return the installed Ohana-Agent package version."""
+    try:
+        return package_version("ohana-agent")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def parse_arguments() -> argparse.Namespace:
+    """Parse Ohana-Agent command-line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="ohana-agent",
+        description="Run Ohana-Agent.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"ohana-agent {get_application_version()}",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/shikamaru.yaml"),
+        help="Application configuration file.",
+    )
+    parser.add_argument(
+        "--infrastructure",
+        type=Path,
+        default=Path("config/infrastructure.yaml"),
+        help="Infrastructure configuration file.",
+    )
+    parser.add_argument(
+        "--dhcp-config",
+        type=Path,
+        default=Path("config/plugins/dhcp.yaml"),
+        help="DHCP observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--dns-config",
+        type=Path,
+        default=Path("config/plugins/dns.yaml"),
+        help="DNS plugin configuration file.",
+    )
+    parser.add_argument(
+        "--ntp-config",
+        type=Path,
+        default=Path("config/plugins/ntp.yaml"),
+        help="NTP plugin configuration file.",
+    )
+    parser.add_argument(
+        "--mqtt-config",
+        type=Path,
+        default=Path("config/plugins/mqtt.yaml"),
+        help="MQTT observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--network-config",
+        type=Path,
+        default=Path("config/plugins/network.yaml"),
+        help="Network presence plugin configuration file.",
+    )
+    parser.add_argument(
+        "--zwave-config",
+        type=Path,
+        default=Path("config/plugins/zwave.yaml"),
+        help="Z-Wave observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--wireguard-config",
+        type=Path,
+        default=Path("config/plugins/wireguard.yaml"),
+        help="WireGuard observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--home-assistant-telemetry-config",
+        "--shelly-telemetry-config",
+        dest="home_assistant_telemetry_config",
+        type=Path,
+        default=Path("config/plugins/home-assistant-telemetry.yaml"),
+        help="Home Assistant telemetry plugin configuration file.",
+    )
+    parser.add_argument(
+        "--teleinformation-config",
+        type=Path,
+        default=Path("config/plugins/teleinformation.yaml"),
+        help="Linky teleinformation observation plugin configuration file.",
+    )
+    parser.add_argument(
+        "--backup-config",
+        type=Path,
+        default=Path("config/plugins/backup.yaml"),
+        help="Ohana backup plugin configuration file.",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=[
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR",
+            "CRITICAL",
+        ],
+        help="Console logging level.",
+    )
+
+    arguments = parser.parse_args()
+    # Deprecated attribute retained for callers that still inspect the old name.
+    arguments.shelly_telemetry_config = arguments.home_assistant_telemetry_config
+    return arguments
+
+
+def configure_logging(level: str) -> None:
+    """Configure console logging for systemd and manual runs."""
+    normalized_level = level.upper()
+
+    if normalized_level not in {
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    }:
+        raise ValueError(f"Unsupported logging level: {level!r}.")
+
+    logging.basicConfig(
+        level=getattr(
+            logging,
+            normalized_level,
+        ),
+        format=("%(asctime)s %(levelname)s %(name)s — %(message)s"),
+        force=True,
+    )
+
+
+def install_signal_handlers(
+    agent: ProductionAgent,
+) -> None:
+    """Stop the agent cleanly on SIGINT or SIGTERM."""
+
+    def request_stop(
+        signum: int,
+        frame: FrameType | None,
+    ) -> None:
+        del signum, frame
+        agent.request_stop()
+
+    signal.signal(
+        signal.SIGINT,
+        request_stop,
+    )
+    signal.signal(
+        signal.SIGTERM,
+        request_stop,
+    )
+
+
+def main() -> int:
+    """Build and run Ohana-Agent."""
+    arguments = parse_arguments()
+
+    configure_logging(arguments.log_level)
+
+    agent = build_production_agent(
+        application_config_path=arguments.config,
+        infrastructure_config_path=arguments.infrastructure,
+        dhcp_config_path=arguments.dhcp_config,
+        dns_config_path=arguments.dns_config,
+        ntp_config_path=arguments.ntp_config,
+        mqtt_config_path=arguments.mqtt_config,
+        network_config_path=arguments.network_config,
+        zwave_config_path=arguments.zwave_config,
+        wireguard_config_path=arguments.wireguard_config,
+        home_assistant_telemetry_config_path=(
+            arguments.home_assistant_telemetry_config
+        ),
+        teleinformation_config_path=arguments.teleinformation_config,
+        backup_config_path=arguments.backup_config,
+    )
+
+    install_signal_handlers(agent)
+    agent.run()
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

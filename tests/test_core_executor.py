@@ -1,4 +1,4 @@
-from core import Executor
+from ohana_agent.core import Executor
 
 
 class StringExecutor:

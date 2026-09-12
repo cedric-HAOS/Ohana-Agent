@@ -1,5 +1,5 @@
-from observer import Observer
-from observer.checks import DNSCheck
+from ohana_agent.observation import Observer
+from ohana_agent.observation.checks import DNSCheck
 
 
 def main() -> None:

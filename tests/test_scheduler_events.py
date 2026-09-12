@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from scheduler import (
+from ohana_agent.scheduler import (
     FakeClock,
     ScheduledTaskExecuted,
     ScheduledTaskFailed,
@@ -12,8 +12,8 @@ from scheduler import (
     SchedulerTicked,
     Task,
 )
-from scheduler.oneshot_trigger import OneShotTrigger
-from scheduler.task_executor import FailingTaskExecutor
+from ohana_agent.scheduler.oneshot_trigger import OneShotTrigger
+from ohana_agent.scheduler.task_executor import FailingTaskExecutor
 
 
 class FakeEventBus:

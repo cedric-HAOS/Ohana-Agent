@@ -7,28 +7,10 @@ from zipfile import ZipFile
 
 import pytest
 
-DIST_DIRECTORY = Path("dist")
 EXPECTED_CONSOLE_SCRIPT = "ohana-agent"
-EXPECTED_ENTRY_POINT = "main:main"
+EXPECTED_ENTRY_POINT = "ohana_agent.runtime.cli:main"
 EXPECTED_FREEBOX_CONSOLE_SCRIPT = "ohana-agent-authorize-freebox"
-EXPECTED_FREEBOX_ENTRY_POINT = "plugins.wireguard.authorize_freebox:main"
-
-
-@pytest.fixture(scope="session")
-def wheel_path() -> Path:
-    """Return the unique Ohana-Agent wheel from dist."""
-    assert DIST_DIRECTORY.is_dir(), (
-        "The dist directory does not exist. Run `python -m build` before pytest."
-    )
-
-    wheels = list(DIST_DIRECTORY.glob("ohana_agent-*.whl"))
-
-    assert len(wheels) == 1, (
-        "Exactly one Ohana-Agent wheel must exist in dist/. "
-        "Clean dist/ and run `python -m build` again."
-    )
-
-    return wheels[0]
+EXPECTED_FREEBOX_ENTRY_POINT = "ohana_agent.plugins.wireguard.authorize_freebox:main"
 
 
 @pytest.fixture(scope="session")

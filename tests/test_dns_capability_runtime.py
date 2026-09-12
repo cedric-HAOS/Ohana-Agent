@@ -1,4 +1,4 @@
-from plugins.dns.dns_capability_runtime import DNSCapabilityRuntime
+from ohana_agent.plugins.dns.capability_runtime import DNSCapabilityRuntime
 
 
 def test_dns_capability_runtime_initial_state() -> None:

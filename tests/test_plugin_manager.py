@@ -2,16 +2,19 @@ from pathlib import Path
 
 import pytest
 
-from observer import ObserverResult
-from plugin.plugin import Plugin
-from plugin.plugin_context import PluginContext
-from plugin.plugin_descriptor import PluginDescriptor
-from plugin.plugin_errors import PluginNotFoundError
-from plugin.plugin_events import PluginRegistered, PluginUnregistered
-from plugin.plugin_manager import PluginManager
-from plugin.plugin_manifest import PluginManifest
-from plugin.plugin_state import PluginState
-from plugins.dns.dns_plugin import DNSPlugin
+from ohana_agent.observation import ObserverResult
+from ohana_agent.plugins.dns.plugin import DNSPlugin
+from ohana_agent.plugins.runtime.plugin import Plugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_descriptor import PluginDescriptor
+from ohana_agent.plugins.runtime.plugin_errors import PluginNotFoundError
+from ohana_agent.plugins.runtime.plugin_events import (
+    PluginRegistered,
+    PluginUnregistered,
+)
+from ohana_agent.plugins.runtime.plugin_manager import PluginManager
+from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
+from ohana_agent.plugins.runtime.plugin_state import PluginState
 
 
 class FakeEventBus:

@@ -1,8 +1,12 @@
 """Tests for the Linky Téléinformation observation plugin."""
 
-from plugins.teleinformation.teleinformation_config import TeleinformationConfig
-from plugins.teleinformation.teleinformation_plugin import TeleinformationPlugin
-from plugins.teleinformation.teleinformation_result import (
+from ohana_agent.plugins.teleinformation.config import (
+    TeleinformationConfig,
+)
+from ohana_agent.plugins.teleinformation.plugin import (
+    TeleinformationPlugin,
+)
+from ohana_agent.plugins.teleinformation.result import (
     TeleinformationCheckResult,
     TeleinformationTariff,
     TeleinformationValue,

@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from administration.incidents import TsunadeIncidentRepository
-from observer import Observation, ObservationStatus
+from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 
 
 def _observation(

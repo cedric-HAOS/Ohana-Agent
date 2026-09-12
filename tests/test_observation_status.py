@@ -1,4 +1,4 @@
-from observer import ObservationStatus
+from ohana_agent.observation import ObservationStatus
 
 
 def test_observation_status_values() -> None:

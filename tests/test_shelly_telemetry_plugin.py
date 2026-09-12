@@ -2,9 +2,13 @@
 
 import pytest
 
-from plugins.shelly_telemetry.shelly_telemetry_config import ShellyTelemetryConfig
-from plugins.shelly_telemetry.shelly_telemetry_plugin import ShellyTelemetryPlugin
-from plugins.shelly_telemetry.shelly_telemetry_result import (
+from ohana_agent.plugins.shelly_telemetry.config import (
+    ShellyTelemetryConfig,
+)
+from ohana_agent.plugins.shelly_telemetry.plugin import (
+    ShellyTelemetryPlugin,
+)
+from ohana_agent.plugins.shelly_telemetry.result import (
     ShellyTelemetryCheckResult,
     ShellyTelemetryValue,
 )

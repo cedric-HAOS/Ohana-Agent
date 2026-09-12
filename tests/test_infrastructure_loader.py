@@ -4,7 +4,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from loader import InfrastructureLoader
+from ohana_agent.configuration.loaders import InfrastructureLoader
 
 
 def test_loader_returns_infrastructure_config() -> None:

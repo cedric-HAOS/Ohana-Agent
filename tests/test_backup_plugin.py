@@ -1,10 +1,14 @@
-from plugins.backup.backup_config import BackupConfig, BackupTarget, InfraBackupConfig
-from plugins.backup.backup_coordinator import (
+from ohana_agent.plugins.backup.config import (
+    BackupConfig,
+    BackupTarget,
+    InfraBackupConfig,
+)
+from ohana_agent.plugins.backup.coordinator import (
     BackupExecutionError,
     BackupExecutionResult,
 )
-from plugins.backup.backup_plugin import BackupPlugin
-from plugins.backup.infra_backup_coordinator import InfraBackupResult
+from ohana_agent.plugins.backup.infra_backup_coordinator import InfraBackupResult
+from ohana_agent.plugins.backup.plugin import BackupPlugin
 
 
 class SuccessfulCoordinator:

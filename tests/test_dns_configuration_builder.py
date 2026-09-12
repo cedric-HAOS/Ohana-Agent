@@ -1,13 +1,13 @@
 import pytest
 
-from builder import DNSConfigurationBuilder, InfrastructureBuilder
-from configuration.dns import (
-    DNSPluginConfig,
+from ohana_agent.configuration.builders import (
+    DNSConfigurationBuilder,
+    InfrastructureBuilder,
 )
-from configuration.dns import (
-    DNSPolicyConfig as DeclarativeDNSPolicyConfig,
-)
-from infrastructure import (
+from ohana_agent.configuration.dns import DNSPluginConfig
+from ohana_agent.configuration.dns import DNSPolicyConfig as DeclarativeDNSPolicyConfig
+from ohana_agent.configuration.loaders import DNSConfigLoader, InfrastructureLoader
+from ohana_agent.infrastructure import (
     Endpoint,
     EndpointType,
     Infrastructure,
@@ -15,7 +15,6 @@ from infrastructure import (
     Service,
     ServiceType,
 )
-from loader import DNSConfigLoader, InfrastructureLoader
 
 
 def build_dns_infrastructure(

@@ -14,19 +14,19 @@ from urllib.request import Request, urlopen
 import pytest
 from pydantic import ValidationError
 
-from administration import (
-    AdministrationHTTPServer,
-    AdministrationService,
-    DistributedJobConflictError,
-    DistributedJobRepository,
-    InfrastructureConfigurationRepository,
-)
-from administration.models import (
+from ohana_agent.api.http import AdministrationHTTPServer
+from ohana_agent.api.service import AdministrationService
+from ohana_agent.contracts.administration import (
     AiInferenceParameters,
     AiInferenceResult,
     DistributedJobStatus,
 )
-from plugins.backup.backup_coordinator import BackupExecutionError
+from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
+from ohana_agent.jobs.repository import (
+    DistributedJobConflictError,
+    DistributedJobRepository,
+)
+from ohana_agent.plugins.backup.coordinator import BackupExecutionError
 
 JOB_ID = "11111111-1111-4111-8111-111111111111"
 INFRASTRUCTURE_YAML = """\

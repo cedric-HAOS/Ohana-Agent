@@ -1,6 +1,6 @@
 import pytest
 
-from plugin.plugin_command import PluginCommand
+from ohana_agent.plugins.runtime.plugin_command import PluginCommand
 
 
 def test_plugin_command_contains_execution_context() -> None:

@@ -1,6 +1,6 @@
 from abc import ABC
 
-from observer import ObservationExporter
+from ohana_agent.observation import ObservationExporter
 
 
 def test_observation_exporter_is_abstract_contract() -> None:

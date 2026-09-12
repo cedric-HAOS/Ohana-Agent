@@ -10,10 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from plugins.backup.backup_config import BackupConfig, InfraBackupConfig
-from plugins.backup.backup_coordinator import BackupExecutionError
-from plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
-from plugins.backup.rclone_uploader import RcloneStreamUploader, UploadReceipt
+from ohana_agent.plugins.backup.config import BackupConfig, InfraBackupConfig
+from ohana_agent.plugins.backup.coordinator import BackupExecutionError
+from ohana_agent.plugins.backup.infra_backup_coordinator import InfraBackupCoordinator
+from ohana_agent.plugins.backup.rclone_uploader import (
+    RcloneStreamUploader,
+    UploadReceipt,
+)
 
 
 class NonClosingBytesIO(io.BytesIO):
@@ -281,7 +284,7 @@ def test_infra_backup_rejects_tmpfs_too_small_for_vision_snapshot(
         vision_database=database,
     )
     monkeypatch.setattr(
-        "plugins.backup.infra_backup_coordinator.shutil.disk_usage",
+        "ohana_agent.plugins.backup.infra_backup_coordinator.shutil.disk_usage",
         lambda _path: SimpleNamespace(free=database.stat().st_size),
     )
 

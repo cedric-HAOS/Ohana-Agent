@@ -2,11 +2,11 @@
 
 import pytest
 
-from plugin.plugin_context import PluginContext
-from plugin.plugin_runtime import PluginState
-from plugins.ntp.ntp_check_result import NTPCheckResult
-from plugins.ntp.ntp_config import NTPConfig, NTPPolicyConfig
-from plugins.ntp.ntp_plugin import NTPPlugin
+from ohana_agent.plugins.ntp.check_result import NTPCheckResult
+from ohana_agent.plugins.ntp.config import NTPConfig, NTPPolicyConfig
+from ohana_agent.plugins.ntp.plugin import NTPPlugin
+from ohana_agent.plugins.runtime.plugin_context import PluginContext
+from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 
 
 class FakeNTPCheck:

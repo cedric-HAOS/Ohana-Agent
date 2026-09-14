@@ -1,9 +1,24 @@
 """One presentation contract for Vision and the bounded Shizune companion."""
 
+import json
 from datetime import datetime
 from typing import Any
 
 from ohana_agent.tsunade.incidents import TsunadeIncident
+
+
+def followup_covers_observation(incident: TsunadeIncident) -> bool:
+    """Use persisted review provenance, including after a later redundant diagnosis."""
+    review = (incident.followup or {}).get("review") or {}
+    for item in review.get("parameters", {}).get("evidence", []):
+        if item.get("source") != "shikamaru.observation":
+            continue
+        try:
+            basis = json.loads(item["content"])["last_observed_at"]
+            return datetime.fromisoformat(basis) >= incident.last_observed_at
+        except (KeyError, TypeError, ValueError):
+            return False
+    return False
 
 
 def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
@@ -40,6 +55,19 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
             None,
         )
     elif (
+        followup_status in {"completed", "incomplete"}
+        and followup_covers_observation(incident)
+        and (
+            decision.get("decision") in {"investigate", "pending"}
+            or decision.get("verdict") == "INSUFFICIENT_CONTEXT"
+        )
+    ):
+        state, label, action = (
+            "investigation_exhausted",
+            "Investigation terminée — suite à préciser",
+            "details",
+        )
+    elif (
         incident.expertise_state == "insufficient_context"
         or decision.get("verdict") == "INSUFFICIENT_CONTEXT"
     ):
@@ -61,6 +89,7 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         "action_required": 1,
         "awaiting_authorization": 1,
         "investigate": 4,
+        "investigation_exhausted": 2,
         "analyzing": 5,
         "watch": 6,
         "resolved": 7,
@@ -96,7 +125,15 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         else None,
         "followup": {
             "status": followup_status,
-            "detail": followup.get("detail"),
+            "detail": (
+                "L’investigation et sa réévaluation sont terminées. "
+                "La cause reste à confirmer. Aucune nouvelle collecte n’est "
+                "en attente : les mêmes éléments ne déclenchent pas un nouveau "
+                "cycle. Les tests supplémentaires qui restent hors du périmètre "
+                "disponible doivent être précisés avant exécution."
+                if state == "investigation_exhausted"
+                else followup.get("detail")
+            ),
             "request_id": followup.get("request_id"),
         }
         if followup

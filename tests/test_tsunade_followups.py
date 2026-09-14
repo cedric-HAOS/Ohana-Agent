@@ -241,6 +241,13 @@ def test_authorized_collection_is_reviewed_once_and_does_not_loop(
     assert s.jobs.count("logs.investigate") == 1
     incident = s.incidents.get(s.incident.incident_id)
     assert incident.state == "active"
+    assessment = incident_assessment(incident)
+    assert assessment["state"] == "investigation_exhausted"
+    assert assessment["next_action"] == "details"
+    assert "Aucune nouvelle collecte" in assessment["followup"]["detail"]
+    with pytest.raises(ValueError, match="déjà été réévaluée"):
+        s.service.diagnose_incident(str(incident.incident_id))
+    assert s.jobs.count("ai.inference") == 2
     assert (
         sum(
             e.payload.get("job_id") == str(job.job_id) and "result" in e.payload
@@ -260,6 +267,84 @@ def test_refusal_or_deferral_never_executes(setup, choice):
     assert answer.state == ("pending" if choice == "LATER" else "answered")
     assert setup.jobs.count("logs.investigate") == 0
     assert poll(setup) is None
+
+
+def test_pending_collection_cannot_be_bypassed_by_diagnosis(setup):
+    propose(setup)
+    with pytest.raises(ValueError, match="autorisation"):
+        setup.service.diagnose_incident(str(setup.incident.incident_id))
+    assert setup.jobs.count("ai.inference") == 1
+    assert setup.jobs.count("logs.investigate") == 0
+
+
+def test_read_only_policy_collects_and_tests_without_a_pending_request(setup):
+    s = setup
+    s.service.followups.automatic_read_only = True
+    s.expertise.investigations.read_only_snapshot = lambda node: {
+        "origin": "infra-01",
+        "requested_node": node,
+        "endpoints": [{"target": "ha", "tcp": "OK", "http_status": 401}],
+    }
+    propose(s)
+    assert s.service.read_companion_requests().requests == []
+    followup = s.incidents.get(s.incident.incident_id).followup
+    req = s.incidents.get_user_request(followup["request_id"])
+    assert req.answer_source == "read_only_policy"
+    assert req.answered_by == "tsunade"
+    collected(s)
+    review = poll(s)
+    snapshot = next(
+        e
+        for e in review.parameters["evidence"]
+        if e["source"] == "diagnostics.read_only"
+    )
+    assert json.loads(snapshot["content"])["origin"] == "infra-01"
+    s.service.complete_job(
+        str(review.job_id),
+        {
+            "worker_id": "worker",
+            "attempt": review.attempt,
+            "status": "SUCCEEDED",
+            "result": ai_result(incomplete=True),
+        },
+    )
+    assert poll(s) is None
+    assert s.jobs.count("logs.investigate") == 1
+    assert s.jobs.count("ai.inference") == 2
+
+
+def test_completed_review_remains_visible_after_redundant_legacy_analysis(setup):
+    s = setup
+    propose(s)
+    req = authorize(s)
+    collected(s)
+    review = poll(s)
+    result = ai_result()
+    result["verdict"] = "KO"
+    result["findings"] = [
+        {"code": "LOG_ANOMALY", "evidence": "logs.analysis", "confidence": 0.8}
+    ]
+    s.service.complete_job(
+        str(review.job_id),
+        {
+            "worker_id": "worker",
+            "attempt": review.attempt,
+            "status": "SUCCEEDED",
+            "result": result,
+        },
+    )
+    assert s.incidents.get_followup(str(req.request_id))["status"] == "completed"
+    # Existing production data may contain a later diagnosis without the collection.
+    s.expertise.record_ai_result(s.incident.incident_id, uuid4(), result)
+    incident = s.incidents.get(s.incident.incident_id)
+    assert incident_assessment(incident)["state"] == "investigation_exhausted"
+    with pytest.raises(ValueError, match="déjà été réévaluée"):
+        s.service.diagnose_incident(str(incident.incident_id))
+    # A new observation makes a new diagnosis meaningful again.
+    refreshed = incident.model_copy(
+        update={"last_observed_at": incident.last_observed_at + timedelta(days=1)}
+    )
+    assert incident_assessment(refreshed)["next_action"] == "diagnose"
 
 
 @pytest.mark.parametrize(

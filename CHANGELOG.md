@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [1.28.0] — 2026-09-14 — Investigations en lecture seule automatiques
+
+- Les collectes ciblées ne nécessitent plus d’accord Shizune ; leur autorisation est tracée comme politique de lecture seule.
+- Tests DNS, TCP, HTTP HEAD et métriques de l’hôte Agent sur les cibles déclarées ; résultats intégrés à la réévaluation Katsuyu, origine et limites explicites.
+- Une collecte terminée et réévaluée affiche sa limite et la suite à préciser,
+  y compris pour les dossiers persistés suivis d’une ancienne relance redondante.
+- Le diagnostic manuel ne contourne plus une collecte à autoriser ou en cours,
+  et ne relance plus les mêmes observations après leur réévaluation complémentaire.
+- Une observation plus récente permet de demander une nouvelle analyse.
+
 ## [1.27.0] — 2026-09-12 — Architecture et investigations complémentaires
 
 - Migration de tout le code applicatif sous `src/ohana_agent` : jobs, compagnons,

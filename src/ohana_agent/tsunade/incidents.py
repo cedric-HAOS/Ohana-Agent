@@ -181,7 +181,7 @@ class TsunadeUserRequest(AdministrationModel):
     deferred_until: datetime | None = None
     answered_at: datetime | None = None
     answer: UserRequestChoice | None = None
-    answer_source: ValidationSource | None = None
+    answer_source: Literal["vision", "shizune", "read_only_policy"] | None = None
     answered_by: str | None = None
 
 

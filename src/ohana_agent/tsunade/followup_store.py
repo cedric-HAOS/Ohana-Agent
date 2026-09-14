@@ -53,8 +53,9 @@ class FollowupPersistence:
                 return None
             existing = self._connection.execute(
                 """SELECT 1 FROM tsunade_followups WHERE incident_id=? AND
-                (basis=? OR status IN ('pending','authorized','queued','reviewing'))""",
-                (incident_id, basis),
+                (basis=? OR origin_job_id=? OR
+                 status IN ('pending','authorized','queued','reviewing'))""",
+                (incident_id, basis, origin_job_id),
             ).fetchone()
             if existing:
                 return None
@@ -145,6 +146,8 @@ class FollowupPersistence:
         choice: str,
         device_id: str,
         job: dict[str, Any] | None,
+        *,
+        automatic: bool = False,
     ) -> dict[str, Any]:
         now = datetime.now(ZoneInfo("Europe/Paris"))
         if choice not in {"AUTHORIZE", "REFUSE"}:
@@ -164,23 +167,33 @@ class FollowupPersistence:
             )
             self._connection.execute(
                 """UPDATE tsunade_user_requests SET state='answered',answered_at=?,
-                answer=?,answer_source='shizune',answered_by=?,deferred_until=NULL
+                answer=?,answer_source=?,answered_by=?,deferred_until=NULL
                 WHERE request_id=?""",
-                (now.isoformat(), choice, device_id, request_id),
+                (
+                    now.isoformat(),
+                    choice,
+                    "read_only_policy" if automatic else "shizune",
+                    device_id,
+                    request_id,
+                ),
             )
             self._event(
                 UUID(request["incident_id"]),
                 kind="decision",
                 occurred_at=now,
                 summary=(
-                    "Collecte complémentaire autorisée depuis Shizune."
+                    (
+                        "Investigation en lecture seule autorisée par la politique."
+                        if automatic
+                        else "Collecte complémentaire autorisée depuis Shizune."
+                    )
                     if choice == "AUTHORIZE"
                     else "Collecte complémentaire refusée."
                 ),
                 payload={
                     "request_id": request_id,
                     "authorized": choice == "AUTHORIZE",
-                    "source": "shizune",
+                    "source": "read_only_policy" if automatic else "shizune",
                     "answered_by": device_id,
                 },
             )

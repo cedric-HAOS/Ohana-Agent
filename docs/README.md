@@ -15,6 +15,7 @@
 - [Commandes](Guides/Commandes.md)
 - [Plugins](Guides/Plugins.md)
 - [Cycle journaux, Tsunade et Katsuyu](tsunade-worker-cycle.md)
+- [Investigations en lecture seule](read-only-investigations.md)
 - [Organisation des fichiers Linux](Deployment/Linux-Filesystem.md)
 
 ## Contrats et intégrations

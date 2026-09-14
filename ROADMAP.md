@@ -19,7 +19,7 @@ domaines séparés et guides classés dans `docs/`. Le parcours de collecte avec
 autorisation Shizune, exécution Katsuyu et réévaluation reste intégré.
 Voir [l’organisation actuelle](docs/architecture-evolution.md).
 
-**Version : 1.27.0 — Architecture regroupée et investigations complémentaires autorisées.**
+**Version : 1.28.0 — Architecture regroupée et investigations complémentaires autorisées.**
 
 Le contrôle des journaux réévalue les sources avant l’arrêt de Katsuyu. Les
 résultats en attente survivent au redémarrage. Les incidents réseau des équipements

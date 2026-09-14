@@ -13,9 +13,11 @@ from uuid import UUID, uuid4
 
 from pydantic import Field
 
+from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.contracts.administration import AdministrationModel
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
+from ohana_agent.tsunade.read_only import diagnostic_snapshot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,10 +57,12 @@ class InvestigationExecutor:
         plugins: PluginAdministrationRepository,
         host_health_reader: Callable[[], dict[str, Any]],
         jobs: DistributedJobRepository | None = None,
+        infrastructure_reader: Callable[[], InfrastructureConfig] | None = None,
     ) -> None:
         self.plugins = plugins
         self.host_health_reader = host_health_reader
         self.jobs = jobs
+        self.infrastructure_reader = infrastructure_reader
         self._operations: dict[str, tuple[str, int, Callable[[], dict[str, Any]]]] = {
             "network.ping": (
                 "Test configured network presence",
@@ -109,6 +113,13 @@ class InvestigationExecutor:
                 self._operations.items()
             )
         ]
+
+    def read_only_snapshot(self, node_id: str) -> dict[str, Any]:
+        if self.infrastructure_reader is None:
+            return {"status": "unavailable", "reason": "Architecture indisponible"}
+        return diagnostic_snapshot(
+            self.infrastructure_reader(), node_id, self.host_health_reader
+        )
 
     def execute(self, payload: dict[str, Any]) -> InvestigationResult:
         request = InvestigationRequest.model_validate(payload)

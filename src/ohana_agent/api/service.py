@@ -46,7 +46,10 @@ from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
 )
 from ohana_agent.tsunade.followups import TsunadeFollowupService
-from ohana_agent.tsunade.incident_summary import incident_assessment
+from ohana_agent.tsunade.incident_summary import (
+    followup_covers_observation,
+    incident_assessment,
+)
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 from ohana_agent.tsunade.investigations import (
     InvestigationExecutor,
@@ -102,6 +105,7 @@ class AdministrationService:
         log_window_hours: int = 24,
         log_max_bytes: int = 2 * 1024 * 1024,
         log_timeout_seconds: int = 900,
+        automatic_read_only_investigations: bool = False,
         on_log_analysis_changed: (
             Callable[[DistributedLogAnalysisConfig], None] | None
         ) = None,
@@ -188,6 +192,7 @@ class AdministrationService:
                     self.log_timeout_seconds,
                 ),
                 self._publish_notification,
+                automatic_read_only=automatic_read_only_investigations,
             )
             if incident_repository is not None
             and job_repository is not None
@@ -427,6 +432,8 @@ class AdministrationService:
     def list_incidents(self, state: str = "active") -> object:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
+        if self.followups is not None and self.followups.automatic_read_only:
+            self._reconcile_followup_proposals()
         summary = self.incident_repository.statistics()
         latest_log_health = None
         if self.job_repository is not None:
@@ -690,6 +697,30 @@ class AdministrationService:
         if self.expertise_service is None:
             raise LookupError("Tsunade expertise is unavailable")
         with self._worker_cycle_lock:
+            if self.followups is not None and self.followups.automatic_read_only:
+                self._reconcile_followup_proposals()
+            if self.incident_repository is not None:
+                incident = self.incident_repository.get(incident_id)
+                followup = incident.followup or {}
+                if followup.get("status") in {
+                    "pending",
+                    "authorized",
+                    "queued",
+                    "reviewing",
+                }:
+                    raise ValueError(
+                        "Une collecte attend votre autorisation dans Shizune "
+                        "ou est déjà en cours. Consultez son suivi."
+                    )
+                if followup.get("status") in {
+                    "completed",
+                    "incomplete",
+                } and followup_covers_observation(incident):
+                    raise ValueError(
+                        "La collecte complémentaire a déjà été réévaluée. "
+                        "Un nouveau périmètre ou de nouvelles observations sont "
+                        "nécessaires ; relancer les mêmes données ne l’approfondit pas."
+                    )
             return self.expertise_service.diagnose(
                 incident_id,
                 operator_requested=True,

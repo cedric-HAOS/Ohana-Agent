@@ -1985,6 +1985,9 @@ def build_production_agent(
             plugins=plugin_repository,
             host_health_reader=lambda: host_health_monitor.collect().to_dict(),
             jobs=job_repository,
+            infrastructure_reader=InfrastructureConfigurationRepository(
+                infrastructure_config_path
+            ).read,
         )
         expertise_service = TsunadeExpertiseService(
             incidents=incident_repository,
@@ -2086,6 +2089,7 @@ def build_production_agent(
                 else None
             ),
             expertise_service=expertise_service,
+            automatic_read_only_investigations=True,
             log_analysis_enabled=administration_config.jobs.logs.enabled,
             log_analysis_schedule=administration_config.jobs.logs.schedule,
             log_sources=administration_config.jobs.logs.sources,

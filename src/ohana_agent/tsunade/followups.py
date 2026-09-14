@@ -29,6 +29,8 @@ class TsunadeFollowupService:
         create_job: Callable[[dict[str, Any]], Any],
         policy: Callable[[], tuple[bool, tuple[str, ...], int, int]],
         notify: Callable[[dict[str, Any]], None],
+        *,
+        automatic_read_only: bool = False,
     ) -> None:
         self.incidents = incidents
         self.jobs = jobs
@@ -36,6 +38,7 @@ class TsunadeFollowupService:
         self.create_job = create_job
         self.policy = policy
         self.notify = notify
+        self.automatic_read_only = automatic_read_only
 
     def consider(self, job: Any) -> None:
         """Offer one concrete collection per unchanged set of observations."""
@@ -45,11 +48,26 @@ class TsunadeFollowupService:
         if not incident_id or not suggestions:
             return
         evidence = job.parameters.get("evidence", [])
-        if any(item.get("source") == "investigation.followup" for item in evidence):
+        if any(
+            item.get("source")
+            == (
+                "diagnostics.read_only"
+                if self.automatic_read_only
+                else "investigation.followup"
+            )
+            for item in evidence
+        ):
             return  # A follow-up review never starts another investigation loop.
         incident = self.incidents.get(incident_id)
         if incident.state != "active":
             return
+        previous = incident.followup or {}
+        if previous.get("status") == "refused":
+            return
+        if previous.get("status") == "pending":
+            request = self.incidents.get_user_request(previous["request_id"])
+            if request.deferred_until is not None:
+                return
         for item in evidence:
             if item.get("source") == "shikamaru.observation":
                 try:
@@ -63,9 +81,12 @@ class TsunadeFollowupService:
             enabled
             and incident.capability_id == "logs.health"
             and incident.node_id in sources
-            and any(
-                word in " ".join(suggestions).casefold()
-                for word in ("journal", "log", "trace", "collect")
+            and (
+                self.automatic_read_only
+                or any(
+                    word in " ".join(suggestions).casefold()
+                    for word in ("journal", "log", "trace", "collect")
+                )
             )
         )
         findings = incident.context.get("findings", [])
@@ -127,6 +148,8 @@ class TsunadeFollowupService:
                 sort_keys=True,
             ).encode()
         ).hexdigest()
+        if self.automatic_read_only:
+            basis += ":read-only-v1"
         proposal = self.incidents.propose_followup(
             str(incident_id),
             str(job.job_id),
@@ -137,11 +160,26 @@ class TsunadeFollowupService:
                 "pattern": pattern,
                 "max_bytes": max_bytes,
                 "timeout": timeout,
+                "read_only_probes": self.automatic_read_only,
                 "reason": "Vérifier les anomalies observées avec une collecte ciblée "
                 "avant de réévaluer les hypothèses de Katsuyu.",
             },
         )
+        if not proposal and self.automatic_read_only:
+            latest = self.incidents.latest_followup(str(incident_id))
+            if latest and latest["status"] == "pending":
+                request = self.incidents.get_user_request(latest["request_id"])
+                if request.deferred_until is None:
+                    self.respond(
+                        latest["request_id"], "tsunade", "AUTHORIZE", automatic=True
+                    )
+            return
         if proposal:
+            if self.automatic_read_only:
+                self.respond(
+                    proposal["request_id"], "tsunade", "AUTHORIZE", automatic=True
+                )
+                return
             self.notify(
                 {
                     "schema_version": 1,
@@ -154,7 +192,9 @@ class TsunadeFollowupService:
                 }
             )
 
-    def respond(self, request_id: str, device_id: str, choice: str) -> object:
+    def respond(
+        self, request_id: str, device_id: str, choice: str, *, automatic: bool = False
+    ) -> object:
         request = self.incidents.get_user_request(request_id)
         followup = self.incidents.get_followup(request_id)
         if request.state == "answered" and request.answer == choice:
@@ -186,7 +226,9 @@ class TsunadeFollowupService:
                 "parameters": parameters.model_dump(mode="json"),
                 "timeout": plan["timeout"],
             }
-        self.incidents.answer_followup(request_id, choice, device_id, job)
+        self.incidents.answer_followup(
+            request_id, choice, device_id, job, automatic=automatic
+        )
         self.resume()
         return self.incidents.get_user_request(request_id)
 
@@ -279,6 +321,40 @@ class TsunadeFollowupService:
                 review = self.expertise.prepare_followup_review(
                     incident, followup["request_id"], job
                 )
+                if self.automatic_read_only:
+                    try:
+                        snapshot = self.expertise.investigations.read_only_snapshot(
+                            incident.node_id
+                        )
+                    except Exception as error:
+                        snapshot = {
+                            "status": "unavailable",
+                            "error": type(error).__name__,
+                        }
+                    review["parameters"]["evidence"].append(
+                        {
+                            "source": "diagnostics.read_only",
+                            "content": json.dumps(snapshot, ensure_ascii=False),
+                        }
+                    )
+                    review["parameters"]["question"] += (
+                        " Distingue chaque lieu de mesure. Exploite les résultats "
+                        "DNS/TCP/HTTP et système joints ; ne redemande pas les tests "
+                        "déjà exécutés. Précise les tests manquants et leur cible."
+                    )
+                    self.incidents.append_record(
+                        incident.incident_id,
+                        {
+                            "kind": "investigation",
+                            "summary": "Tests en lecture seule depuis Agent : "
+                            "DNS, TCP, HTTP et état de l’hôte.",
+                            "payload": {
+                                "source": "read_only_policy",
+                                "collection_job_id": str(job.job_id),
+                                "result": snapshot,
+                            },
+                        },
+                    )
                 self.incidents.update_followup(
                     followup["request_id"],
                     "reviewing",

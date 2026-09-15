@@ -55,6 +55,53 @@ def cycle(tmp_path: Path):
     incidents.close()
 
 
+def test_historical_baseline_is_redacted_before_job_persistence(
+    cycle, monkeypatch, tmp_path
+):
+    service, jobs, _incidents, now = cycle
+    service.log_analysis_enabled = True
+    service.log_sources = ("ha-01",)
+    secrets = ("legacy.private*One!", "legacy.private*Two!")
+    previous = {
+        "sources": [
+            {
+                "source": "ha-01",
+                "findings": [
+                    {
+                        "signature": f"connection failed /stok={secret}/ds",
+                        "occurrences": count,
+                    }
+                    for secret, count in zip(secrets, (3, 5), strict=True)
+                ],
+            }
+        ]
+    }
+    monkeypatch.setattr(jobs, "latest_successful_result", lambda _kind: previous)
+    created = service.request_log_health_check(now=now[0])
+    # A fresh connection sees only masked parameters, before any worker runs.
+    reopened = DistributedJobRepository(tmp_path / "jobs.db")
+    try:
+        persisted = reopened.get(str(created.job_id))
+    finally:
+        reopened.close()
+    encoded = json.dumps(persisted.parameters)
+    assert all(secret not in encoded for secret in secrets)
+    assert persisted.parameters["baseline"] == [
+        {
+            "source": "ha-01",
+            "signature": "connection failed /stok=[redacted]/ds",
+            "occurrences": count,
+        }
+        for count in (3, 5)
+    ]
+    claim = poll(service).job
+    assert claim.job_id == created.job_id
+    assert claim.parameters == persisted.parameters
+    assert previous["sources"][0]["findings"][0]["signature"].endswith(
+        f"{secrets[0]}/ds"
+    )
+
+
 def poll(service):
     return service.next_worker_job(
         {

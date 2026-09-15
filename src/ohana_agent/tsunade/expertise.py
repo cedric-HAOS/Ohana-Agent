@@ -20,6 +20,7 @@ from ohana_agent.contracts.administration import (
     AiInferenceParameters,
     AiInferenceResult,
 )
+from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.incidents import (
     TsunadeExperience,
     TsunadeIncident,
@@ -1239,9 +1240,7 @@ class TsunadeExpertiseService:
         def safe(item: object) -> object:
             # Also protect evidence rebuilt from findings persisted by older workers.
             if isinstance(item, str):
-                return re.sub(
-                    r"(/stok=)[^/\s\"'<>]+", r"\1[redacted]", item, flags=re.I
-                )
+                return redact_session_paths(item)
             if isinstance(item, dict):
                 return {key: safe(content) for key, content in item.items()}
             if isinstance(item, (list, tuple)):

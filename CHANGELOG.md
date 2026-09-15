@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Le contrôle des journaux masque les paramètres de session caméra dans sa
+  baseline historique avant persistance et envoi à Katsuyu. Le filtrage est
+  partagé avec la construction des preuves IA ; les compteurs sont conservés.
+
+## Non publié
+
 - Les paramètres de session caméra sont masqués dans les preuves JSON construites
   pour Katsuyu, y compris depuis les anomalies enregistrées par un ancien worker.
 - Les instructions de réévaluation distinguent les anomalies non datées de

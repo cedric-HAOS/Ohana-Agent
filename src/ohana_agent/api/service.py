@@ -41,6 +41,7 @@ from ohana_agent.jobs.repository import (
     DistributedJobRepository,
 )
 from ohana_agent.plugins.administration import PluginAdministrationRepository
+from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseConflictError,
     TsunadeExpertiseService,
@@ -847,7 +848,11 @@ class AdministrationService:
                     baseline.append(
                         {
                             "source": source.get("source"),
-                            "signature": finding.get("signature"),
+                            "signature": (
+                                redact_session_paths(finding["signature"])
+                                if isinstance(finding.get("signature"), str)
+                                else finding.get("signature")
+                            ),
                             "occurrences": finding.get("occurrences"),
                         }
                     )

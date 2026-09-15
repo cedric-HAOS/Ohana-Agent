@@ -189,6 +189,72 @@ def collected(s, *, matches=1, crash=False):
     return job, payload
 
 
+@pytest.mark.parametrize(
+    "matches,anomalies,truncated", [(0, 0, False), (58, 0, False), (1, 1, True)]
+)
+def test_review_keeps_original_findings_separate_from_targeted_search(
+    setup, matches, anomalies, truncated
+):
+    s = setup
+    propose(s)
+    authorize(s)
+    job = poll(s)
+    findings = (
+        [
+            {
+                "source": "ha-01",
+                "signature": "timeout",
+                "category": "timeout",
+                "severity": "error",
+                "summary": "New connection timeout",
+                "occurrences": 1,
+                "trend": "new",
+            }
+        ]
+        if anomalies
+        else []
+    )
+    result = {
+        "status": "KO" if anomalies else "OK",
+        "analyzed_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(),
+        "source": "ha-01",
+        "pattern": "timeout",
+        "matched_lines": matches,
+        "findings": findings,
+        "truncated": truncated,
+    }
+    s.service.complete_job(
+        str(job.job_id),
+        {
+            "worker_id": "worker",
+            "attempt": job.attempt,
+            "status": "SUCCEEDED",
+            "result": result,
+        },
+    )
+    review = poll(s)
+    evidence = {
+        item["source"]: json.loads(item["content"])
+        for item in review.parameters["evidence"]
+    }
+    original = evidence["logs.analysis"]["findings"]
+    assert original[0]["summary"] == "Connection timeout"
+    assert original[0]["occurrences"] == 2
+    targeted = evidence["investigation.followup"]
+    assert targeted["result"]["status"] == result["status"]
+    assert targeted["result"]["matched_lines"] == matches
+    assert targeted["result"]["truncated"] == truncated
+    assert len(targeted["result"]["findings"]) == anomalies
+    if anomalies:
+        assert targeted["result"]["findings"][0]["summary"] == "New connection timeout"
+    assert targeted["scope"] == job.parameters
+    assert evidence["shikamaru.observation"]["last_observed_at"]
+    assert "pas les anomalies" in review.parameters["question"]
+    assert (
+        "ne démontrent pas leur persistance actuelle" in review.parameters["question"]
+    )
+
+
 @pytest.mark.parametrize("matches", [0, 1])
 @pytest.mark.parametrize("crash", [False, True])
 def test_authorized_collection_is_reviewed_once_and_does_not_loop(

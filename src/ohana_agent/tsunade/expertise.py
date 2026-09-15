@@ -553,7 +553,20 @@ class TsunadeExpertiseService:
         self, incident: TsunadeIncident, request_id: str, collection: Any
     ) -> dict[str, Any]:
         """Include search scope and limits without asserting a healthy system."""
-        payload = self._ai_parameters(incident, None, [], collection.result, [])
+        # Keep the original findings: a targeted search can return no anomalies
+        # without explaining or invalidating the earlier observation.
+        payload = self._ai_parameters(incident, None, [], incident.context, [])
+        payload["parameters"]["question"] += (
+            " Les preuves logs.analysis décrivent les anomalies à l'origine de "
+            "l'incident, datées par shikamaru.observation ; elles ne démontrent "
+            "pas leur persistance actuelle. Compare-les au résultat plus récent "
+            "investigation.followup, uniquement dans sa fenêtre et son périmètre. "
+            "matched_lines compte les lignes correspondant au filtre, pas les "
+            "anomalies : findings vide signifie qu'aucune anomalie n'a été "
+            "reconnue dans cette collecte. Mentionne la troncature éventuelle. "
+            "Ne conclus ni à une panne persistante sur le seul historique, ni "
+            "à une résolution globale sur cette seule recherche ciblée."
+        )
         payload["parameters"]["evidence"].append(
             {
                 "source": "investigation.followup",

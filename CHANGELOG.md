@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [1.29.1] — 2026-09-15 — Preuves des réévaluations Tsunade
+
+- Les réévaluations Tsunade conservent les anomalies initiales séparément de la
+  collecte ciblée récente. Elles distinguent lignes correspondantes et anomalies,
+  avec les fenêtres et limites de chaque preuve pour éviter de déduire une panne
+  persistante du seul historique ou une résolution d'une recherche sans anomalie.
+
 ## [1.29.0] — 2026-09-15 — Configuration et contrôles Supervisor
 
 - Les investigations examinent la configuration MQTT d’Agent et les options,

@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from threading import Lock, Thread
 from typing import Any, Literal
@@ -455,7 +455,7 @@ class TsunadeExpertiseService:
                 "L’analyse Katsuyu ne dispose pas d’un contexte suffisant "
                 "pour confirmer une cause."
             ),
-            reason=(result.summary or "Le contexte reste insuffisant."),
+            reason="Les éléments disponibles ne permettent pas de confirmer une cause.",
             confidence=0.60,
             recommended_action=(
                 result.recommended_investigation[0]
@@ -482,6 +482,21 @@ class TsunadeExpertiseService:
             return
         result = AiInferenceResult.model_validate(payload)
         decision = self._decision_from_ai_result(result)
+        collection_facts = self._followup_collection_facts(evidence or [])
+        if result.verdict == "INSUFFICIENT_CONTEXT" and collection_facts:
+            truncation = (
+                "Collecte tronquée."
+                if collection_facts["truncated"]
+                else "Collecte non tronquée."
+            )
+            reason = (
+                f"Recherche ciblée : {collection_facts['matched_lines']} lignes "
+                f"correspondantes, {collection_facts['anomaly_count']} anomalies "
+                f"reconnues. {truncation} Ce résultat porte uniquement sur le "
+                "filtre et la fenêtre de la collecte ; il ne suffit pas à "
+                "confirmer une cause ou une résolution globale."
+            )
+            decision = replace(decision, reason=reason)
         hypotheses = [
             hypothesis.model_dump(mode="json") for hypothesis in result.hypotheses
         ]
@@ -530,6 +545,7 @@ class TsunadeExpertiseService:
                     "missing_context": result.missing_context,
                     "investigation_commands": investigation_commands,
                     "metrics": result.metrics.model_dump(mode="json"),
+                    "collection_facts": collection_facts,
                 },
             },
         )
@@ -549,6 +565,35 @@ class TsunadeExpertiseService:
                 },
             )
 
+    @staticmethod
+    def _followup_collection_facts(evidence: list[dict[str, Any]]) -> dict | None:
+        """Use only explicit, typed collection facts, never model prose."""
+        for item in evidence:
+            if item.get("source") != "investigation.followup":
+                continue
+            try:
+                document = json.loads(item["content"])
+                result = document["result"]
+                matches = result["matched_lines"]
+                findings = result["findings"]
+                truncated = result["truncated"]
+            except (ValueError, TypeError, KeyError):
+                continue
+            if (
+                type(matches) is not int
+                or matches < 0
+                or not isinstance(findings, list)
+                or type(truncated) is not bool
+            ):
+                continue
+            return {
+                "source": "investigation.followup",
+                "matched_lines": matches,
+                "anomaly_count": len(findings),
+                "truncated": truncated,
+            }
+        return None
+
     def prepare_followup_review(
         self, incident: TsunadeIncident, request_id: str, collection: Any
     ) -> dict[str, Any]:
@@ -563,7 +608,12 @@ class TsunadeExpertiseService:
             "investigation.followup, uniquement dans sa fenêtre et son périmètre. "
             "matched_lines compte les lignes correspondant au filtre, pas les "
             "anomalies : findings vide signifie qu'aucune anomalie n'a été "
-            "reconnue dans cette collecte. Mentionne la troncature éventuelle. "
+            "reconnue dans cette collecte. truncated=false signifie que la "
+            "collecte n'est pas tronquée ; seule la valeur true prouve une "
+            "troncature. Une fenêtre temporelle limitée n'est pas une troncature. "
+            "Une anomalie sans first_at/last_at est non datée : l'heure de "
+            "collecte ne prouve pas qu'elle est récente ni qu'elle appartient "
+            "à la fenêtre demandée. "
             "Ne conclus ni à une panne persistante sur le seul historique, ni "
             "à une résolution globale sur cette seule recherche ciblée."
         )
@@ -1186,8 +1236,20 @@ class TsunadeExpertiseService:
 
     @staticmethod
     def _bounded_json(value: object) -> str:
+        def safe(item: object) -> object:
+            # Also protect evidence rebuilt from findings persisted by older workers.
+            if isinstance(item, str):
+                return re.sub(
+                    r"(/stok=)[^/\s\"'<>]+", r"\1[redacted]", item, flags=re.I
+                )
+            if isinstance(item, dict):
+                return {key: safe(content) for key, content in item.items()}
+            if isinstance(item, (list, tuple)):
+                return [safe(content) for content in item]
+            return item
+
         encoded = json.dumps(
-            value,
+            safe(value),
             ensure_ascii=False,
             default=str,
             separators=(",", ":"),

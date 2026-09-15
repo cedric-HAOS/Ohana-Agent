@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## Non publié
+
+- Les paramètres de session caméra sont masqués dans les preuves JSON construites
+  pour Katsuyu, y compris depuis les anomalies enregistrées par un ancien worker.
+- Les instructions de réévaluation distinguent les anomalies non datées de
+  l'heure de collecte ; leur appartenance à la fenêtre n'est pas présumée.
+
+- Pour un diagnostic IA au contexte insuffisant, Tsunade construit son motif
+  depuis les compteurs et le statut de troncature explicites de la collecte.
+  Le résumé IA reste une hypothèse conservée séparément ; une fenêtre limitée
+  n'est plus présentée par le motif Tsunade comme une preuve de troncature.
+
 ## [1.29.1] — 2026-09-15 — Preuves des réévaluations Tsunade
 
 - Les réévaluations Tsunade conservent les anomalies initiales séparément de la

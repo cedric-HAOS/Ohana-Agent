@@ -107,6 +107,76 @@ def setup(tmp_path):
     incidents.close()
 
 
+@pytest.mark.parametrize("truncated", [False, True, None, "false"])
+def test_incomplete_review_uses_collection_facts_not_ai_truncation_claim(
+    setup, truncated
+):
+    s = setup
+    result = ai_result(incomplete=True)
+    result["summary"] = "Les résultats sont tronqués, donc inutilisables."
+    job_id = uuid4()
+    evidence = [
+        {
+            "source": "investigation.followup",
+            "content": json.dumps(
+                {
+                    "result": {
+                        "matched_lines": 0,
+                        "findings": [],
+                        "truncated": truncated,
+                    }
+                }
+            ),
+        }
+    ]
+    s.expertise.record_ai_result(
+        s.incident.incident_id, job_id, result, evidence=evidence
+    )
+    # A completion replay must keep the same deterministic explanation.
+    s.expertise.record_ai_result(
+        s.incident.incident_id, job_id, result, evidence=evidence
+    )
+    incident = s.incidents.get(s.incident.incident_id)
+    records = [e for e in incident.events if e.kind == "diagnostic"]
+    assert len(records) == 1
+    diagnostic = records[0].payload
+    assert diagnostic["decision"] == "watch"
+    assert diagnostic["summary"] == result["summary"]
+    assert diagnostic["epistemic_status"] == "hypothesis"
+    assert "inutilisables" not in diagnostic["reason"]
+    if type(truncated) is bool:
+        assert diagnostic["collection_facts"]["truncated"] is truncated
+        assert "0 lignes correspondantes, 0 anomalies reconnues" in diagnostic["reason"]
+        assert (
+            "Collecte tronquée." if truncated else "Collecte non tronquée."
+        ) in diagnostic["reason"]
+    else:
+        assert diagnostic["collection_facts"] is None
+        assert "tronquée" not in diagnostic["reason"]
+
+
+def test_review_redacts_camera_session_from_previously_persisted_findings(setup):
+    s = setup
+    secret = "legacy.private*Token!"
+    incident = s.incidents.get(s.incident.incident_id)
+    incident.context["findings"][0]["summary"] = f"failed /stok={secret}/ds"
+    incident.context["findings"][0]["references"] = [
+        f"/stok={secret}/ds",
+        "sensor.camera",
+    ]
+    collection = SimpleNamespace(
+        job_id=uuid4(),
+        parameters={"pattern": "timeout"},
+        result={"matched_lines": 0, "findings": [], "truncated": False},
+    )
+    review = s.expertise.prepare_followup_review(incident, str(uuid4()), collection)
+    encoded = json.dumps(review)
+    assert secret not in encoded
+    assert "/stok=[redacted]/ds" in encoded
+    assert "sensor.camera" in encoded
+    assert secret in incident.context["findings"][0]["summary"]
+
+
 def poll(s):
     return s.service.next_worker_job(
         {"worker_id": "worker", "supported_types": ["ai.inference", "logs.investigate"]}

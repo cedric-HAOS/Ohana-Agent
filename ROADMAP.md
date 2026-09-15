@@ -192,7 +192,7 @@ d'auto-réparation implicite.
 - enrichissement du SDK et de la documentation des capacités des plugins ;
 - préparation d'une supervision multi-site sans changer la source de vérité.
 
-**Statut : exploration.**
+**Statut : abandonné.**
 
 ---
 

@@ -257,6 +257,36 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
         repository.close()
 
 
+def test_infra_log_attribution_preserves_legacy_incident_after_reopen(tmp_path):
+    path = tmp_path / "incidents.db"
+    repository = TsunadeIncidentRepository(path)
+    legacy = repository.process(
+        replace(
+            _observation(ObservationStatus.UNHEALTHY, datetime.now(UTC)),
+            service="home-assistant",
+            capability="logs.health",
+        )
+    )
+    repository.close()
+    repository = TsunadeIncidentRepository(path)
+    try:
+        job = uuid4()
+        result = {"sources": [{"source": "infra-01", "status": "KO", "findings": []}]}
+        assert repository.record_log_health(job, result) == [legacy.incident_id]
+        assert repository.record_log_health(job, result) == [legacy.incident_id]
+        incident = repository.get(legacy.incident_id)
+        assert incident.service_id == "system-journal"
+        assert incident.started_at == legacy.started_at
+        assert len(repository.list(state="active")) == 1
+        repository.record_log_health(
+            uuid4(),
+            {"sources": [{"source": "infra-01", "status": "OK", "findings": []}]},
+        )
+        assert repository.get(legacy.incident_id).state == "resolved"
+    finally:
+        repository.close()
+
+
 def test_repair_requires_authorization_and_experience_requires_confirmation(
     tmp_path: Path,
 ) -> None:

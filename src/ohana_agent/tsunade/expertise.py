@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -20,6 +21,7 @@ from ohana_agent.contracts.administration import (
     AiInferenceParameters,
     AiInferenceResult,
 )
+from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
 from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.incidents import (
     TsunadeExperience,
@@ -398,13 +400,35 @@ class TsunadeExpertiseService:
                 if incident.equipment_id in item.get("sources", [])
             ],
         }
+        reviewed = {
+            fingerprint
+            for event in incident.events
+            for fingerprint in event.payload.get("reviewed_correlations", [])
+        }
+        fingerprints = []
+        new_correlations = []
+        for correlation in self._compact_correlations(evidence):
+            canonical = {
+                **correlation,
+                "sources": sorted(correlation.get("sources") or []),
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(canonical, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            fingerprints.append(fingerprint)
+            if fingerprint not in reviewed:
+                new_correlations.append(correlation)
+        evidence["new_correlations"] = new_correlations
         self.diagnose(incident_id, log_result=evidence)
         self.incidents.append_record(
             incident_id,
             {
                 "kind": "investigation",
                 "summary": "Tsunade a réévalué le dernier contrôle des journaux.",
-                "payload": {"review_job_id": str(job_id)},
+                "payload": {
+                    "review_job_id": str(job_id),
+                    "reviewed_correlations": fingerprints,
+                },
             },
         )
 
@@ -421,7 +445,7 @@ class TsunadeExpertiseService:
             return TsunadeDecisionResult(
                 decision="watch",
                 source="katsuyu_ai",
-                conclusion=(result.interpretation.strip() or result.summary),
+                conclusion=ai_conclusion("OK"),
                 reason=(
                     "Katsuyu AI n’identifie pas d’élément suffisant pour "
                     "justifier une intervention."
@@ -435,7 +459,7 @@ class TsunadeExpertiseService:
             return TsunadeDecisionResult(
                 decision="investigate",
                 source="katsuyu_ai",
-                conclusion=(result.interpretation.strip() or result.summary),
+                conclusion=ai_conclusion("KO"),
                 reason=(
                     "L’analyse corrélée met en évidence des éléments qui "
                     "méritent une investigation, sans autoriser de correction."
@@ -791,7 +815,11 @@ class TsunadeExpertiseService:
             for finding in source.get("findings", [])[:64]
             if isinstance(finding, dict)
         ]
-        correlations = cls._compact_correlations(payload)
+        correlations = (
+            payload["new_correlations"]
+            if "new_correlations" in payload
+            else cls._compact_correlations(payload)
+        )
 
         if not findings:
             return TsunadeDecisionResult(

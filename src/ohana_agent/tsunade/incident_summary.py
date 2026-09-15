@@ -4,6 +4,8 @@ import json
 from datetime import datetime
 from typing import Any
 
+from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
+from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.incidents import TsunadeIncident
 
 
@@ -106,6 +108,16 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         title = f"Journaux de {incident.equipment_id.upper()}"
     else:
         title = incident.message
+    conclusion = decision.get("conclusion") or decision.get("summary")
+    hypothesis = None
+    if state != "resolved" and (
+        decision.get("origin") == "katsuyu_ai"
+        or decision.get("decision_source") == "katsuyu_ai"
+    ):
+        conclusion = ai_conclusion(decision.get("verdict")) or conclusion
+        hypothesis = decision.get("interpretation") or decision.get("summary")
+        if isinstance(hypothesis, str):
+            hypothesis = redact_session_paths(hypothesis)
     return {
         "state": state,
         "label": label,
@@ -115,7 +127,8 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         "decision_current": current,
         "decision": decision.get("decision"),
         "decided_at": decided_at,
-        "conclusion": decision.get("conclusion") or decision.get("summary"),
+        "conclusion": conclusion,
+        "hypothesis": hypothesis,
         "reason": decision.get("reason"),
         "confidence": decision.get("confidence"),
         "recommended_action": decision.get("recommended_action"),

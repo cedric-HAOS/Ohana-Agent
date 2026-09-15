@@ -2,6 +2,18 @@
 
 ## Non publié
 
+- Les conclusions Tsunade distinguent les verdicts IA OK/KO des constats
+  déterministes. La synthèse des anciens diagnostics applique la même règle,
+  en conservant l'interprétation IA comme hypothèse sans réécrire l'historique.
+
+- Les incidents de journaux INFRA-01 sont attribués à `system-journal`.
+  Un incident actif hérité de `home-assistant` conserve son identité et son
+  historique lors du prochain contrôle, sans création d'un doublon.
+- Les corrélations temporelles examinées sont mémorisées. Leur répétition ne
+  suffit plus à relancer l'IA ; elles restent disponibles dans les preuves.
+
+## Non publié
+
 - Le contrôle des journaux masque les paramètres de session caméra dans sa
   baseline historique avant persistance et envoi à Katsuyu. Le filtrage est
   partagé avec la construction des preuves IA ; les compteurs sont conservés.

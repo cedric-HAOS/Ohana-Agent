@@ -984,8 +984,20 @@ class TsunadeIncidentRepository(FollowupPersistence):
                     "zwave-01",
                 }:
                     continue
-                key = (source_id, "home-assistant", "logs.health")
+                service_id = (
+                    "system-journal" if source_id == "infra-01" else "home-assistant"
+                )
+                key = (source_id, service_id, "logs.health")
                 current = self._active(key)
+                if current is None and source_id == "infra-01":
+                    legacy = self._active((source_id, "home-assistant", "logs.health"))
+                    if legacy is not None:
+                        self._connection.execute(
+                            "UPDATE tsunade_incidents SET service_id=? "
+                            "WHERE incident_id=?",
+                            (service_id, str(legacy.incident_id)),
+                        )
+                        current = self._active(key)
                 recorded = self._connection.execute(
                     """SELECT i.incident_id, i.ended_at FROM tsunade_incident_events e
                     JOIN tsunade_incidents i ON i.incident_id=e.incident_id
@@ -1563,6 +1575,10 @@ class TsunadeIncidentRepository(FollowupPersistence):
                     in {
                         "decision",
                         "decision_source",
+                        "origin",
+                        "epistemic_status",
+                        "interpretation",
+                        "summary",
                         "confidence",
                         "conclusion",
                         "reason",

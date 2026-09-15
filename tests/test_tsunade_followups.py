@@ -177,6 +177,100 @@ def test_review_redacts_camera_session_from_previously_persisted_findings(setup)
     assert secret in incident.context["findings"][0]["summary"]
 
 
+def test_identical_correlations_do_not_repeat_escalation_but_new_dates_do(
+    setup, monkeypatch
+):
+    s = setup
+    decisions = []
+
+    def diagnose(incident_id, *, log_result):
+        decisions.append(
+            s.expertise._log_decision(s.incidents.get(incident_id), log_result).decision
+        )
+        assert log_result["correlations"]  # Still available as evidence.
+
+    monkeypatch.setattr(s.expertise, "diagnose", diagnose)
+    source = {
+        "source": "ha-01",
+        "findings": [
+            {
+                "source": "ha-01",
+                "signature": "timeout",
+                "severity": "warning",
+                "occurrences": 87,
+                "reference_occurrences": 86,
+                "trend": "known",
+            }
+        ],
+    }
+    correlation = {
+        "sources": ["ha-01", "infra-01"],
+        "occurred_at": "2026-09-15T12:00:00+02:00",
+        "summary": "Simultaneous errors",
+    }
+    for entry in (
+        correlation,
+        {**correlation, "sources": ["infra-01", "ha-01"]},
+        {**correlation, "occurred_at": "2026-09-15T13:00:00+02:00"},
+    ):
+        s.expertise.review_log_health(
+            s.incident.incident_id,
+            uuid4(),
+            {"sources": [source], "correlations": [entry]},
+        )
+    assert decisions == ["investigate", "stable", "investigate"]
+
+
+@pytest.mark.parametrize("verdict", ["OK", "KO"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_ai_claims_are_hypotheses_in_current_and_legacy_summaries(
+    setup, verdict, legacy
+):
+    s = setup
+    claim = (
+        "Panne actuelle confirmée."
+        if verdict == "KO"
+        else "Incident définitivement résolu."
+    )
+    result = ai_result()
+    result.update(verdict=verdict, interpretation=claim, summary=claim)
+    if verdict == "KO":
+        result["findings"] = [
+            {"code": "NETWORK", "evidence": "Historical logs", "confidence": 0.9}
+        ]
+    if legacy:
+        s.incidents.append_record(
+            s.incident.incident_id,
+            {
+                "kind": "diagnostic",
+                "summary": claim,
+                "payload": {
+                    "cycle_status": "ai_completed",
+                    "origin": "katsuyu_ai",
+                    "epistemic_status": "hypothesis",
+                    "verdict": verdict,
+                    "decision": "investigate" if verdict == "KO" else "watch",
+                    "conclusion": claim,
+                    "interpretation": claim,
+                },
+            },
+        )
+    else:
+        s.expertise.record_ai_result(s.incident.incident_id, uuid4(), result)
+    incident = s.incidents.get(s.incident.incident_id)
+    assessment = incident_assessment(incident)
+    assert assessment["conclusion"] != claim
+    assert assessment["hypothesis"] == claim
+    assert incident.state == "active"
+    assert incident.final_result is None
+    diagnostic = next(e for e in reversed(incident.events) if e.kind == "diagnostic")
+    assert diagnostic.payload["interpretation"] == claim
+    if legacy:
+        assert diagnostic.payload["conclusion"] == claim
+    else:
+        assert diagnostic.payload["conclusion"] == assessment["conclusion"]
+
+
 def poll(s):
     return s.service.next_worker_job(
         {"worker_id": "worker", "supported_types": ["ai.inference", "logs.investigate"]}

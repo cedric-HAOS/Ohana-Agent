@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [1.29.0] — 2026-09-15 — Configuration et contrôles Supervisor
+
+- Les investigations examinent la configuration MQTT d’Agent et les options,
+  l’état et les ressources de Mosquitto ou teleinfo2mqtt via Supervisor.
+- LINKY-01 fournit son exposition UART et son inventaire série sans ouvrir le
+  port. Les secrets sont exclus des preuves transmises à Katsuyu.
+- Les dossiers ayant reçu uniquement les anciens tests réseau peuvent obtenir
+  une investigation complémentaire avec ces nouvelles preuves.
+
 ## [1.28.0] — 2026-09-14 — Investigations en lecture seule automatiques
 
 - Les collectes ciblées ne nécessitent plus d’accord Shizune ; leur autorisation est tracée comme politique de lecture seule.

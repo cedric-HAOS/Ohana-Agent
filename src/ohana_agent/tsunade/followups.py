@@ -51,7 +51,7 @@ class TsunadeFollowupService:
         if any(
             item.get("source")
             == (
-                "diagnostics.read_only"
+                "diagnostics.configuration"
                 if self.automatic_read_only
                 else "investigation.followup"
             )
@@ -149,7 +149,7 @@ class TsunadeFollowupService:
             ).encode()
         ).hexdigest()
         if self.automatic_read_only:
-            basis += ":read-only-v1"
+            basis += ":read-only-v2"
         proposal = self.incidents.propose_followup(
             str(incident_id),
             str(job.job_id),
@@ -335,6 +335,16 @@ class TsunadeFollowupService:
                         {
                             "source": "diagnostics.read_only",
                             "content": json.dumps(snapshot, ensure_ascii=False),
+                        }
+                    )
+                    review["parameters"]["evidence"].append(
+                        {
+                            "source": "diagnostics.configuration",
+                            "content": "Configuration et état Supervisor examinés dans "
+                            "diagnostics.read_only.configuration_inspection ; voir les "
+                            "limites et indisponibilités explicites. Ne redemande pas "
+                            "une lecture déjà faite. Une présence matérielle ne prouve "
+                            "pas l’ouverture du port série par le processus.",
                         }
                     )
                     review["parameters"]["question"] += (

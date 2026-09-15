@@ -55,8 +55,10 @@ def diagnostic_snapshot(
     infrastructure: InfrastructureConfig,
     node_id: str,
     host_reader: Callable[[], dict],
+    *,
+    context_reader: Callable[[], dict] | None = None,
 ) -> dict:
-    """At most seven endpoints plus host metrics, six seconds and eight threads."""
+    """Eight bounded operations; ten seconds with configuration, six without."""
     targets: list[tuple[str, str, int | None, str | None]] = []
     nodes = {node.id: node for node in infrastructure.nodes}
     services = sorted(infrastructure.services, key=lambda s: s.node != node_id)
@@ -85,7 +87,7 @@ def diagnostic_snapshot(
         target = (service.id, parsed.hostname, port, scheme)
         if not any(t[1:] == target[1:] for t in targets):
             targets.append(target)
-        if len(targets) == 7:
+        if len(targets) == (6 if context_reader else 7):
             break
     results: Queue = Queue()
 
@@ -99,6 +101,26 @@ def diagnostic_snapshot(
             _SLOTS.release()
 
     pending = {"__host__": {}}
+
+    def read_context():
+        try:
+            results.put(("__context__", context_reader()))
+        except Exception as error:
+            results.put(
+                (
+                    "__context__",
+                    {"status": "unavailable", "error": type(error).__name__},
+                )
+            )
+        finally:
+            _SLOTS.release()
+
+    if context_reader:
+        pending["__context__"] = {}
+        if _SLOTS.acquire(blocking=False):
+            Thread(target=read_context, daemon=True).start()
+        else:
+            pending["__context__"]["status"] = "busy"
 
     def read_host():
         try:
@@ -134,7 +156,7 @@ def diagnostic_snapshot(
             Thread(target=run, args=(target,), daemon=True).start()
         else:
             pending[target[0]]["status"] = "busy"
-    deadline = monotonic() + 6
+    deadline = monotonic() + (10 if context_reader else 6)
     completed = set()
     while len(completed) < len(pending) and monotonic() < deadline:
         try:
@@ -147,12 +169,14 @@ def diagnostic_snapshot(
         if key not in completed:
             result.setdefault("status", "TIMEOUT")
     host_metrics = pending.pop("__host__")
+    configuration = pending.pop("__context__", None)
     return {
         "origin": socket.gethostname(),
         "requested_node": node_id,
         "observed_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(),
         "endpoints": list(pending.values()),
         "host_metrics": host_metrics,
+        "configuration_inspection": configuration,
         "limits": "Tests depuis Agent, pas depuis le nœud distant. HTTP HEAD / sans "
         "authentification ; 401/403 ne prouvent pas une panne. Aucun fichier modifié.",
     }

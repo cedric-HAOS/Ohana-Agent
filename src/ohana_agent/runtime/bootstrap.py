@@ -170,6 +170,7 @@ from ohana_agent.scheduler import (
     Task,
 )
 from ohana_agent.scheduler.clock import Clock, SystemClock
+from ohana_agent.tsunade.configuration_inspection import inspect_configuration
 from ohana_agent.tsunade.expertise import TsunadeExpertiseService
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 from ohana_agent.tsunade.investigations import InvestigationExecutor
@@ -1988,6 +1989,9 @@ def build_production_agent(
             infrastructure_reader=InfrastructureConfigurationRepository(
                 infrastructure_config_path
             ).read,
+            configuration_reader=lambda node: inspect_configuration(
+                plugin_repository, backup_config, node
+            ),
         )
         expertise_service = TsunadeExpertiseService(
             incidents=incident_repository,

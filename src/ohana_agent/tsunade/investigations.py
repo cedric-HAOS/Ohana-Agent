@@ -58,11 +58,13 @@ class InvestigationExecutor:
         host_health_reader: Callable[[], dict[str, Any]],
         jobs: DistributedJobRepository | None = None,
         infrastructure_reader: Callable[[], InfrastructureConfig] | None = None,
+        configuration_reader: Callable[[str], dict[str, Any]] | None = None,
     ) -> None:
         self.plugins = plugins
         self.host_health_reader = host_health_reader
         self.jobs = jobs
         self.infrastructure_reader = infrastructure_reader
+        self.configuration_reader = configuration_reader
         self._operations: dict[str, tuple[str, int, Callable[[], dict[str, Any]]]] = {
             "network.ping": (
                 "Test configured network presence",
@@ -118,7 +120,12 @@ class InvestigationExecutor:
         if self.infrastructure_reader is None:
             return {"status": "unavailable", "reason": "Architecture indisponible"}
         return diagnostic_snapshot(
-            self.infrastructure_reader(), node_id, self.host_health_reader
+            self.infrastructure_reader(),
+            node_id,
+            self.host_health_reader,
+            context_reader=(lambda: self.configuration_reader(node_id))
+            if self.configuration_reader
+            else None,
         )
 
     def execute(self, payload: dict[str, Any]) -> InvestigationResult:

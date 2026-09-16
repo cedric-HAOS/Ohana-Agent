@@ -419,7 +419,11 @@ class TsunadeExpertiseService:
             if fingerprint not in reviewed:
                 new_correlations.append(correlation)
         evidence["new_correlations"] = new_correlations
-        self.diagnose(incident_id, log_result=evidence)
+        outcome = self.diagnose(incident_id, log_result=evidence)
+        if outcome is not None and outcome.status == "INSUFFICIENT_CONTEXT":
+            # No AI job was dispatched: keep correlations eligible for a later
+            # collection when the optional analysis path becomes available.
+            fingerprints = []
         self.incidents.append_record(
             incident_id,
             {

@@ -2,6 +2,10 @@
 
 ## Non publié
 
+- Une corrélation reste admissible au prochain contrôle lorsque le chemin IA
+  n'a pu créer aucun job. Le rejeu vérifie la reprise après réouverture de la
+  base, la réception répétée et la prise en compte d'une nouvelle corrélation.
+
 - Les conclusions Tsunade distinguent les verdicts IA OK/KO des constats
   déterministes. La synthèse des anciens diagnostics applique la même règle,
   en conservant l'interprétation IA comme hypothèse sans réécrire l'historique.

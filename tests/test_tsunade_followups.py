@@ -514,6 +514,7 @@ def test_read_only_policy_collects_and_tests_without_a_pending_request(setup):
         "origin": "infra-01",
         "requested_node": node,
         "endpoints": [{"target": "ha", "tcp": "OK", "http_status": 401}],
+        "omitted_targets": [{"target": "dns-secondary", "reason": "probe_limit"}],
     }
     propose(s)
     assert s.service.read_companion_requests().requests == []
@@ -529,6 +530,9 @@ def test_read_only_policy_collects_and_tests_without_a_pending_request(setup):
         if e["source"] == "diagnostics.read_only"
     )
     assert json.loads(snapshot["content"])["origin"] == "infra-01"
+    assert json.loads(snapshot["content"])["omitted_targets"] == [
+        {"target": "dns-secondary", "reason": "probe_limit"}
+    ]
     s.service.complete_job(
         str(review.job_id),
         {

@@ -9,12 +9,20 @@ Le cycle collecte les journaux ciblés avec Katsuyu puis complète les preuves
 depuis Agent : résolution DNS, connexion TCP, requête HTTP `HEAD /` pour les
 services HTTP identifiés et métriques CPU, mémoire, disque et unités surveillées.
 Les cibles viennent des services déclarés dans l’architecture, en privilégiant
-le nœud concerné. Aucun shell, chemin HTTP proposé par l’IA, redirection,
+le nœud concerné, puis les points d’accès HTTP/HTTPS dans les places restantes.
+L’ordre de déclaration est conservé dans chaque priorité ; les points d’accès
+identiques sont testés une seule fois. Si le nœud concerné remplit le budget,
+aucune place n’est prise à ses contrôles pour une cible HTTP extérieure.
+Le champ `omitted_targets` indique les cibles écartées par le plafond avec
+`reason=probe_limit` : leur absence des résultats ne prouve pas leur santé.
+Aucun shell, chemin HTTP proposé par l’IA, redirection,
 identifiant ou contenu de réponse HTTP n’est utilisé.
 
 Les tests portent au plus sur six points d’accès, l’hôte Agent et une lecture
 de configuration, avec huit opérations concurrentes et dix secondes d’attente
 globale au maximum. La lecture Supervisor est limitée à huit secondes. Les
+appels sans lecture de configuration peuvent tester sept points d’accès avec
+six secondes d’attente globale, toujours huit opérations au maximum. Les
 résultats indisponibles ou hors délai sont conservés comme tels. Un code HTTP
 401 ou 403 ne suffit pas à conclure à une panne.
 

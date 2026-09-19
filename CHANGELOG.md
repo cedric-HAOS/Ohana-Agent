@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Les snapshots d'investigation sélectionnent les cibles HTTP/HTTPS avant
+  d'appliquer le plafond de sondes, après les services du nœud concerné.
+  Home Assistant n'est plus écarté du seul fait de sa position dans l'exemple
+  d'architecture. Les cibles omises par le plafond sont explicites dans les
+  preuves, sans augmenter le nombre de sondes ni les délais.
+
 - L'inspection Supervisor de ZWAVE-01 recherche Z-Wave JS et Z-Wave JS UI,
   au lieu de sélectionner Mosquitto/MQTT. Une liste inaccessible ou une absence
   de correspondance est explicitement distinguée de l'état du service.

@@ -87,8 +87,24 @@ def diagnostic_snapshot(
         target = (service.id, parsed.hostname, port, scheme)
         if not any(t[1:] == target[1:] for t in targets):
             targets.append(target)
-        if len(targets) == (6 if context_reader else 7):
-            break
+    # Keep the incident's node first, then HTTP coverage before the probe cap.
+    # Truncating during discovery made late HTTP services silently unreachable.
+    requested_services = {s.id for s in services if s.node == node_id}
+    targets.sort(
+        key=lambda target: (
+            0
+            if target[0] in requested_services
+            else 1
+            if target[3] in {"http", "https"}
+            else 2
+        )
+    )
+    probe_limit = 6 if context_reader else 7
+    omitted_targets = [
+        {"target": target[0], "reason": "probe_limit"}
+        for target in targets[probe_limit:]
+    ]
+    targets = targets[:probe_limit]
     results: Queue = Queue()
 
     def run(target):
@@ -175,8 +191,10 @@ def diagnostic_snapshot(
         "requested_node": node_id,
         "observed_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(),
         "endpoints": list(pending.values()),
+        "omitted_targets": omitted_targets,
         "host_metrics": host_metrics,
         "configuration_inspection": configuration,
         "limits": "Tests depuis Agent, pas depuis le nœud distant. HTTP HEAD / sans "
-        "authentification ; 401/403 ne prouvent pas une panne. Aucun fichier modifié.",
+        "authentification ; 401/403 ne prouvent pas une panne. Les cibles omises "
+        "ne sont pas testées. Aucun fichier modifié.",
     }

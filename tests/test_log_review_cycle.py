@@ -76,7 +76,9 @@ def test_historical_baseline_is_redacted_before_job_persistence(
             }
         ]
     }
-    monkeypatch.setattr(jobs, "latest_successful_result", lambda _kind: previous)
+    monkeypatch.setattr(
+        jobs, "latest_log_health_sources", lambda _sources: previous["sources"]
+    )
     created = service.request_log_health_check(now=now[0])
     # A fresh connection sees only masked parameters, before any worker runs.
     reopened = DistributedJobRepository(tmp_path / "jobs.db")
@@ -100,6 +102,87 @@ def test_historical_baseline_is_redacted_before_job_persistence(
     assert previous["sources"][0]["findings"][0]["signature"].endswith(
         f"{secrets[0]}/ds"
     )
+
+
+@pytest.mark.parametrize("infra_healthy", [False, True])
+def test_partial_control_preserves_other_source_baselines_after_restart(
+    cycle, tmp_path, infra_healthy
+):
+    service, jobs, _incidents, now = cycle
+    service.log_analysis_enabled = True
+    service.log_sources = ("infra-01", "zwave-01", "ha-01")
+
+    def complete_control(sources, counts, *, failed=False):
+        now[0] += timedelta(minutes=1)
+        created = service.request_log_health_check(now=now[0], sources=sources)
+        claim = jobs.claim(
+            {"worker_id": "katsuyu-test", "supported_types": ["logs.health_check"]}
+        ).job
+        assert claim is not None
+        assert claim.job_id == created.job_id
+        result = {
+            "status": "KO" if any(counts) else "OK",
+            "analyzed_at": now[0].isoformat(),
+            "window_started_at": created.parameters["window_started_at"],
+            "window_ended_at": created.parameters["window_ended_at"],
+            "new_anomaly_count": 0,
+            "worsening_anomaly_count": 0,
+            "sources": [
+                {
+                    "source": source,
+                    "status": "KO" if count else "OK",
+                    "fetched_bytes": 100,
+                    "truncated": False,
+                    "analyzed_lines": 10,
+                    "findings": [
+                        {
+                            "source": source,
+                            "signature": "connection timeout",
+                            "summary": "Connection timeout",
+                            "category": "timeout",
+                            "severity": "warning",
+                            "occurrences": count,
+                            "trend": "stable",
+                        }
+                    ]
+                    if count
+                    else [],
+                }
+                for source, count in zip(sources, counts, strict=True)
+            ],
+        }
+        completion = {
+            "worker_id": "katsuyu-test",
+            "attempt": claim.attempt,
+            "status": "FAILED" if failed else "SUCCEEDED",
+        }
+        if failed:
+            completion["error"] = {"code": "test.failed", "message": "test failure"}
+        else:
+            completion["result"] = result
+        jobs.complete(str(created.job_id), completion)
+        jobs.mark_completion_processed(str(created.job_id))
+        return created
+
+    complete_control(["infra-01", "zwave-01"], [3, 8])
+    partial = complete_control(["infra-01"], [0 if infra_healthy else 4])
+    assert {item["source"] for item in partial.parameters["baseline"]} == {"infra-01"}
+    complete_control(["zwave-01"], [99], failed=True)
+    # Reuse existing persisted results; no migration or in-memory cache is needed.
+    reopened = DistributedJobRepository(tmp_path / "jobs.db", clock=lambda: now[0])
+    try:
+        service.job_repository = reopened
+        created = service.request_log_health_check(now=now[0])
+        baseline = reopened.get(str(created.job_id)).parameters["baseline"]
+        expected = {"zwave-01": 8}
+        if not infra_healthy:
+            expected["infra-01"] = 4
+        assert {item["source"]: item["occurrences"] for item in baseline} == expected
+        # A healthy empty result replaces its old findings; an unseen source has none.
+        assert "ha-01" not in {item["source"] for item in baseline}
+    finally:
+        service.job_repository = jobs
+        reopened.close()
 
 
 def poll(service):

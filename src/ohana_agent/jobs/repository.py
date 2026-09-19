@@ -245,6 +245,25 @@ class DistributedJobRepository:
             ).fetchone()
         return json.loads(row["result_json"]) if row is not None else None
 
+    def latest_log_health_sources(self, sources: list[str]) -> list[dict[str, Any]]:
+        """Keep each source's latest comparison even after a partial control."""
+        results: list[dict[str, Any]] = []
+        with self._lock:
+            for source in dict.fromkeys(sources):
+                row = self._connection.execute(
+                    """SELECT source.value AS source_json
+                    FROM distributed_jobs AS job,
+                         json_each(job.result_json, '$.sources') AS source
+                    WHERE job.type = 'logs.health_check' AND job.status = ?
+                      AND json_extract(source.value, '$.source') = ?
+                    ORDER BY julianday(job.finished_at) DESC, job.job_id DESC
+                    LIMIT 1""",
+                    (DistributedJobStatus.SUCCEEDED.value, source),
+                ).fetchone()
+                if row is not None:
+                    results.append(json.loads(row["source_json"]))
+        return results
+
     def latest(self, job_type: str) -> DistributedJobDocument | None:
         """Return the latest bounded job document for one declared type."""
         if job_type not in JOB_TYPE_MODELS:

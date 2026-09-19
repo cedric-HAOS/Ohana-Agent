@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Chaque source de journaux reprend sa dernière référence réussie, même après
+  un contrôle limité à INFRA-01. Les autres sources ne redeviennent plus
+  artificiellement nouvelles. Les résultats persistés restent exploitables
+  après reprise ; une collecte saine vide remplace sa propre référence.
+
 - Une corrélation reste admissible au prochain contrôle lorsque le chemin IA
   n'a pu créer aucun job. Le rejeu vérifie la reprise après réouverture de la
   base, la réception répétée et la prise en compte d'une nouvelle corrélation.

@@ -839,8 +839,10 @@ class AdministrationService:
             current = current.astimezone(LOCAL_TIMEZONE)
         selected_window = window_hours or self.log_window_hours
         baseline: list[dict[str, object]] = []
-        previous = self.job_repository.latest_successful_result("logs.health_check")
-        for source in (previous or {}).get("sources", []):
+        previous_sources = self.job_repository.latest_log_health_sources(
+            selected_sources
+        )
+        for source in previous_sources:
             if not isinstance(source, dict):
                 continue
             for finding in source.get("findings", []):

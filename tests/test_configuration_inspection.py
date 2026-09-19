@@ -4,6 +4,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from ohana_agent.tsunade.configuration_inspection import (
     _remote,
     addon_facts,
@@ -12,7 +14,19 @@ from ohana_agent.tsunade.configuration_inspection import (
 )
 
 
-def test_supervisor_inspection_uses_only_fixed_get_requests(monkeypatch):
+@pytest.mark.parametrize(
+    "node_id,target_id,slug",
+    [
+        ("infra-01", "ha-01", "core_mosquitto"),
+        ("ha-01", "ha-01", "core_mosquitto"),
+        ("linky-01", "linky-01", "local_teleinfo2mqtt"),
+        ("zwave-01", "zwave-01", "core_zwave_js"),
+        ("zwave-01", "zwave-01", "a0d7b954_zwavejs2mqtt"),
+    ],
+)
+def test_supervisor_inspection_uses_only_fixed_get_requests(
+    monkeypatch, node_id, target_id, slug
+):
     requests = []
 
     class Socket:
@@ -23,12 +37,27 @@ def test_supervisor_inspection_uses_only_fixed_get_requests(monkeypatch):
                     {"type": "auth_ok"},
                     {
                         "success": True,
-                        "result": {"addons": [{"slug": "core_mosquitto"}]},
+                        "result": {
+                            "addons": [
+                                {"slug": "unrelated_addon"},
+                                {"slug": "core_mosquitto"}
+                                if node_id == "zwave-01"
+                                else {"slug": "core_zwave_js"},
+                                {"slug": slug},
+                            ]
+                        },
                     },
                     {"success": False},
                     {
                         "success": True,
-                        "result": {"slug": "core_mosquitto", "state": "started"},
+                        "result": {
+                            "slug": slug,
+                            "state": "started",
+                            "options": {
+                                "network_key": "secret",
+                                "s2_access_control_key": "secret",
+                            },
+                        },
                     },
                     {"success": True, "result": {"cpu_percent": 0.1}},
                     {"success": True, "result": {"version": "2026.9.1"}},
@@ -63,21 +92,86 @@ def test_supervisor_inspection_uses_only_fixed_get_requests(monkeypatch):
         "ohana_agent.tsunade.configuration_inspection.aiohttp.ClientSession", Session
     )
     target = SimpleNamespace(
-        id="ha-01", enabled=True, token="secret", url="https://ha", verify_tls=True
+        id=target_id, enabled=True, token="secret", url="https://ha", verify_tls=True
     )
-    result = asyncio.run(_remote(SimpleNamespace(targets=[target]), "infra-01"))
+    result = asyncio.run(_remote(SimpleNamespace(targets=[target]), node_id))
     assert result["hardware_available"] is False
     assert result["addons"][0]["state"] == "started"
+    assert result["addons"][0]["addon"] == slug
+    assert result["addon_selection"]["status"] == "matched"
+    assert result["origin"] == target_id + " / Supervisor"
     assert "secret" not in json.dumps(result)
     assert requests[0] == {"type": "auth", "access_token": "secret"}
     assert [r["endpoint"] for r in requests[1:]] == [
         "/addons",
         "/hardware/info",
-        "/addons/core_mosquitto/info",
-        "/addons/core_mosquitto/stats",
+        f"/addons/{slug}/info",
+        f"/addons/{slug}/stats",
         "/core/info",
     ]
     assert all(r["method"] == "get" for r in requests[1:])
+
+
+@pytest.mark.parametrize("listing_available", [True, False])
+def test_missing_zwave_addon_is_not_reported_as_service_failure(
+    monkeypatch, listing_available
+):
+    requests = []
+
+    class Socket:
+        async def __aenter__(self):
+            self.replies = iter(
+                [
+                    {"type": "auth_required"},
+                    {"type": "auth_ok"},
+                    {
+                        "success": listing_available,
+                        "result": {"addons": [{"slug": "core_mosquitto"}]},
+                    },
+                    {"success": True, "result": {}},
+                    {"success": True, "result": {"state": "running"}},
+                ]
+            )
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
+        async def receive_json(self):
+            return next(self.replies)
+
+        async def send_json(self, data):
+            requests.append(data)
+
+    class Session(Socket):
+        def __init__(self, **_kwargs):
+            pass
+
+        def ws_connect(self, *_args, **_kwargs):
+            return Socket()
+
+    monkeypatch.setattr(
+        "ohana_agent.tsunade.configuration_inspection.aiohttp.ClientSession", Session
+    )
+    target = SimpleNamespace(
+        id="zwave-01",
+        enabled=True,
+        token="secret",
+        url="https://zwave",
+        verify_tls=True,
+    )
+    result = asyncio.run(_remote(SimpleNamespace(targets=[target]), "zwave-01"))
+    assert result["addons"] == []
+    assert result["addon_selection"]["status"] == (
+        "no_match" if listing_available else "unavailable"
+    )
+    assert result["core"]["state"] == "running"
+    assert [r["endpoint"] for r in requests[1:]] == [
+        "/addons",
+        "/hardware/info",
+        "/core/info",
+    ]
+    assert "secret" not in json.dumps(result)
 
 
 def test_mqtt_configuration_exports_presence_not_credentials():

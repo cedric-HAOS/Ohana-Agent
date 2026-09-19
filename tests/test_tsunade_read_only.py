@@ -3,17 +3,20 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
+import pytest
+
 from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.tsunade.read_only import diagnostic_snapshot, probe_endpoint
 
 
-def test_http_probe_uses_head_and_does_not_follow_redirects():
+@pytest.mark.parametrize("status", [302, 401, 403, 503])
+def test_http_probe_uses_head_and_does_not_follow_redirects(status):
     calls = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self):  # noqa: N802
             calls.append((self.command, self.path))
-            self.send_response(302)
+            self.send_response(status)
             self.send_header("Location", "/modify")
             self.end_headers()
 
@@ -25,7 +28,8 @@ def test_http_probe_uses_head_and_does_not_follow_redirects():
     try:
         result = probe_endpoint("127.0.0.1", server.server_port, "http")
         assert result["tcp"] == "OK"
-        assert result["http_status"] == 302
+        assert result["http_status"] == status
+        assert "http_error" not in result
         assert calls == [("HEAD", "/")]
     finally:
         server.shutdown()

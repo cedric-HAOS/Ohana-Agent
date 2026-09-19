@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- L'inspection Supervisor de ZWAVE-01 recherche Z-Wave JS et Z-Wave JS UI,
+  au lieu de sélectionner Mosquitto/MQTT. Une liste inaccessible ou une absence
+  de correspondance est explicitement distinguée de l'état du service.
+  Les contrôles restent des GET bornés et les clés de sécurité Z-Wave ne sont
+  pas incluses dans les preuves.
+
 - Chaque source de journaux reprend sa dernière référence réussie, même après
   un contrôle limité à INFRA-01. Les autres sources ne redeviennent plus
   artificiellement nouvelles. Les résultats persistés restent exploitables

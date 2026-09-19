@@ -177,11 +177,10 @@ async def _remote(config: BackupConfig, node_id: str) -> dict:
 
                 listing = await get("/addons")
                 hardware = await get("/hardware/info")
-                patterns = (
-                    ("teleinfo", "linky")
-                    if node_id == "linky-01"
-                    else ("mosquitto", "mqtt")
-                )
+                patterns = {
+                    "linky-01": ("teleinfo", "linky"),
+                    "zwave-01": ("z-wave js", "zwavejs", "zwave_js"),
+                }.get(node_id, ("mosquitto", "mqtt"))
                 results = []
                 for addon in listing.get("addons", []):
                     slug = addon.get("slug", "")
@@ -202,6 +201,18 @@ async def _remote(config: BackupConfig, node_id: str) -> dict:
                     "origin": target_id + " / Supervisor",
                     "transport": "authenticated GET",
                     "addons": results,
+                    "addon_selection": {
+                        "patterns": list(patterns),
+                        "status": (
+                            "unavailable"
+                            if listing.get("unavailable")
+                            else "matched"
+                            if results
+                            else "no_match"
+                        ),
+                        "limit": "Une absence de correspondance ne prouve pas "
+                        "que le service est arrêté ou absent de la machine.",
+                    },
                     "hardware_available": not hardware.get("unavailable"),
                     "core": {
                         k: core.get(k) for k in ("version", "state", "update_available")

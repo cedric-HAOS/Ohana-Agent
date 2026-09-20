@@ -44,7 +44,7 @@ def read_infra_journal(
             "--until",
             _journal_timestamp(window_ended_at),
             "--lines",
-            "10000",
+            "10001",
             "--output",
             "short-iso-precise",
             "--no-pager",
@@ -66,9 +66,11 @@ def read_infra_journal(
             "Unable to read INFRA-01 journal" + (f": {detail}" if detail else "")
         )
 
-    payload = completed.stdout
-    truncated = len(payload) > max_bytes
-    if truncated:
+    lines = completed.stdout.splitlines(keepends=True)
+    truncated = len(lines) > 10_000
+    payload = b"".join(lines[-10_000:])
+    if len(payload) > max_bytes:
+        truncated = True
         payload = payload[-max_bytes:]
         first_line_end = payload.find(b"\n")
         if first_line_end >= 0:

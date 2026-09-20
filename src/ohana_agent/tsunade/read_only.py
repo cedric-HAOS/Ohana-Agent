@@ -44,6 +44,17 @@ def probe_endpoint(host: str, port: int | None, scheme: str | None) -> dict:
         response = connection.getresponse()
         result["http_status"] = response.status
         result["http_method"] = "HEAD"
+        result["http_interpretation"] = (
+            "method_not_allowed"
+            if response.status == 405
+            else "authentication_or_access_required"
+            if response.status in {401, 403}
+            else "redirect_not_followed"
+            if 300 <= response.status < 400
+            else "server_error"
+            if response.status >= 500
+            else "response_received"
+        )
     except (OSError, http.client.HTTPException) as error:
         result["http_error"] = type(error).__name__
     finally:
@@ -68,10 +79,10 @@ def diagnostic_snapshot(
         if not service.enabled or node is None:
             continue
         raw = node.endpoint.address
-        parsed = urlsplit(raw if "://" in raw else "//" + raw)
-        if parsed.username or parsed.password or not parsed.hostname:
-            continue
         try:
+            parsed = urlsplit(raw if "://" in raw else "//" + raw)
+            if parsed.username or parsed.password or not parsed.hostname:
+                continue
             port = service.port or parsed.port
         except ValueError:
             continue
@@ -198,7 +209,8 @@ def diagnostic_snapshot(
         else:
             pending[target[0]]["status"] = "busy"
     deadline = monotonic() + (10 if context_reader else 6)
-    completed = set()
+    # Busy operations were never started and cannot produce a queue result.
+    completed = {key for key, value in pending.items() if value.get("status") == "busy"}
     while len(completed) < len(pending) and monotonic() < deadline:
         try:
             key, result = results.get(timeout=max(0.01, deadline - monotonic()))
@@ -220,6 +232,8 @@ def diagnostic_snapshot(
         "host_metrics": host_metrics,
         "configuration_inspection": configuration,
         "limits": "Tests depuis Agent, pas depuis le nœud distant. HTTP HEAD / sans "
-        "authentification ; 401/403 ne prouvent pas une panne. Les cibles omises "
+        "authentification ; 401/403 ne prouvent pas une panne, 405 indique que "
+        "HEAD est refusé, pas que le service est arrêté. Une réponse HTTP ne "
+        "valide pas la santé applicative. Les cibles omises "
         "ne sont pas testées. Aucun fichier modifié.",
     }

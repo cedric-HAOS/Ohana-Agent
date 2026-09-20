@@ -2,13 +2,45 @@
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
-from ohana_agent.jobs.log_sources import LogSourceBroker
+from ohana_agent.jobs.log_sources import LogSourceBroker, read_infra_journal
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.backup.config import BackupConfig, BackupTarget
+
+
+@pytest.mark.parametrize("line_count", [9999, 10000, 10001])
+def test_journal_line_limit_is_explicit_without_byte_overflow(monkeypatch, line_count):
+    lines = [f"line-{index}\n".encode() for index in range(line_count)]
+
+    def run(command, **kwargs):
+        assert command[command.index("--lines") + 1] == "10001"
+        assert kwargs["timeout"] == 30
+        return SimpleNamespace(returncode=0, stdout=b"".join(lines), stderr=b"")
+
+    monkeypatch.setattr("ohana_agent.jobs.log_sources.subprocess.run", run)
+    content, truncated = read_infra_journal(
+        "2026-09-20T00:00:00+02:00", "2026-09-20T01:00:00+02:00", 4 * 1024 * 1024
+    )
+    assert truncated is (line_count > 10000)
+    assert content.splitlines() == [line.decode().strip() for line in lines[-10000:]]
+
+
+def test_journal_byte_limit_returns_complete_tail_lines(monkeypatch):
+    monkeypatch.setattr(
+        "ohana_agent.jobs.log_sources.subprocess.run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout=b"first long line\nlast\n", stderr=b""
+        ),
+    )
+    content, truncated = read_infra_journal(
+        "2026-09-20T00:00:00+02:00", "2026-09-20T01:00:00+02:00", 9
+    )
+    assert truncated is True
+    assert content == "last\n"
 
 
 def test_log_source_secret_is_job_bound_and_never_persisted_in_parameters(

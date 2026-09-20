@@ -394,6 +394,10 @@ class TsunadeExpertiseService:
             return
         evidence = {
             **source,
+            **{
+                key: result.get(key)
+                for key in ("analyzed_at", "window_started_at", "window_ended_at")
+            },
             "correlations": [
                 item
                 for item in result.get("correlations", [])
@@ -605,6 +609,7 @@ class TsunadeExpertiseService:
                 result = document["result"]
                 matches = result["matched_lines"]
                 findings = result["findings"]
+                finding_count = result.get("finding_count", len(findings))
                 truncated = result["truncated"]
             except (ValueError, TypeError, KeyError):
                 continue
@@ -613,12 +618,14 @@ class TsunadeExpertiseService:
                 or matches < 0
                 or not isinstance(findings, list)
                 or type(truncated) is not bool
+                or type(finding_count) is not int
+                or finding_count < len(findings)
             ):
                 continue
             return {
                 "source": "investigation.followup",
                 "matched_lines": matches,
-                "anomaly_count": len(findings),
+                "anomaly_count": finding_count,
                 "truncated": truncated,
             }
         return None
@@ -645,6 +652,9 @@ class TsunadeExpertiseService:
             "à la fenêtre demandée. "
             "Ne conclus ni à une panne persistante sur le seul historique, ni "
             "à une résolution globale sur cette seule recherche ciblée."
+            " _evidence_truncated indique un extrait de preuve abrégé pour l’IA, "
+            "distinct de la troncature de collecte. finding_count garde le nombre "
+            "de groupes avant réduction de cet extrait."
         )
         payload["parameters"]["evidence"].append(
             {
@@ -654,7 +664,10 @@ class TsunadeExpertiseService:
                         "request_id": request_id,
                         "collection_job_id": str(collection.job_id),
                         "scope": collection.parameters,
-                        "result": collection.result,
+                        "result": {
+                            **collection.result,
+                            "finding_count": len(collection.result.get("findings", [])),
+                        },
                         "limit": (
                             "Aucune correspondance ne prouve pas la résolution. "
                             "Cette réévaluation termine le cycle de collecte autorisé."
@@ -834,7 +847,16 @@ class TsunadeExpertiseService:
                     "isolée dans les éléments "
                     "actuellement disponibles."
                 ),
-                reason="Le contexte est trop limité pour justifier une investigation.",
+                reason=(
+                    "La collecte est tronquée : l’absence de finding ne prouve "
+                    "pas la disparition des anomalies."
+                    if any(
+                        s.get("truncated") is True
+                        for s in sources
+                        if isinstance(s, dict)
+                    )
+                    else "Le contexte est trop limité pour justifier une investigation."
+                ),
                 confidence=0.75,
                 recommended_action="Surveiller le prochain contrôle des journaux.",
                 reevaluate_after="next_logs_health_check",
@@ -918,6 +940,29 @@ class TsunadeExpertiseService:
                 reevaluate_after="next_logs_health_check",
             )
 
+        if any(
+            source.get("truncated") is True
+            for source in sources
+            if isinstance(source, dict)
+        ):
+            return TsunadeDecisionResult(
+                decision="watch",
+                source="deterministic",
+                conclusion=(
+                    "Les éléments reçus ne montrent pas d’aggravation, "
+                    "mais la collecte est tronquée."
+                ),
+                reason=(
+                    "Les données omises empêchent de conclure à la stabilité "
+                    "de l’ensemble des journaux."
+                ),
+                confidence=0.5,
+                recommended_action=(
+                    "Comparer une collecte complète ou une recherche ciblée autorisée."
+                ),
+                reevaluate_after="next_logs_health_check",
+            )
+
         return TsunadeDecisionResult(
             decision="stable",
             source="deterministic",
@@ -989,13 +1034,61 @@ class TsunadeExpertiseService:
         compact_logs = self._compact_logs(log_payload)
         compact_correlations = self._compact_correlations(log_payload)
 
-        if compact_logs or compact_correlations:
+        historical = log_payload.get("historical_findings", [])
+        if compact_logs or compact_correlations or historical:
             evidence.append(
                 {
                     "source": "logs.analysis",
                     "content": self._bounded_json(
                         {
+                            "collection": {
+                                key: log_payload.get(key)
+                                for key in (
+                                    "source",
+                                    "analyzed_at",
+                                    "window_started_at",
+                                    "window_ended_at",
+                                    "truncated",
+                                    "analyzed_lines",
+                                )
+                            },
+                            "evidence_scope": {
+                                "selected_finding_count_before_encoding": len(
+                                    compact_logs
+                                ),
+                                "total_finding_count": sum(
+                                    len(s.get("findings", []))
+                                    for s in (
+                                        log_payload.get("sources", [])
+                                        if "sources" in log_payload
+                                        else [log_payload]
+                                    )
+                                    if isinstance(s, dict)
+                                ),
+                                "undated_finding_count": sum(
+                                    not (f.get("first_at") and f.get("last_at"))
+                                    for s in (
+                                        log_payload.get("sources", [])
+                                        if "sources" in log_payload
+                                        else [log_payload]
+                                    )
+                                    if isinstance(s, dict)
+                                    for f in s.get("findings", [])
+                                    if isinstance(f, dict)
+                                ),
+                                "limit": (
+                                    "Un groupe non daté ne prouve ni récence ni "
+                                    "appartenance à la fenêtre. L'extrait IA peut "
+                                    "omettre des groupes ; voir les compteurs "
+                                    "et _evidence_truncated."
+                                ),
+                            },
                             "findings": compact_logs,
+                            "historical_findings": historical[:16],
+                            "historical_limit": (
+                                "Historique conservé ; ne prouve pas "
+                                "une persistance actuelle."
+                            ),
                             "correlations": compact_correlations,
                             "new_anomaly_count": (
                                 log_payload.get("new_anomaly_count")
@@ -1049,6 +1142,9 @@ class TsunadeExpertiseService:
                 "les causes incertaines comme des hypothèses avec leurs éléments "
                 "concordants et contradictoires. Propose des investigations, sans "
                 "décider ni autoriser une action. Réponds intégralement en français."
+                " Les groupes sans date ne prouvent pas une panne actuelle. "
+                "Distingue troncature de collecte et extrait IA réduit "
+                "(_evidence_truncated et evidence_scope)."
             ),
             evidence=evidence[:8],
             max_output_tokens=8_192,
@@ -1223,7 +1319,7 @@ class TsunadeExpertiseService:
         for source in sources if isinstance(sources, list) else []:
             if not isinstance(source, dict):
                 continue
-            for finding in source.get("findings", [])[:16]:
+            for finding in source.get("findings", [])[:64]:
                 if isinstance(finding, dict):
                     findings.append(
                         {
@@ -1243,6 +1339,23 @@ class TsunadeExpertiseService:
                             )
                         }
                     )
+        # Routing sees all bounded findings; ensure the AI excerpt retains the
+        # critical/new evidence that justified that routing, even late in input.
+        findings.sort(
+            key=lambda finding: (
+                {"critical": 0, "error": 1, "warning": 2}.get(
+                    finding.get("severity"), 3
+                ),
+                {
+                    "new": 0,
+                    "increasing": 1,
+                    "known": 2,
+                    "stable": 3,
+                    "decreasing": 4,
+                    "disappeared": 5,
+                }.get(finding.get("trend"), 6),
+            )
+        )
         return findings[:32]
 
     @staticmethod
@@ -1279,10 +1392,44 @@ class TsunadeExpertiseService:
                 return [safe(content) for content in item]
             return item
 
-        encoded = json.dumps(
-            safe(value),
-            ensure_ascii=False,
-            default=str,
-            separators=(",", ":"),
-        )
-        return encoded[:8_000]
+        def encode(item):
+            return json.dumps(
+                item, ensure_ascii=False, default=str, separators=(",", ":")
+            )
+
+        document = safe(value)
+        if len(encode(document)) <= 8_000:
+            return encode(document)
+        if not isinstance(document, dict):
+            document = {"items": document}
+        document["_evidence_truncated"] = True
+        # Remove whole list entries first, retaining collection flags/counts and
+        # valid JSON. Last-resort string shortening is also explicitly signalled.
+        while len(encode(document)) > 8_000:
+            lists = []
+            strings = []
+
+            def candidates(item, lists, strings):
+                if isinstance(item, dict):
+                    for key, child in item.items():
+                        if isinstance(child, str):
+                            strings.append((len(child), item, key))
+                        else:
+                            candidates(child, lists, strings)
+                elif isinstance(item, list):
+                    if item:
+                        lists.append((len(encode(item)), item))
+                    for child in item:
+                        candidates(child, lists, strings)
+
+            candidates(document, lists, strings)
+            if lists:
+                max(lists, key=lambda entry: entry[0])[1].pop()
+            elif strings and max(item[0] for item in strings) > 32:
+                size, parent, key = max(strings, key=lambda entry: entry[0])
+                parent[key] = parent[key][: size // 2] + "…"
+            else:
+                return encode(
+                    {"_evidence_truncated": True, "status": "evidence_too_large"}
+                )
+        return encode(document)

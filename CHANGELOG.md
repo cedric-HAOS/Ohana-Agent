@@ -2,6 +2,17 @@
 
 ## Non publié
 
+- La collecte journald détecte le dépassement de 10 000 lignes avec une ligne
+  témoin. Une collecte tronquée ne peut plus clôturer un incident ni justifier
+  une conclusion de stabilité ; l'historique reste séparé des éléments courants.
+- Les preuves IA volumineuses restent du JSON valide, avec réduction explicite,
+  compteurs d'origine, fenêtre et nombre de groupes non datés. Les anomalies
+  critiques/nouvelles sont prioritaires dans l'extrait. Les résultats historiques
+  ne sont pas réécrits.
+- Les sondes distinguent HEAD refusé (405), accès refusé, redirection et erreur
+  serveur. Une saturation des sondes retourne immédiatement les opérations non
+  démarrées comme `busy`, sans attendre leur délai d'exécution.
+
 - Les références de journaux proviennent de la dernière collecte réussie et
   explicitement non tronquée de chaque source. Un résultat tronqué ne remplace
   plus les compteurs ni n'efface les groupes connus, y compris après reprise.

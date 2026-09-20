@@ -1,8 +1,11 @@
 """Read-only probes execute bounded requests against configured endpoints only."""
 
+import socket
+import ssl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
+from threading import BoundedSemaphore, Thread
+from time import monotonic
 
 import pytest
 import yaml
@@ -104,7 +107,7 @@ def test_snapshot_keeps_http_coverage_with_example_service_order(
     assert set(selected).isdisjoint(item["target"] for item in omitted)
 
 
-@pytest.mark.parametrize("status", [302, 401, 403, 503])
+@pytest.mark.parametrize("status", [200, 302, 401, 403, 405, 503])
 def test_http_probe_uses_head_and_does_not_follow_redirects(status):
     calls = []
 
@@ -124,11 +127,93 @@ def test_http_probe_uses_head_and_does_not_follow_redirects(status):
         result = probe_endpoint("127.0.0.1", server.server_port, "http")
         assert result["tcp"] == "OK"
         assert result["http_status"] == status
+        assert (
+            result["http_interpretation"]
+            == {
+                200: "response_received",
+                302: "redirect_not_followed",
+                401: "authentication_or_access_required",
+                403: "authentication_or_access_required",
+                405: "method_not_allowed",
+                503: "server_error",
+            }[status]
+        )
         assert "http_error" not in result
         assert calls == [("HEAD", "/")]
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_busy_snapshot_returns_without_waiting_for_unstarted_operations(monkeypatch):
+    infrastructure = InfrastructureConfig.model_validate(
+        {
+            "infrastructure": {"id": "test", "name": "test"},
+            "nodes": [],
+            "services": [],
+        }
+    )
+    monkeypatch.setattr("ohana_agent.tsunade.read_only._SLOTS", BoundedSemaphore(0))
+
+    def forbidden():
+        raise AssertionError("Busy operation must not run")
+
+    started = monotonic()
+    result = diagnostic_snapshot(
+        infrastructure, "ha-01", forbidden, context_reader=forbidden
+    )
+    assert monotonic() - started < 1
+    assert result["host_metrics"]["status"] == "busy"
+    assert result["configuration_inspection"]["status"] == "busy"
+
+
+@pytest.mark.parametrize("stage", ["dns", "tcp", "tls"])
+def test_transport_failures_are_explicit_without_error_message_secrets(
+    monkeypatch, stage
+):
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def request(self, method, path):
+            assert (method, path) == ("HEAD", "/")
+            raise ssl.SSLCertVerificationError("private-secret")
+
+        def close(self):
+            pass
+
+    def resolve(*args, **kwargs):
+        if stage == "dns":
+            raise socket.gaierror("private-secret")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+
+    def connect(*args, **kwargs):
+        if stage == "tcp":
+            raise ConnectionRefusedError("private-secret")
+        return Connection()
+
+    monkeypatch.setattr("ohana_agent.tsunade.read_only.socket.getaddrinfo", resolve)
+    monkeypatch.setattr(
+        "ohana_agent.tsunade.read_only.socket.create_connection", connect
+    )
+    monkeypatch.setattr(
+        "ohana_agent.tsunade.read_only.http.client.HTTPSConnection",
+        lambda *a, **k: Connection(),
+    )
+    result = probe_endpoint("configured.test", 443, "https")
+    assert "private-secret" not in str(result)
+    assert "http_status" not in result
+    if stage == "dns":
+        assert result["dns"] == "KO"
+        assert "tcp" not in result
+    elif stage == "tcp":
+        assert result["dns"] == "OK" and result["tcp"] == "KO"
+    else:
+        assert result["tcp"] == "OK"
+        assert result["http_error"] == "SSLCertVerificationError"
 
 
 @pytest.mark.parametrize("with_context", [True, False])

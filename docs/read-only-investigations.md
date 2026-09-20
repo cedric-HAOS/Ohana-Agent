@@ -36,6 +36,21 @@ six secondes d’attente globale, toujours huit opérations au maximum. Les
 résultats indisponibles ou hors délai sont conservés comme tels. Un code HTTP
 401 ou 403 ne suffit pas à conclure à une panne.
 
+Une réponse 405 à `HEAD /` indique que cette méthode est refusée ; elle n'est
+pas transformée en panne du service et ne déclenche pas de GET de secours.
+`http_interpretation` distingue ce cas, l'accès refusé, la redirection non suivie
+et les erreurs serveur. Une réponse HTTP ne valide pas toute l'application.
+Les erreurs DNS/TCP/TLS restent distinctes, sans texte brut d'exception.
+Une opération qui ne peut pas démarrer faute de place retourne `busy` ; elle
+n'attend pas le délai réservé aux opérations effectivement démarrées.
+
+Les preuves IA dépassant 8 000 caractères sont réduites structurellement, sans
+couper du JSON. `_evidence_truncated` signale cette réduction et ne remplace pas
+le booléen `truncated` de la collecte. `finding_count` conserve le nombre de
+groupes de la recherche ciblée avant réduction. Les dates, fenêtres et groupes
+non datés restent explicitement distingués ; une date de collecte ne date pas
+une ligne sans horodatage. Les groupes critiques/nouveaux sont prioritaires.
+
 Le lieu de mesure accompagne les preuves : tester HA-01 depuis INFRA-01 ne
 prouve pas l’accès d’HA-01 à un service externe. Les accès Home Assistant déjà
 configurés permettent des requêtes Supervisor GET fixes : options et état de

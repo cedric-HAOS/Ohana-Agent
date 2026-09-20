@@ -334,7 +334,7 @@ class TsunadeFollowupService:
                     review["parameters"]["evidence"].append(
                         {
                             "source": "diagnostics.read_only",
-                            "content": json.dumps(snapshot, ensure_ascii=False),
+                            "content": self.expertise._bounded_json(snapshot),
                         }
                     )
                     review["parameters"]["evidence"].append(

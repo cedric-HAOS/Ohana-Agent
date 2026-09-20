@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 
@@ -246,13 +248,71 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
             uuid4(),
             {
                 "status": "OK",
-                "sources": [{"source": "zwave-01", "status": "OK", "findings": []}],
+                "sources": [
+                    {
+                        "source": "zwave-01",
+                        "status": "OK",
+                        "findings": [],
+                        "truncated": False,
+                    }
+                ],
             },
         )
         resolved = repository.list(state="resolved")
         assert len(resolved) == 1
         assert resolved[0].workflow_state == "resolved"
         assert "aucune anomalie significative" in (resolved[0].final_result or "")
+    finally:
+        repository.close()
+
+
+@pytest.mark.parametrize("truncated", [True, None, "false"])
+def test_incomplete_empty_logs_do_not_resolve_existing_incident_after_restart(
+    tmp_path, truncated
+):
+    path = tmp_path / "incidents.db"
+    repository = TsunadeIncidentRepository(path)
+    finding = {"source": "ha-01", "signature": "known error", "occurrences": 3}
+    incident_id = repository.record_log_health(
+        uuid4(),
+        {
+            "sources": [
+                {
+                    "source": "ha-01",
+                    "status": "KO",
+                    "findings": [finding],
+                    "truncated": False,
+                }
+            ]
+        },
+    )[0]
+    repository.close()
+    repository = TsunadeIncidentRepository(path)
+    try:
+        job = uuid4()
+        result = {
+            "sources": [
+                {
+                    "source": "ha-01",
+                    "status": "OK",
+                    "findings": [],
+                    "truncated": truncated,
+                }
+            ]
+        }
+        assert repository.record_log_health(job, result) == [incident_id]
+        before = repository.get(incident_id)
+        assert before.state == "active"
+        assert before.context["findings"] == []
+        assert before.context["historical_findings"] == [finding]
+        assert "résolution non vérifiée" in before.message
+        repository.record_log_health(job, result)
+        assert len(repository.get(incident_id).events) == len(before.events)
+        repository.record_log_health(uuid4(), result)
+        assert repository.get(incident_id).context["historical_findings"] == [finding]
+        result["sources"][0]["truncated"] = False
+        repository.record_log_health(uuid4(), result)
+        assert repository.get(incident_id).state == "resolved"
     finally:
         repository.close()
 
@@ -280,7 +340,16 @@ def test_infra_log_attribution_preserves_legacy_incident_after_reopen(tmp_path):
         assert len(repository.list(state="active")) == 1
         repository.record_log_health(
             uuid4(),
-            {"sources": [{"source": "infra-01", "status": "OK", "findings": []}]},
+            {
+                "sources": [
+                    {
+                        "source": "infra-01",
+                        "status": "OK",
+                        "findings": [],
+                        "truncated": False,
+                    }
+                ]
+            },
         )
         assert repository.get(legacy.incident_id).state == "resolved"
     finally:

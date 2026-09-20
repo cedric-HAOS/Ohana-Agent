@@ -177,6 +177,128 @@ def test_review_redacts_camera_session_from_previously_persisted_findings(setup)
     assert secret in incident.context["findings"][0]["summary"]
 
 
+def test_large_followup_keeps_valid_json_counts_dates_and_redaction(setup):
+    incident = setup.incidents.get(setup.incident.incident_id)
+    findings = [
+        {
+            "source": "ha-01",
+            "signature": f"error-{i}",
+            "summary": "échec /stok=privateSecret/ds " + "x" * 450,
+            "occurrences": 1,
+            "first_at": None,
+            "last_at": None,
+        }
+        for i in range(64)
+    ]
+    incident.context.update(
+        {
+            "findings": findings,
+            "source": "ha-01",
+            "truncated": True,
+            "window_started_at": "2026-09-20T08:00:00+02:00",
+            "window_ended_at": "2026-09-20T10:00:00+02:00",
+        }
+    )
+    collection = SimpleNamespace(
+        job_id=uuid4(),
+        parameters={"pattern": "error"},
+        result={"matched_lines": 900, "findings": findings, "truncated": False},
+    )
+    review = setup.expertise.prepare_followup_review(incident, str(uuid4()), collection)
+    evidence = review["parameters"]["evidence"]
+    decoded = {item["source"]: json.loads(item["content"]) for item in evidence}
+    assert all(len(item["content"]) <= 8000 for item in evidence)
+    assert "privateSecret" not in json.dumps(evidence)
+    original = decoded["logs.analysis"]
+    assert original["collection"]["truncated"] is True
+    assert original["collection"]["window_ended_at"] == "2026-09-20T10:00:00+02:00"
+    assert original["evidence_scope"]["total_finding_count"] == 64
+    assert original["evidence_scope"]["undated_finding_count"] == 64
+    followup = decoded["investigation.followup"]
+    assert followup["_evidence_truncated"] is True
+    assert followup["result"]["truncated"] is False
+    assert len(followup["result"]["findings"]) < 64
+    facts = setup.expertise._followup_collection_facts(evidence)
+    assert facts == {
+        "source": "investigation.followup",
+        "matched_lines": 900,
+        "anomaly_count": 64,
+        "truncated": False,
+    }
+    assert len(collection.result["findings"]) == 64
+    assert "privateSecret" in findings[0]["summary"]
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_known_logs_are_not_declared_stable_when_truncated(setup, truncated):
+    source = {
+        "source": "ha-01",
+        "truncated": truncated,
+        "findings": [
+            {
+                "signature": "known timeout",
+                "occurrences": 2,
+                "reference_occurrences": 2,
+                "trend": "stable",
+                "severity": "warning",
+            }
+        ],
+    }
+    decision = setup.expertise._log_decision(setup.incident, source)
+    assert decision.decision == ("watch" if truncated else "stable")
+    if truncated:
+        assert "tronquée" in decision.conclusion
+    source["findings"][0]["severity"] = "critical"
+    assert (
+        setup.expertise._log_decision(setup.incident, source).decision == "investigate"
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["x" * 50000, ["x" * 9000] * 4, {"text": "é" * 15000}],
+    ids=["long_string", "long_list", "long_object"],
+)
+def test_bounded_json_is_always_parseable(value):
+    encoded = TsunadeExpertiseService._bounded_json(value)
+    assert len(encoded) <= 8000
+    assert json.loads(encoded)["_evidence_truncated"] is True
+
+
+def test_bounded_excerpt_keeps_late_critical_finding(setup):
+    findings = [
+        {
+            "source": "ha-01",
+            "signature": f"known-{i}",
+            "summary": "x" * 490,
+            "severity": "warning",
+            "trend": "stable",
+            "occurrences": 2,
+        }
+        for i in range(63)
+    ]
+    findings.append(
+        {
+            "source": "ha-01",
+            "signature": "critical-new-evidence",
+            "severity": "critical",
+            "trend": "new",
+            "occurrences": 1,
+        }
+    )
+    payload = setup.expertise._ai_parameters(
+        setup.incident, None, [], {"source": "ha-01", "findings": findings}, []
+    )
+    evidence = next(
+        e for e in payload["parameters"]["evidence"] if e["source"] == "logs.analysis"
+    )
+    compact = json.loads(evidence["content"])
+    assert compact["_evidence_truncated"] is True
+    assert compact["findings"][0]["signature"] == "critical-new-evidence"
+    assert compact["evidence_scope"]["total_finding_count"] == 64
+    assert findings[-1]["signature"] == "critical-new-evidence"
+
+
 def test_identical_correlations_do_not_repeat_escalation_but_new_dates_do(
     setup, monkeypatch
 ):

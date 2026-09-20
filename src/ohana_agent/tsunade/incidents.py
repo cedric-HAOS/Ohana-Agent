@@ -1016,12 +1016,21 @@ class TsunadeIncidentRepository(FollowupPersistence):
                     continue
                 findings = source.get("findings", [])
                 if source.get("status") == "OK":
-                    if current is not None:
-                        self._resolve_log_incident(current, job_id, now, source)
-                    continue
+                    if source.get("truncated") is False:
+                        if current is not None:
+                            self._resolve_log_incident(current, job_id, now, source)
+                        continue
+                    if current is None:
+                        # Missing coverage does not establish a new service fault.
+                        continue
+                    source["historical_findings"] = current.context.get(
+                        "findings"
+                    ) or current.context.get("historical_findings", [])
                 severity = "degraded"
                 message = (
-                    f"{source_id} : {len(findings)} anomalie(s) "
+                    f"{source_id} : collecte incomplète ; résolution non vérifiée"
+                    if source.get("status") == "OK"
+                    else f"{source_id} : {len(findings)} anomalie(s) "
                     "de journaux regroupée(s)"
                 )
                 if current is None:

@@ -607,6 +607,17 @@ class TsunadeIncidentRepository(FollowupPersistence):
             raise LookupError(f"Unknown incident: {incident_id}")
         return self._incident(row, include_events=True)
 
+    def reviewed_log_findings(self, incident_id: UUID | str) -> set[str]:
+        """Read durable evidence markers beyond the bounded display history."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT DISTINCT marker.value FROM tsunade_incident_events event,
+                json_each(event.payload_json, '$.reviewed_log_findings') marker
+                WHERE event.incident_id=? AND marker.type='text'""",
+                (str(incident_id),),
+            ).fetchall()
+        return {row[0] for row in rows}
+
     def append_record(
         self,
         incident_id: UUID | str,

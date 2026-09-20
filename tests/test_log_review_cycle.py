@@ -77,7 +77,9 @@ def test_historical_baseline_is_redacted_before_job_persistence(
         ]
     }
     monkeypatch.setattr(
-        jobs, "latest_log_health_sources", lambda _sources: previous["sources"]
+        jobs,
+        "latest_log_health_sources",
+        lambda _sources, **_kwargs: previous["sources"],
     )
     created = service.request_log_health_check(now=now[0])
     # A fresh connection sees only masked parameters, before any worker runs.
@@ -185,6 +187,78 @@ def test_partial_control_preserves_other_source_baselines_after_restart(
         assert {item["source"]: item["occurrences"] for item in baseline} == expected
         # A healthy empty result replaces its old findings; an unseen source has none.
         assert "ha-01" not in {item["source"] for item in baseline}
+    finally:
+        service.job_repository = jobs
+        reopened.close()
+
+
+@pytest.mark.parametrize("previous_hours", [2, 24])
+@pytest.mark.parametrize("day", ["2026-09-20", "2026-10-25"])
+def test_baseline_uses_latest_complete_matching_duration(
+    cycle, tmp_path, previous_hours, day
+):
+    service, jobs, _incidents, now = cycle
+    now[0] = datetime.fromisoformat(f"{day}T12:00:00").replace(
+        tzinfo=ZoneInfo("Europe/Paris")
+    )
+    service.log_analysis_enabled = True
+    service.log_sources = ("ha-01",)
+
+    def complete(hours, count):
+        now[0] += timedelta(minutes=1)
+        job = service.request_log_health_check(now=now[0], window_hours=hours)
+        claim = jobs.claim(
+            {"worker_id": "katsuyu-test", "supported_types": ["logs.health_check"]}
+        ).job
+        assert claim.job_id == job.job_id
+        jobs.complete(
+            str(job.job_id),
+            {
+                "worker_id": "katsuyu-test",
+                "attempt": claim.attempt,
+                "status": "SUCCEEDED",
+                "result": {
+                    "status": "KO",
+                    "analyzed_at": now[0].isoformat(),
+                    "window_started_at": job.parameters["window_started_at"],
+                    "window_ended_at": job.parameters["window_ended_at"],
+                    "new_anomaly_count": 1,
+                    "worsening_anomaly_count": 0,
+                    "sources": [
+                        {
+                            "source": "ha-01",
+                            "status": "KO",
+                            "truncated": False,
+                            "fetched_bytes": 100,
+                            "analyzed_lines": count,
+                            "findings": [
+                                {
+                                    "source": "ha-01",
+                                    "signature": "error automation",
+                                    "summary": "Automation error",
+                                    "category": "automation",
+                                    "severity": "error",
+                                    "occurrences": count,
+                                    "trend": "new",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+        jobs.mark_completion_processed(str(job.job_id))
+
+    complete(previous_hours, 24)
+    complete(2, 2)
+    reopened = DistributedJobRepository(tmp_path / "jobs.db", clock=lambda: now[0])
+    try:
+        service.job_repository = reopened
+        job = service.request_log_health_check(now=now[0], window_hours=24)
+        baseline = reopened.get(str(job.job_id)).parameters["baseline"]
+        assert [item["occurrences"] for item in baseline] == (
+            [24] if previous_hours == 24 else []
+        )
     finally:
         service.job_repository = jobs
         reopened.close()

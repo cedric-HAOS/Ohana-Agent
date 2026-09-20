@@ -838,9 +838,11 @@ class AdministrationService:
         else:
             current = current.astimezone(LOCAL_TIMEZONE)
         selected_window = window_hours or self.log_window_hours
+        window_started = current - timedelta(hours=selected_window)
         baseline: list[dict[str, object]] = []
         previous_sources = self.job_repository.latest_log_health_sources(
-            selected_sources
+            selected_sources,
+            window_seconds=int(current.timestamp() - window_started.timestamp()),
         )
         for source in previous_sources:
             if not isinstance(source, dict):
@@ -866,9 +868,7 @@ class AdministrationService:
                 "created_at": current.isoformat(),
                 "parameters": {
                     "sources": selected_sources,
-                    "window_started_at": (
-                        current - timedelta(hours=selected_window)
-                    ).isoformat(),
+                    "window_started_at": window_started.isoformat(),
                     "window_ended_at": current.isoformat(),
                     "max_bytes_per_source": max_bytes or self.log_max_bytes,
                     "baseline": baseline,

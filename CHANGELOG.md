@@ -2,6 +2,16 @@
 
 ## Non publié
 
+- Tsunade mémorise les groupes de preuves ayant déjà conduit à une expertise,
+  indépendamment de la baseline complète. Des anomalies identiques toujours
+  marquées nouvelles dans des collectes tronquées ne relancent plus l'IA.
+  La mémoire survit aux redémarrages et à la limite d'affichage des événements ;
+  l'historique récent antérieur au correctif est reconnu sans réécriture.
+  Une nouvelle preuve ou un diagnostic explicitement demandé reste admissible.
+- Les références de compteurs sont sélectionnées parmi les collectes complètes
+  de même durée réelle que le contrôle demandé. Une fenêtre courte ne devient
+  plus la référence d'une fenêtre longue, y compris au changement d'heure.
+
 - La collecte journald détecte le dépassement de 10 000 lignes avec une ligne
   témoin. Une collecte tronquée ne peut plus clôturer un incident ni justifier
   une conclusion de stabilité ; l'historique reste séparé des éléments courants.

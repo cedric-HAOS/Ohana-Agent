@@ -344,6 +344,15 @@ class TsunadeExpertiseService:
                         ),
                         "facts": facts,
                         "ai_job_id": str(job_id),
+                        "reviewed_log_findings": [
+                            fingerprint
+                            for finding in (log_result or incident.context).get(
+                                "findings", []
+                            )[:64]
+                            if (fingerprint := self._log_finding_fingerprint(finding))
+                        ]
+                        if incident.capability_id == "logs.health"
+                        else [],
                         "decision": "investigate",
                         "decision_source": "deterministic",
                         "conclusion": (
@@ -423,6 +432,7 @@ class TsunadeExpertiseService:
             if fingerprint not in reviewed:
                 new_correlations.append(correlation)
         evidence["new_correlations"] = new_correlations
+        evidence["reviewed_log_findings"] = self._reviewed_log_findings(incident)
         outcome = self.diagnose(incident_id, log_result=evidence)
         if outcome is not None and outcome.status == "INSUFFICIENT_CONTEXT":
             # No AI job was dispatched: keep correlations eligible for a later
@@ -436,9 +446,83 @@ class TsunadeExpertiseService:
                 "payload": {
                     "review_job_id": str(job_id),
                     "reviewed_correlations": fingerprints,
+                    "reviewed_log_findings": [
+                        fingerprint
+                        for finding in source.get("findings", [])[:64]
+                        if (fingerprint := self._log_finding_fingerprint(finding))
+                        and (
+                            outcome is not None
+                            and outcome.status == "AI_QUEUED"
+                            or fingerprint in evidence["reviewed_log_findings"]
+                        )
+                    ],
                 },
             },
         )
+
+    @staticmethod
+    def _log_finding_fingerprint(finding: dict[str, Any]) -> str | None:
+        """Identify observed evidence, independently of baseline and wording."""
+        if not isinstance(finding, dict):
+            return None
+        signature = finding.get("signature")
+        if not isinstance(signature, str) or not signature:
+            return None
+        last_at = finding.get("last_at")
+        if isinstance(last_at, str):
+            try:
+                parsed = datetime.fromisoformat(last_at.replace("Z", "+00:00"))
+                if parsed.utcoffset() is not None:
+                    last_at = parsed.astimezone(ZoneInfo("UTC")).isoformat()
+            except ValueError:
+                pass
+        canonical = {
+            "signature": redact_session_paths(signature),
+            "severity": finding.get("severity"),
+            "category": finding.get("category"),
+            "occurrences": finding.get("occurrences"),
+            "last_at": last_at,
+        }
+        return hashlib.sha256(
+            json.dumps(canonical, sort_keys=True, default=str).encode()
+        ).hexdigest()
+
+    def _reviewed_log_findings(self, incident: TsunadeIncident) -> list[str]:
+        reviewed = self.incidents.reviewed_log_findings(incident.incident_id)
+        collection: dict[str, Any] = {}
+        collection_job = None
+        submitted = False
+        # Also recognize pre-upgrade reviews, without rewriting their history.
+        for event in sorted(incident.events, key=lambda item: item.event_id):
+            payload = event.payload
+            source = payload.get("result")
+            if (
+                isinstance(source, dict)
+                and source.get("source") == incident.equipment_id
+                and "analyzed_lines" in source
+            ):
+                collection = source
+                collection_job = payload.get("job_id")
+                submitted = False
+            if (
+                payload.get("cycle_status") == "ai_queued"
+                and payload.get("trigger") == "automatic_escalation"
+                and payload.get("ai_job_id")
+            ):
+                submitted = True
+            if "reviewed_log_findings" in payload:
+                reviewed.update(payload["reviewed_log_findings"])
+            elif (
+                submitted
+                and collection_job
+                and payload.get("review_job_id") == collection_job
+            ):
+                reviewed.update(
+                    fingerprint
+                    for finding in collection.get("findings", [])[:64]
+                    if (fingerprint := self._log_finding_fingerprint(finding))
+                )
+        return sorted(reviewed)
 
     @staticmethod
     def _decision_from_ai_result(
@@ -865,6 +949,8 @@ class TsunadeExpertiseService:
         meaningful_changes: list[dict[str, Any]] = []
         warning_changes: list[dict[str, Any]] = []
         critical_findings: list[dict[str, Any]] = []
+        reviewed = set(payload.get("reviewed_log_findings", []))
+        already_reviewed = 0
 
         for finding in findings:
             occurrences = int(finding.get("occurrences") or 0)
@@ -877,6 +963,14 @@ class TsunadeExpertiseService:
                 relative_change = (occurrences - reference) / reference
             elif reference == 0 and occurrences > 0:
                 relative_change = 1.0
+
+            if cls._log_finding_fingerprint(finding) in reviewed:
+                already_reviewed += int(
+                    severity == "critical"
+                    or trend in {"new", "increasing"}
+                    or relative_change >= 0.25
+                )
+                continue
 
             if severity == "critical" and trend not in {
                 "decreasing",
@@ -936,6 +1030,27 @@ class TsunadeExpertiseService:
                 confidence=0.85,
                 recommended_action=(
                     "Comparer avec le prochain contrôle avant d’approfondir."
+                ),
+                reevaluate_after="next_logs_health_check",
+            )
+
+        if already_reviewed:
+            return TsunadeDecisionResult(
+                decision="watch",
+                source="deterministic",
+                conclusion=(
+                    "Ce contrôle n’apporte pas de nouvelle preuve justifiant "
+                    "une expertise automatique supplémentaire."
+                ),
+                reason=(
+                    f"{already_reviewed} groupe(s) déjà pris en compte lors d’une "
+                    "demande d’expertise. Les limites de collecte "
+                    "et les hypothèses antérieures restent à vérifier."
+                ),
+                confidence=0.5,
+                recommended_action=(
+                    "Surveiller une nouvelle preuve ou demander explicitement "
+                    "un diagnostic complémentaire."
                 ),
                 reevaluate_after="next_logs_health_check",
             )

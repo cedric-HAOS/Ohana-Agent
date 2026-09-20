@@ -245,8 +245,10 @@ class DistributedJobRepository:
             ).fetchone()
         return json.loads(row["result_json"]) if row is not None else None
 
-    def latest_log_health_sources(self, sources: list[str]) -> list[dict[str, Any]]:
-        """Use each source's latest complete collection as its comparison."""
+    def latest_log_health_sources(
+        self, sources: list[str], *, window_seconds: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Use a complete collection of matching elapsed duration when requested."""
         results: list[dict[str, Any]] = []
         with self._lock:
             for source in dict.fromkeys(sources):
@@ -257,9 +259,19 @@ class DistributedJobRepository:
                     WHERE job.type = 'logs.health_check' AND job.status = ?
                       AND json_extract(source.value, '$.source') = ?
                       AND json_type(source.value, '$.truncated') = 'false'
+                      AND (? IS NULL OR ROUND((
+                        julianday(json_extract(job.result_json, '$.window_ended_at'))
+                        - julianday(json_extract(
+                            job.result_json, '$.window_started_at'))
+                      ) * 86400) = ?)
                     ORDER BY julianday(job.finished_at) DESC, job.job_id DESC
                     LIMIT 1""",
-                    (DistributedJobStatus.SUCCEEDED.value, source),
+                    (
+                        DistributedJobStatus.SUCCEEDED.value,
+                        source,
+                        window_seconds,
+                        window_seconds,
+                    ),
                 ).fetchone()
                 if row is not None:
                     results.append(json.loads(row["source_json"]))

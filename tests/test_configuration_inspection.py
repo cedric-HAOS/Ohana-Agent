@@ -9,9 +9,30 @@ import pytest
 from ohana_agent.tsunade.configuration_inspection import (
     _remote,
     addon_facts,
+    configured_http_target,
     local_mqtt_configuration,
     safe_endpoint,
 )
+
+
+@pytest.mark.parametrize("node", ["infra-01", "ha-01", "zwave-01", "linky-01"])
+@pytest.mark.parametrize("enabled", [True, False])
+def test_http_target_reuses_only_selected_enabled_supervisor(node, enabled):
+    target_id = "ha-01" if node == "infra-01" else node
+    config = SimpleNamespace(
+        targets=[
+            SimpleNamespace(
+                id=target_id, enabled=enabled, url="http://configured.test:8123"
+            ),
+            SimpleNamespace(id="unrelated", enabled=True, url="http://other.test"),
+        ]
+    )
+    assert configured_http_target(config, node) == (
+        (f"supervisor-http:{target_id}", "http://configured.test:8123")
+        if enabled
+        else None
+    )
+    assert configured_http_target(config, "unknown") is None
 
 
 @pytest.mark.parametrize(

@@ -105,14 +105,15 @@ def test_historical_baseline_is_redacted_before_job_persistence(
 
 
 @pytest.mark.parametrize("infra_healthy", [False, True])
+@pytest.mark.parametrize("truncated_count", [None, 0, 99])
 def test_partial_control_preserves_other_source_baselines_after_restart(
-    cycle, tmp_path, infra_healthy
+    cycle, tmp_path, infra_healthy, truncated_count
 ):
     service, jobs, _incidents, now = cycle
     service.log_analysis_enabled = True
     service.log_sources = ("infra-01", "zwave-01", "ha-01")
 
-    def complete_control(sources, counts, *, failed=False):
+    def complete_control(sources, counts, *, failed=False, truncated=False):
         now[0] += timedelta(minutes=1)
         created = service.request_log_health_check(now=now[0], sources=sources)
         claim = jobs.claim(
@@ -132,7 +133,7 @@ def test_partial_control_preserves_other_source_baselines_after_restart(
                     "source": source,
                     "status": "KO" if count else "OK",
                     "fetched_bytes": 100,
-                    "truncated": False,
+                    "truncated": truncated,
                     "analyzed_lines": 10,
                     "findings": [
                         {
@@ -168,6 +169,10 @@ def test_partial_control_preserves_other_source_baselines_after_restart(
     partial = complete_control(["infra-01"], [0 if infra_healthy else 4])
     assert {item["source"] for item in partial.parameters["baseline"]} == {"infra-01"}
     complete_control(["zwave-01"], [99], failed=True)
+    if truncated_count is not None:
+        complete_control(
+            ["infra-01", "zwave-01", "ha-01"], [truncated_count] * 3, truncated=True
+        )
     # Reuse existing persisted results; no migration or in-memory cache is needed.
     reopened = DistributedJobRepository(tmp_path / "jobs.db", clock=lambda: now[0])
     try:

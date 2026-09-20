@@ -246,7 +246,7 @@ class DistributedJobRepository:
         return json.loads(row["result_json"]) if row is not None else None
 
     def latest_log_health_sources(self, sources: list[str]) -> list[dict[str, Any]]:
-        """Keep each source's latest comparison even after a partial control."""
+        """Use each source's latest complete collection as its comparison."""
         results: list[dict[str, Any]] = []
         with self._lock:
             for source in dict.fromkeys(sources):
@@ -256,6 +256,7 @@ class DistributedJobRepository:
                          json_each(job.result_json, '$.sources') AS source
                     WHERE job.type = 'logs.health_check' AND job.status = ?
                       AND json_extract(source.value, '$.source') = ?
+                      AND json_type(source.value, '$.truncated') = 'false'
                     ORDER BY julianday(job.finished_at) DESC, job.job_id DESC
                     LIMIT 1""",
                     (DistributedJobStatus.SUCCEEDED.value, source),

@@ -59,12 +59,14 @@ class InvestigationExecutor:
         jobs: DistributedJobRepository | None = None,
         infrastructure_reader: Callable[[], InfrastructureConfig] | None = None,
         configuration_reader: Callable[[str], dict[str, Any]] | None = None,
+        http_target_reader: Callable[[str], tuple[str, str] | None] | None = None,
     ) -> None:
         self.plugins = plugins
         self.host_health_reader = host_health_reader
         self.jobs = jobs
         self.infrastructure_reader = infrastructure_reader
         self.configuration_reader = configuration_reader
+        self.http_target_reader = http_target_reader
         self._operations: dict[str, tuple[str, int, Callable[[], dict[str, Any]]]] = {
             "network.ping": (
                 "Test configured network presence",
@@ -125,6 +127,9 @@ class InvestigationExecutor:
             self.host_health_reader,
             context_reader=(lambda: self.configuration_reader(node_id))
             if self.configuration_reader
+            else None,
+            configured_http_target=self.http_target_reader(node_id)
+            if self.http_target_reader
             else None,
         )
 

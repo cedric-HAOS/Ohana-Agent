@@ -2,6 +2,15 @@
 
 ## Non publié
 
+- Les références de journaux proviennent de la dernière collecte réussie et
+  explicitement non tronquée de chaque source. Un résultat tronqué ne remplace
+  plus les compteurs ni n'efface les groupes connus, y compris après reprise.
+
+- Les investigations peuvent sonder en HTTP l'URL Home Assistant déjà configurée
+  pour la cible Supervisor active, même sans service HTTP dans l'architecture.
+  Le HEAD / reste sans authentification ni redirection, dans le budget existant ;
+  les preuves indiquent la provenance `backup.targets.url` sans chemin ni secret.
+
 - Les snapshots d'investigation sélectionnent les cibles HTTP/HTTPS avant
   d'appliquer le plafond de sondes, après les services du nœud concerné.
   Home Assistant n'est plus écarté du seul fait de sa position dans l'exemple

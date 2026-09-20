@@ -18,6 +18,16 @@ Le champ `omitted_targets` indique les cibles écartées par le plafond avec
 Aucun shell, chemin HTTP proposé par l’IA, redirection,
 identifiant ou contenu de réponse HTTP n’est utilisé.
 
+Le runtime peut aussi fournir l'URL de la cible activée dans `backup.targets`,
+déjà utilisée pour l'inspection Supervisor : HA-01 pour INFRA-01, sinon la cible
+correspondant au nœud demandé. Aucun hôte ni port n'est déduit de son nom.
+Seuls les schémas HTTP/HTTPS valides sans identifiants intégrés sont retenus ;
+chemin, requête et fragment ne sont pas utilisés. La sonde reste `HEAD /`, sans
+jeton, avec vérification TLS standard. La preuve porte un identifiant
+`supervisor-http:<cible>` et `configuration_source=backup.targets.url`.
+Cette cible partage le plafond existant, après les services du nœud demandé,
+et n'est pas ajoutée si le même hôte/port/protocole est déjà présent.
+
 Les tests portent au plus sur six points d’accès, l’hôte Agent et une lecture
 de configuration, avec huit opérations concurrentes et dix secondes d’attente
 globale au maximum. La lecture Supervisor est limitée à huit secondes. Les

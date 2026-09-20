@@ -133,6 +133,15 @@ def addon_facts(info: dict, hardware: dict, stats: dict) -> dict:
     }
 
 
+def configured_http_target(
+    config: BackupConfig, node_id: str
+) -> tuple[str, str] | None:
+    """Reuse only the enabled endpoint already selected for Supervisor inspection."""
+    target_id = "ha-01" if node_id == "infra-01" else node_id
+    target = next((t for t in config.targets if t.id == target_id and t.enabled), None)
+    return (f"supervisor-http:{target_id}", target.url) if target else None
+
+
 async def _remote(config: BackupConfig, node_id: str) -> dict:
     target_id = "ha-01" if node_id == "infra-01" else node_id
     target = next((t for t in config.targets if t.id == target_id and t.enabled), None)

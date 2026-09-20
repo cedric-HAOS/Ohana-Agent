@@ -57,6 +57,7 @@ def diagnostic_snapshot(
     host_reader: Callable[[], dict],
     *,
     context_reader: Callable[[], dict] | None = None,
+    configured_http_target: tuple[str, str] | None = None,
 ) -> dict:
     """Eight bounded operations; ten seconds with configuration, six without."""
     targets: list[tuple[str, str, int | None, str | None]] = []
@@ -87,6 +88,28 @@ def diagnostic_snapshot(
         target = (service.id, parsed.hostname, port, scheme)
         if not any(t[1:] == target[1:] for t in targets):
             targets.append(target)
+    configured_target_id = None
+    if configured_http_target is not None:
+        target_id, raw = configured_http_target
+        try:
+            parsed = urlsplit(raw)
+            if (
+                parsed.scheme in {"http", "https"}
+                and parsed.hostname
+                and not parsed.username
+                and not parsed.password
+            ):
+                target = (
+                    target_id,
+                    parsed.hostname,
+                    parsed.port or (443 if parsed.scheme == "https" else 80),
+                    parsed.scheme,
+                )
+                if not any(t[1:] == target[1:] for t in targets):
+                    targets.append(target)
+                    configured_target_id = target_id
+        except ValueError:
+            pass
     # Keep the incident's node first, then HTTP coverage before the probe cap.
     # Truncating during discovery made late HTTP services silently unreachable.
     requested_services = {s.id for s in services if s.node == node_id}
@@ -168,6 +191,8 @@ def diagnostic_snapshot(
         pending["__host__"]["status"] = "busy"
     for target in targets:
         pending[target[0]] = {"target": target[0], "host": target[1], "port": target[2]}
+        if target[0] == configured_target_id:
+            pending[target[0]]["configuration_source"] = "backup.targets.url"
         if _SLOTS.acquire(blocking=False):
             Thread(target=run, args=(target,), daemon=True).start()
         else:

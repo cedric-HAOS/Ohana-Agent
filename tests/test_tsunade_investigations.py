@@ -43,6 +43,31 @@ def _executor() -> InvestigationExecutor:
     )
 
 
+def test_read_only_snapshot_passes_explicit_http_configuration(monkeypatch):
+    calls = []
+
+    def snapshot(infrastructure, node, host_reader, **kwargs):
+        calls.append((infrastructure, node, kwargs["configured_http_target"]))
+        return {"requested_node": node}
+
+    monkeypatch.setattr(
+        "ohana_agent.tsunade.investigations.diagnostic_snapshot", snapshot
+    )
+    executor = InvestigationExecutor(
+        plugins=FakePlugins(),
+        host_health_reader=lambda: {},
+        infrastructure_reader=lambda: "architecture",
+        http_target_reader=lambda node: (
+            f"supervisor-http:{node}",
+            "http://ha.test:8123",
+        ),
+    )
+    assert executor.read_only_snapshot("ha-01") == {"requested_node": "ha-01"}
+    assert calls == [
+        ("architecture", "ha-01", ("supervisor-http:ha-01", "http://ha.test:8123"))
+    ]
+
+
 def test_catalog_and_structured_execution_reuse_existing_plugin_checks() -> None:
     executor = _executor()
     assert "network.ping" in {item.operation for item in executor.catalog()}

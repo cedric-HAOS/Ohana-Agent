@@ -1597,6 +1597,8 @@ class TsunadeIncidentRepository(FollowupPersistence):
                         "decision_source",
                         "origin",
                         "epistemic_status",
+                        "diagnostic_level",
+                        "confirmation_gap",
                         "interpretation",
                         "summary",
                         "confidence",

@@ -97,6 +97,9 @@ def test_unavailable_probe_never_confirms_target_failure(
             assert assessment["reason"]
             assert assessment["recommended_action"]
             assert assessment["decision"] == "watch"
+
+            assert assessment["diagnostic_level"] == "INSUFFICIENT_CONTEXT"
+            assert assessment["confirmation_gap"]
         assert not any(
             e.payload.get("epistemic_status") == "confirmed_by_probe"
             for e in repository.get(incident.incident_id).events
@@ -232,7 +235,13 @@ def test_known_procedure_stays_deterministic_when_probe_confirms_failure(
     assert investigations.operations == ["dns.query", "network.ping"]
     assert dispatched == []
     assert updated.final_result is None
-    assert updated.events[-2].payload["epistemic_status"] == "confirmed_by_probe"
+
+    diagnostic = updated.events[-2]
+
+    assert diagnostic.payload["epistemic_status"] == "confirmed_by_probe"
+    assert diagnostic.payload["diagnostic_level"] == "CONFIRMED"
+    assert diagnostic.payload["confirmation_gap"] == []
+
     assert updated.events[-1].payload["authorized"] is False
 
 
@@ -446,6 +455,17 @@ def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
     assert diagnostic.payload["epistemic_status"] == "hypothesis"
     assert diagnostic.payload["analysis_version"] == 2
 
+    assert diagnostic.payload["diagnostic_level"] == "PROBABLE"
+    assert diagnostic.payload["confirmation_gap"] == ["configuration des templates"]
+
+    assert diagnostic.payload["confidence"] == 0.85
+
+    assessment = incident_assessment(updated)
+
+    assert assessment["diagnostic_level"] == "PROBABLE"
+    assert assessment["confirmation_gap"] == ["configuration des templates"]
+
+    assert assessment["decision"] != "action_required"
     assert diagnostic.payload["decision"] == "investigate"
     assert diagnostic.payload["decision_source"] == "katsuyu_ai"
     assert diagnostic.payload["confidence"] == 0.85

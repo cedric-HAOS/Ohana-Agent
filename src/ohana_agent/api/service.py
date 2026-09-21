@@ -1336,12 +1336,16 @@ class AdministrationService:
             return job
 
     def _refresh_failed_jobs(self) -> None:
-        """Expose bounded terminal failures even when no worker polls again."""
+        """Expose all terminal failures even when no worker polls again."""
         if self.job_repository is None:
             return
         with self._worker_cycle_lock:
-            for job in self.job_repository.pending_completions(failures_only=True):
-                self._process_job_completion(job)
+            while True:
+                pending = self.job_repository.pending_completions(failures_only=True)
+                if not pending:
+                    return
+                for job in pending:
+                    self._process_job_completion(job)
 
     def _process_job_completion(self, job: Any) -> None:
         """Commit decisions and follow-up jobs before releasing idle workers."""

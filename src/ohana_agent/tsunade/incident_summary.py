@@ -138,6 +138,8 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         "decision_current": current,
         "decision": decision.get("decision"),
         "decided_at": decided_at,
+        "diagnostic_level": decision.get("diagnostic_level"),
+        "confirmation_gap": (decision.get("confirmation_gap") or []),
         "conclusion": conclusion,
         "hypothesis": hypothesis,
         "reason": decision.get("reason"),

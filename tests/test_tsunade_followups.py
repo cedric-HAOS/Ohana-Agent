@@ -877,8 +877,11 @@ def test_terminal_collection_failure_is_visible_and_stops(setup, status):
 def test_expired_work_is_reconciled_without_worker_poll(setup, phase, claimed, view):
     s = setup
     if phase == "ai":
-        s.expertise.diagnose(s.incident.incident_id, log_result=s.incident.context,
-                             operator_requested=True)
+        s.expertise.diagnose(
+            s.incident.incident_id,
+            log_result=s.incident.context,
+            operator_requested=True,
+        )
     else:
         propose(s)
         authorize(s)
@@ -906,6 +909,74 @@ def test_expired_work_is_reconciled_without_worker_poll(setup, phase, claimed, v
     read()
     assert len(s.incidents.get(s.incident.incident_id).events) == event_count
     assert (s.jobs.count("ai.inference"), s.jobs.count("logs.investigate")) == counts
+
+
+def test_incident_read_drains_more_than_one_terminal_failure_batch(setup):
+    s = setup
+
+    propose(s)
+    req = authorize(s)
+
+    target = s.jobs.latest_for_incident(
+        "logs.investigate",
+        str(s.incident.incident_id),
+    )
+    assert target is not None
+
+    # Fill the first pending-completion batch with unrelated terminal
+    # failures. The real follow-up will expire afterwards and must therefore
+    # be processed from the second batch during the same incident read.
+    now = datetime.now(ZoneInfo("Europe/Paris"))
+    for _ in range(16):
+        dummy = s.jobs.create(
+            {
+                "protocol_version": 1,
+                "job_id": str(uuid4()),
+                "type": "logs.investigate",
+                "created_at": now.isoformat(),
+                "parameters": {
+                    "source": "ha-01",
+                    "pattern": "timeout",
+                    "window_started_at": (now - timedelta(hours=2)).isoformat(),
+                    "window_ended_at": now.isoformat(),
+                    "max_bytes": s.service.log_max_bytes,
+                    "incident_id": str(s.incident.incident_id),
+                },
+                "timeout": s.service.log_timeout_seconds,
+            }
+        )
+        s.jobs.cancel(str(dummy.job_id))
+
+    counts = (
+        s.jobs.count("ai.inference"),
+        s.jobs.count("logs.investigate"),
+    )
+
+    # No worker polls again. Reading the incidents itself must discover the
+    # timeout and reconcile every pending terminal completion, including the
+    # seventeenth one.
+    s.jobs._clock = lambda: datetime.now(ZoneInfo("Europe/Paris")) + timedelta(days=1)
+
+    s.service.list_incidents()
+
+    expired = s.jobs.get(str(target.job_id))
+    assert expired.status.value == "TIMEOUT"
+
+    followup = s.incidents.get_followup(str(req.request_id))
+    assert followup["status"] == "failed"
+
+    incident = s.incidents.get(s.incident.incident_id)
+    assessment = incident_assessment(incident)
+    assert assessment["state"] == "incomplete"
+    assert assessment["label"] == "Investigation interrompue"
+
+    assert s.jobs.pending_completions(failures_only=True) == []
+
+    # Reconciliation must never restart failed work.
+    assert (
+        s.jobs.count("ai.inference"),
+        s.jobs.count("logs.investigate"),
+    ) == counts
 
 
 def test_companion_cannot_override_plan(setup):

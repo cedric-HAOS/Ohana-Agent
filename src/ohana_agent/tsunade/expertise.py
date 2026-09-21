@@ -311,6 +311,13 @@ class TsunadeExpertiseService:
                             "decision": outcome.decision,
                             "decision_source": outcome.decision_source,
                             "epistemic_status": "insufficient_context",
+                            "diagnostic_level": "INSUFFICIENT_CONTEXT",
+                            "confirmation_gap": [
+                                "Aucune preuve déterministe ne confirme encore la"
+                                " cause.",
+                                "Aucune expertise Katsuyu compatible n'a pu être"
+                                " mise en file.",
+                            ],
                             "verdict": "INSUFFICIENT_CONTEXT",
                             "conclusion": outcome.diagnosis,
                             "reason": (
@@ -633,6 +640,30 @@ class TsunadeExpertiseService:
         hypotheses = [
             hypothesis.model_dump(mode="json") for hypothesis in result.hypotheses
         ]
+        diagnostic_level = None
+        confirmation_gap: list[str] = []
+
+        if result.verdict == "KO" and hypotheses:
+            diagnostic_level = "PROBABLE"
+
+            confirmation_gap = [
+                str(item) for item in result.missing_context[:16] if str(item).strip()
+            ]
+
+            if not confirmation_gap:
+                confirmation_gap = [
+                    (
+                        "Une confirmation déterministe reste nécessaire "
+                        "avant de considérer la cause comme établie."
+                    )
+                ]
+
+        elif result.verdict == "INSUFFICIENT_CONTEXT":
+            diagnostic_level = "INSUFFICIENT_CONTEXT"
+
+            confirmation_gap = [
+                str(item) for item in result.missing_context[:16] if str(item).strip()
+            ]
         investigation_commands = self._suggested_investigation_commands(
             result,
             evidence=evidence,
@@ -659,6 +690,8 @@ class TsunadeExpertiseService:
                     "basis_observed_at": basis_observed_at,
                     "origin": "katsuyu_ai",
                     "epistemic_status": "hypothesis",
+                    "diagnostic_level": diagnostic_level,
+                    "confirmation_gap": confirmation_gap,
                     "decision": decision.decision,
                     "decision_source": decision.source,
                     "conclusion": decision.conclusion,
@@ -875,6 +908,10 @@ class TsunadeExpertiseService:
                     "cycle_status": "ai_failed",
                     "origin": "katsuyu_ai",
                     "epistemic_status": "none",
+                    "diagnostic_level": "INSUFFICIENT_CONTEXT",
+                    "confirmation_gap": [
+                        "L'analyse Katsuyu facultative n'a pas abouti.",
+                    ],
                     "decision": decision.decision,
                     "decision_source": decision.source,
                     "conclusion": decision.conclusion,
@@ -1329,6 +1366,8 @@ class TsunadeExpertiseService:
                 "payload": {
                     "cycle_status": "deterministic",
                     "epistemic_status": "confirmed_by_probe",
+                    "diagnostic_level": "CONFIRMED",
+                    "confirmation_gap": [],
                     "facts": outcome.facts,
                     "failed_investigations": [result.operation for result in failures],
                     "decision": outcome.decision or "action_required",

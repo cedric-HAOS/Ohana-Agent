@@ -497,3 +497,109 @@ def test_ai_hypotheses_remain_non_authoritative_when_tsunade_decides(
         proposal.payload["investigation_commands"]
         == (diagnostic.payload["investigation_commands"])
     )
+
+
+def test_ai_evidence_redacts_nested_credentials() -> None:
+    content = TsunadeExpertiseService._bounded_json(  # noqa: SLF001
+        {
+            "status": "FAILED",
+            "password": "fake-password",
+            "details": {
+                "endpoint": (
+                    "https://operator:fictional-password@example.test/check"
+                    "?api_key=fake-api-key"
+                ),
+                "authorization": ("Bearer fake-bearer-token"),
+            },
+        }
+    )
+
+    for secret in (
+        "fake-password",
+        "fictional-password",
+        "fake-api-key",
+        "fake-bearer-token",
+    ):
+        assert secret not in content
+
+    assert "example.test/check" in content
+    assert "[redacted]" in content
+
+
+def test_ai_result_is_redacted_before_persistence(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+
+    incident = _incident(
+        repository,
+        node="zwave-01",
+        service="zwave-js",
+        capability="node.health",
+    )
+
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=FakeInvestigations(),
+    )
+
+    try:
+        service.record_ai_result(
+            incident.incident_id,
+            uuid4(),
+            {
+                "analysis_version": 2,
+                "verdict": "KO",
+                "generated_at": ("2026-09-21T16:00:00Z"),
+                "model_id": "local-model",
+                "model_sha256": "f" * 64,
+                "interpretation": ("token=fake-ai-token"),
+                "summary": ("password=fake-ai-password"),
+                "findings": [
+                    {
+                        "code": "TEST.SENSITIVE_EVIDENCE",
+                        "evidence": ("Authorization: Bearer fake-finding-token"),
+                        "confidence": 0.90,
+                    }
+                ],
+                "hypotheses": [
+                    {
+                        "statement": (
+                            "Une cause possible implique token=fake-hypothesis-token"
+                        ),
+                        "confidence": 0.70,
+                        "possible_causes": ["password=fake-hypothesis-password"],
+                        "supporting_evidence": [
+                            "Authorization: Bearer fake-hypothesis-bearer"
+                        ],
+                        "contradicting_evidence": [],
+                    }
+                ],
+                "missing_context": [],
+                "recommended_investigation": [],
+                "metrics": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 10,
+                    "ttft_ms": 10,
+                    "tokens_per_second": 10,
+                    "duration_seconds": 1,
+                },
+            },
+        )
+
+        rendered = repository.get(incident.incident_id).model_dump_json()
+
+        assert "fake-ai-token" not in rendered
+        assert "fake-ai-password" not in rendered
+        assert "[redacted]" in rendered
+        for secret in (
+            "fake-ai-token",
+            "fake-ai-password",
+            "fake-finding-token",
+            "fake-hypothesis-token",
+            "fake-hypothesis-password",
+            "fake-hypothesis-bearer",
+        ):
+            assert secret not in rendered
+    finally:
+        repository.close()

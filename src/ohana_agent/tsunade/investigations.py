@@ -17,6 +17,7 @@ from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.contracts.administration import AdministrationModel
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
+from ohana_agent.tsunade.evidence_privacy import redact_sensitive_value
 from ohana_agent.tsunade.read_only import diagnostic_snapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -178,6 +179,9 @@ class InvestigationExecutor:
             # Keep a useful error class, never their raw text in logs or evidence.
             error = type(exception).__name__ if exception is not None else None
             result = result or {}
+
+        result = redact_sensitive_value(result)
+
         if status == "KO":
             LOGGER.error("Investigation %s failed: %s", investigation_id, error)
         duration = monotonic() - started

@@ -22,7 +22,10 @@ from ohana_agent.contracts.administration import (
     AiInferenceResult,
 )
 from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
-from ohana_agent.tsunade.evidence_privacy import redact_session_paths
+from ohana_agent.tsunade.evidence_privacy import (
+    redact_sensitive_text,
+    redact_sensitive_value,
+)
 from ohana_agent.tsunade.incidents import (
     TsunadeExperience,
     TsunadeIncident,
@@ -500,7 +503,7 @@ class TsunadeExpertiseService:
             except ValueError:
                 pass
         canonical = {
-            "signature": redact_session_paths(signature),
+            "signature": redact_sensitive_text(signature),
             "severity": finding.get("severity"),
             "category": finding.get("category"),
             "occurrences": finding.get("occurrences"),
@@ -620,6 +623,7 @@ class TsunadeExpertiseService:
             for event in self.incidents.get(incident_id).events
         ):
             return
+        payload = redact_sensitive_value(payload)
         result = AiInferenceResult.model_validate(payload)
         decision = self._decision_from_ai_result(result)
         collection_facts = self._followup_collection_facts(evidence or [])
@@ -899,6 +903,7 @@ class TsunadeExpertiseService:
             reevaluate_after="next_logs_health_check",
         )
 
+        safe_error = redact_sensitive_text(str(error))[:1_000]
         self.incidents.append_record(
             incident_id,
             {
@@ -920,7 +925,7 @@ class TsunadeExpertiseService:
                     "recommended_action": decision.recommended_action,
                     "reevaluate_after": decision.reevaluate_after,
                     "job_id": str(job_id),
-                    "error": str(error)[:1_000],
+                    "error": safe_error,
                 },
             },
         )
@@ -1554,54 +1559,94 @@ class TsunadeExpertiseService:
 
     @staticmethod
     def _bounded_json(value: object) -> str:
-        def safe(item: object) -> object:
-            # Also protect evidence rebuilt from findings persisted by older workers.
-            if isinstance(item, str):
-                return redact_session_paths(item)
-            if isinstance(item, dict):
-                return {key: safe(content) for key, content in item.items()}
-            if isinstance(item, (list, tuple)):
-                return [safe(content) for content in item]
-            return item
-
-        def encode(item):
+        def encode(item: object) -> str:
             return json.dumps(
-                item, ensure_ascii=False, default=str, separators=(",", ":")
+                item,
+                ensure_ascii=False,
+                default=str,
+                separators=(",", ":"),
             )
 
-        document = safe(value)
+        document = redact_sensitive_value(value)
+
         if len(encode(document)) <= 8_000:
             return encode(document)
+
         if not isinstance(document, dict):
             document = {"items": document}
+
         document["_evidence_truncated"] = True
+
         # Remove whole list entries first, retaining collection flags/counts and
         # valid JSON. Last-resort string shortening is also explicitly signalled.
         while len(encode(document)) > 8_000:
             lists = []
             strings = []
 
-            def candidates(item, lists, strings):
+            def candidates(
+                item: object,
+                lists: list,
+                strings: list,
+            ) -> None:
                 if isinstance(item, dict):
                     for key, child in item.items():
                         if isinstance(child, str):
-                            strings.append((len(child), item, key))
+                            strings.append(
+                                (
+                                    len(child),
+                                    item,
+                                    key,
+                                )
+                            )
                         else:
-                            candidates(child, lists, strings)
+                            candidates(
+                                child,
+                                lists,
+                                strings,
+                            )
+
                 elif isinstance(item, list):
                     if item:
-                        lists.append((len(encode(item)), item))
-                    for child in item:
-                        candidates(child, lists, strings)
+                        lists.append(
+                            (
+                                len(encode(item)),
+                                item,
+                            )
+                        )
 
-            candidates(document, lists, strings)
+                    for child in item:
+                        candidates(
+                            child,
+                            lists,
+                            strings,
+                        )
+
+            candidates(
+                document,
+                lists,
+                strings,
+            )
+
             if lists:
-                max(lists, key=lambda entry: entry[0])[1].pop()
+                max(
+                    lists,
+                    key=lambda entry: entry[0],
+                )[1].pop()
+
             elif strings and max(item[0] for item in strings) > 32:
-                size, parent, key = max(strings, key=lambda entry: entry[0])
+                size, parent, key = max(
+                    strings,
+                    key=lambda entry: entry[0],
+                )
+
                 parent[key] = parent[key][: size // 2] + "…"
+
             else:
                 return encode(
-                    {"_evidence_truncated": True, "status": "evidence_too_large"}
+                    {
+                        "_evidence_truncated": True,
+                        "status": "evidence_too_large",
+                    }
                 )
+
         return encode(document)

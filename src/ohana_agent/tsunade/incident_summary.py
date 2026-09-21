@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
-from ohana_agent.tsunade.evidence_privacy import redact_session_paths
+from ohana_agent.tsunade.evidence_privacy import redact_sensitive_text
 from ohana_agent.tsunade.incidents import TsunadeIncident
 
 
@@ -128,7 +128,7 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         conclusion = ai_conclusion(decision.get("verdict")) or conclusion
         hypothesis = decision.get("interpretation") or decision.get("summary")
         if isinstance(hypothesis, str):
-            hypothesis = redact_session_paths(hypothesis)
+            hypothesis = redact_sensitive_text(hypothesis)
     return {
         "state": state,
         "label": label,

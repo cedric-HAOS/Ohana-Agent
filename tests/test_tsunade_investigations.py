@@ -128,6 +128,57 @@ def test_backup_status_exposes_latest_distributed_failure() -> None:
     assert result.result["latest_distributed_job"]["type"] == "backup.infra"
 
 
+def test_backup_status_redacts_distributed_failure_credentials() -> None:
+    failed_job = SimpleNamespace(
+        status=SimpleNamespace(value="FAILED"),
+        error=SimpleNamespace(
+            message=(
+                "Upload failed for "
+                "https://operator:fictional-password@backup.test/archive"
+                "?access_token=fake-access-token "
+                "Authorization: Bearer fake-bearer-token"
+            )
+        ),
+        model_dump=lambda **_kwargs: {
+            "type": "backup.infra",
+            "status": "FAILED",
+            "error": {
+                "message": (
+                    "Upload failed for "
+                    "https://operator:fictional-password@backup.test/archive"
+                    "?access_token=fake-access-token "
+                    "Authorization: Bearer fake-bearer-token"
+                )
+            },
+        },
+    )
+
+    executor = InvestigationExecutor(
+        plugins=FakePlugins(),  # type: ignore[arg-type]
+        host_health_reader=lambda: {},
+        jobs=SimpleNamespace(latest=lambda job_type: failed_job),  # type: ignore[arg-type]
+    )
+
+    result = executor.execute(
+        {
+            "operation": "backup.status",
+            "timeout_seconds": 5,
+        }
+    )
+
+    rendered = result.model_dump_json()
+
+    for secret in (
+        "fictional-password",
+        "fake-access-token",
+        "fake-bearer-token",
+    ):
+        assert secret not in rendered
+
+    assert "backup.test/archive" in rendered
+    assert "[redacted]" in rendered
+
+
 def test_probe_exception_does_not_export_credentials(caplog) -> None:
     executor = _executor()
 

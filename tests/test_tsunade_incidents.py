@@ -417,3 +417,194 @@ def test_repair_requires_authorization_and_experience_requires_confirmation(
         assert statistics["repair_success_rate"] == 100.0
     finally:
         repository.close()
+
+
+def test_incident_persistence_redacts_sensitive_observation(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+
+    observation = Observation(
+        node="infra-01",
+        service="dns",
+        capability="dns.resolve",
+        status=ObservationStatus.UNHEALTHY,
+        success=False,
+        message=(
+            "Failure on "
+            "https://operator:fictional-password@dns.test/check"
+            "?token=fake-token "
+            "/stok=fake-session/"
+        ),
+        source="dns.resolve",
+        id=uuid4(),
+        timestamp=datetime(
+            2026,
+            9,
+            21,
+            16,
+            tzinfo=UTC,
+        ),
+        metadata={
+            "device_id": "infra-01",
+            "authorization": ("Bearer fake-authorization-token"),
+        },
+    )
+
+    try:
+        incident = repository.process(observation)
+
+        assert incident is not None
+
+        rendered = incident.model_dump_json()
+
+        for secret in (
+            "fictional-password",
+            "fake-token",
+            "fake-session",
+            "fake-authorization-token",
+        ):
+            assert secret not in rendered
+
+        assert "dns.test/check" in rendered
+        assert "[redacted]" in rendered
+    finally:
+        repository.close()
+
+
+def test_final_result_is_redacted_before_persistence(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    started = datetime(
+        2026,
+        9,
+        21,
+        16,
+        tzinfo=UTC,
+    )
+
+    try:
+        incident = repository.process(
+            _observation(
+                ObservationStatus.UNHEALTHY,
+                started,
+            )
+        )
+        assert incident is not None
+
+        updated = repository.append_record(
+            incident.incident_id,
+            {
+                "kind": "result",
+                "summary": (
+                    "Failure token=fake-final-token password=fake-final-password"
+                ),
+                "payload": {},
+            },
+        )
+
+        rendered = updated.model_dump_json()
+
+        assert "fake-final-token" not in rendered
+        assert "fake-final-password" not in rendered
+        assert "[redacted]" in rendered
+    finally:
+        repository.close()
+
+
+def test_legacy_incident_data_is_redacted_on_read(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    started = datetime(
+        2026,
+        9,
+        21,
+        16,
+        tzinfo=UTC,
+    )
+
+    try:
+        incident = repository.process(
+            _observation(
+                ObservationStatus.UNHEALTHY,
+                started,
+            )
+        )
+        assert incident is not None
+
+        repository._connection.execute(  # noqa: SLF001
+            """
+            UPDATE tsunade_incidents
+            SET message=?,
+                context_json=?
+            WHERE incident_id=?
+            """,
+            (
+                "password=fake-legacy-password",
+                ('{"authorization":"Bearer fake-legacy-token"}'),
+                str(incident.incident_id),
+            ),
+        )
+        repository._connection.commit()  # noqa: SLF001
+
+        loaded = repository.get(incident.incident_id)
+
+        rendered = loaded.model_dump_json()
+
+        assert "fake-legacy-password" not in rendered
+        assert "fake-legacy-token" not in rendered
+        assert "[redacted]" in rendered
+    finally:
+        repository.close()
+
+
+def test_followup_persistence_redacts_sensitive_plan(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+
+    started = datetime(
+        2026,
+        9,
+        21,
+        16,
+        tzinfo=UTC,
+    )
+
+    try:
+        incident = repository.process(
+            _observation(
+                ObservationStatus.UNHEALTHY,
+                started,
+            )
+        )
+        assert incident is not None
+
+        followup = repository.propose_followup(
+            str(incident.incident_id),
+            "job-test",
+            "token=fake-basis-token",
+            {
+                "source": "infra-01",
+                "reason": ("password=fake-plan-password"),
+                "pattern": ("Authorization: Bearer fake-plan-token"),
+                "max_bytes": 4096,
+            },
+        )
+
+        assert followup is not None
+
+        rendered = str(followup)
+
+        for secret in (
+            "fake-basis-token",
+            "fake-plan-password",
+            "fake-plan-token",
+        ):
+            assert secret not in rendered
+
+        assert "[redacted]" in rendered
+    finally:
+        repository.close()

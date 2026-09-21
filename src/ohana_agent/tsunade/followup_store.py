@@ -13,6 +13,11 @@ from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from ohana_agent.tsunade.evidence_privacy import (
+    redact_sensitive_text,
+    redact_sensitive_value,
+)
+
 
 class FollowupPersistence:
     """Persistence component of TsunadeIncidentRepository, not another database."""
@@ -42,6 +47,8 @@ class FollowupPersistence:
     def propose_followup(
         self, incident_id: str, origin_job_id: str, basis: str, plan: dict[str, Any]
     ) -> dict[str, Any] | None:
+        basis = redact_sensitive_text(basis)
+        plan = redact_sensitive_value(plan)
         now = datetime.now(ZoneInfo("Europe/Paris"))
         request_id = str(uuid4())
         with self._lock, self._connection:
@@ -164,6 +171,7 @@ class FollowupPersistence:
         now = datetime.now(ZoneInfo("Europe/Paris"))
         if choice not in {"AUTHORIZE", "REFUSE"}:
             raise ValueError("Cette réponse n’est pas valable pour l’investigation")
+        safe_job = redact_sensitive_value(job) if job is not None else None
         with self._lock, self._connection:
             self._expire_user_requests_locked(now)
             request = self._required_pending_user_request(request_id)
@@ -175,7 +183,16 @@ class FollowupPersistence:
             self._connection.execute(
                 """UPDATE tsunade_followups SET status=?,job_json=?
                 WHERE request_id=? AND status='pending'""",
-                (status, json.dumps(job) if job else None, request_id),
+                (
+                    status,
+                    json.dumps(
+                        safe_job,
+                        ensure_ascii=False,
+                    )
+                    if safe_job
+                    else None,
+                    request_id,
+                ),
             )
             self._connection.execute(
                 """UPDATE tsunade_user_requests SET state='answered',answered_at=?,
@@ -219,6 +236,8 @@ class FollowupPersistence:
         *,
         review: dict[str, Any] | None = None,
     ) -> None:
+        detail = redact_sensitive_text(detail)
+        review = redact_sensitive_value(review) if review is not None else None
         now = datetime.now(ZoneInfo("Europe/Paris"))
         with self._lock, self._connection:
             row = self.get_followup(request_id)
@@ -238,9 +257,24 @@ class FollowupPersistence:
             )
 
     @staticmethod
-    def _followup(row: Any) -> dict[str, Any]:
+    def _followup(
+        row: Any,
+    ) -> dict[str, Any]:
         value = dict(row)
-        for key in ("plan", "job", "review"):
+
+        if value.get("detail"):
+            value["detail"] = redact_sensitive_text(str(value["detail"]))
+
+        if value.get("basis"):
+            value["basis"] = redact_sensitive_text(str(value["basis"]))
+
+        for key in (
+            "plan",
+            "job",
+            "review",
+        ):
             raw = value.pop(f"{key}_json")
-            value[key] = json.loads(raw) if raw else None
+
+            value[key] = redact_sensitive_value(json.loads(raw)) if raw else None
+
         return value

@@ -17,6 +17,10 @@ from pydantic import Field
 from ohana_agent.contracts.administration import AdministrationModel
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.observation.events import ObservationPublished
+from ohana_agent.tsunade.evidence_privacy import (
+    redact_sensitive_text,
+    redact_sensitive_value,
+)
 from ohana_agent.tsunade.followup_store import FollowupPersistence
 
 IncidentSeverity = Literal["degraded", "critical"]
@@ -590,7 +594,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
                     activity_id=f"incident-event-{row['event_id']}",
                     occurred_at=datetime.fromisoformat(row["occurred_at"]),
                     kind=kind,
-                    title=str(row["summary"]),
+                    title=redact_sensitive_text(str(row["summary"])),
                     incident_id=row["incident_id"],
                 )
             )
@@ -625,22 +629,35 @@ class TsunadeIncidentRepository(FollowupPersistence):
     ) -> TsunadeIncident:
         """Attach investigation, diagnostic, proposed action or final result."""
         request = TsunadeIncidentRecordRequest.model_validate(payload)
+
+        summary = redact_sensitive_text(request.summary)
+        safe_payload = redact_sensitive_value(request.payload)
+
         incident = self.get(incident_id)
         now = datetime.now(ZoneInfo("Europe/Paris"))
+
         with self._lock, self._connection:
             self._event(
                 incident.incident_id,
                 kind=request.kind,
                 occurred_at=now,
-                summary=request.summary,
-                payload=request.payload,
+                summary=summary,
+                payload=safe_payload,
             )
+
             if request.kind == "result":
                 self._connection.execute(
-                    """UPDATE tsunade_incidents SET final_result = ?
-                    WHERE incident_id = ?""",
-                    (request.summary, str(incident.incident_id)),
+                    """
+                    UPDATE tsunade_incidents
+                    SET final_result = ?
+                    WHERE incident_id = ?
+                    """,
+                    (
+                        summary,
+                        str(incident.incident_id),
+                    ),
                 )
+
         return self.get(incident.incident_id)
 
     def propose_repair(
@@ -808,7 +825,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
         self, repair_id: UUID | str, error: object
     ) -> TsunadeRepair:
         now = datetime.now(UTC)
-        detail = str(error)[:1000]
+        detail = redact_sensitive_text(str(error))[:1000]
         with self._lock, self._connection:
             row = self._required_repair(repair_id)
             self._connection.execute(
@@ -957,6 +974,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
         incident_id: UUID | str | None = None,
     ) -> list[UUID]:
         """Attach a compact Katsuyu synthesis or maintain its log incident."""
+        result = redact_sensitive_value(result)
         if incident_id is not None:
             incident = self.get(incident_id)
             if any(
@@ -1260,7 +1278,8 @@ class TsunadeIncidentRepository(FollowupPersistence):
                 key,
             ).fetchone()[0]
         )
-        context = self._context(observation.metadata)
+        context = redact_sensitive_value(self._context(observation.metadata))
+        message = redact_sensitive_text(observation.message)
         self._connection.execute(
             """INSERT INTO tsunade_incidents (
             incident_id,node_id,service_id,capability_id,equipment_id,severity,
@@ -1275,7 +1294,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
                 observation.timestamp.isoformat(),
                 observation.timestamp.isoformat(),
                 str(observation.id),
-                observation.message,
+                message,
                 recurrence,
                 json.dumps(context, ensure_ascii=False, separators=(",", ":")),
             ),
@@ -1285,7 +1304,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
             kind="opened",
             occurred_at=observation.timestamp,
             observation=observation,
-            summary=observation.message,
+            summary=message,
             payload={"from": previous_status, "to": severity},
         )
         return self.get(incident_id)
@@ -1301,6 +1320,8 @@ class TsunadeIncidentRepository(FollowupPersistence):
             if incident.severity == "degraded" and severity == "critical"
             else "observed"
         )
+        message = redact_sensitive_text(observation.message)
+        context = redact_sensitive_value(self._context(observation.metadata))
         self._connection.execute(
             """UPDATE tsunade_incidents SET severity=?,last_observed_at=?,
             last_observation_id=?,message=?,occurrence_count=occurrence_count+1,
@@ -1309,8 +1330,11 @@ class TsunadeIncidentRepository(FollowupPersistence):
                 severity,
                 observation.timestamp.isoformat(),
                 str(observation.id),
-                observation.message,
-                json.dumps(self._context(observation.metadata), ensure_ascii=False),
+                message,
+                json.dumps(
+                    context,
+                    ensure_ascii=False,
+                ),
                 str(incident.incident_id),
             ),
         )
@@ -1319,7 +1343,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
             kind=kind,
             occurred_at=observation.timestamp,
             observation=observation,
-            summary=observation.message,
+            summary=message,
             payload={"from": incident.severity, "to": severity},
         )
         return self.get(incident.incident_id)
@@ -1328,6 +1352,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
         self, incident: TsunadeIncident, observation: Observation
     ) -> TsunadeIncident:
         result = "La capacité est revenue à un état sain."
+        message = redact_sensitive_text(observation.message)
         self._connection.execute(
             """UPDATE tsunade_incidents SET ended_at=?,last_observed_at=?,
             last_observation_id=?,message=?,final_result=? WHERE incident_id=?""",
@@ -1335,7 +1360,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
                 observation.timestamp.isoformat(),
                 observation.timestamp.isoformat(),
                 str(observation.id),
-                observation.message,
+                message,
                 result,
                 str(incident.incident_id),
             ),
@@ -1350,7 +1375,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
             kind="resolved",
             occurred_at=observation.timestamp,
             observation=observation,
-            summary=observation.message,
+            summary=message,
             payload={"from": incident.severity, "to": "healthy", "result": result},
         )
         return self.get(incident.incident_id)
@@ -1440,6 +1465,8 @@ class TsunadeIncidentRepository(FollowupPersistence):
         payload: dict[str, Any],
         observation: Observation | None = None,
     ) -> None:
+        summary = redact_sensitive_text(summary)
+        payload = redact_sensitive_value(payload)
         self._connection.execute(
             """INSERT INTO tsunade_incident_events
             (incident_id,kind,occurred_at,observation_id,status,summary,payload_json)
@@ -1526,8 +1553,8 @@ class TsunadeIncidentRepository(FollowupPersistence):
                     occurred_at=datetime.fromisoformat(event["occurred_at"]),
                     observation_id=event["observation_id"],
                     status=event["status"],
-                    summary=event["summary"],
-                    payload=json.loads(event["payload_json"]),
+                    summary=redact_sensitive_text(str(event["summary"])),
+                    payload=redact_sensitive_value(json.loads(event["payload_json"])),
                 )
                 for event in reversed(rows)
             ]
@@ -1586,11 +1613,16 @@ class TsunadeIncidentRepository(FollowupPersistence):
             ORDER BY event_id DESC LIMIT 1""",
             (row["incident_id"],),
         ).fetchone()
+        decision_payload = (
+            redact_sensitive_value(json.loads(decision_row["payload_json"]))
+            if decision_row
+            else {}
+        )
         latest_decision = (
             {
                 **{
                     key: value
-                    for key, value in json.loads(decision_row["payload_json"]).items()
+                    for key, value in decision_payload.items()
                     if key
                     in {
                         "decision",
@@ -1634,12 +1666,16 @@ class TsunadeIncidentRepository(FollowupPersistence):
             if row["ended_at"]
             else None,
             last_observation_id=row["last_observation_id"],
-            message=row["message"],
+            message=redact_sensitive_text(str(row["message"])),
             occurrence_count=int(row["occurrence_count"]),
             recurrence_count=int(row["recurrence_count"]),
-            context=json.loads(row["context_json"]),
+            context=redact_sensitive_value(json.loads(row["context_json"])),
             latest_decision=latest_decision,
-            final_result=row["final_result"],
+            final_result=(
+                redact_sensitive_text(str(row["final_result"]))
+                if row["final_result"]
+                else None
+            ),
             events=events,
             repairs=repairs,
         )
@@ -1693,8 +1729,8 @@ class TsunadeIncidentRepository(FollowupPersistence):
             incident_id=row["incident_id"],
             origin=row["origin"],
             kind=row["kind"],
-            context=row["context"],
-            question=row["question"],
+            context=redact_sensitive_text(str(row["context"])),
+            question=redact_sensitive_text(str(row["question"])),
             choices=json.loads(row["choices_json"]),
             risk=row["risk"],
             state=row["state"],
@@ -1750,7 +1786,9 @@ class TsunadeIncidentRepository(FollowupPersistence):
                 if row["verified_at"]
                 else None
             ),
-            result=row["result"],
+            result=(
+                redact_sensitive_text(str(row["result"])) if row["result"] else None
+            ),
         )
 
     def _experience_candidate(
@@ -1803,18 +1841,20 @@ class TsunadeIncidentRepository(FollowupPersistence):
             signature=row["signature"],
             equipment_id=row["equipment_id"],
             capability_id=row["capability_id"],
-            symptoms=json.loads(row["symptoms_json"]),
-            context=json.loads(row["context_json"]),
-            observations=json.loads(row["observations_json"]),
-            anomalies=json.loads(row["anomalies_json"]),
-            validated_diagnostic=row["validated_diagnostic"],
-            action=json.loads(row["action_json"]),
-            result=row["result"],
             occurrence_count=int(row["occurrence_count"]),
             success_count=int(row["success_count"]),
             failure_count=int(row["failure_count"]),
             last_used_at=datetime.fromisoformat(row["last_used_at"]),
             confidence=float(row["confidence"]),
+            symptoms=redact_sensitive_value(json.loads(row["symptoms_json"])),
+            context=redact_sensitive_value(json.loads(row["context_json"])),
+            observations=redact_sensitive_value(json.loads(row["observations_json"])),
+            anomalies=redact_sensitive_value(json.loads(row["anomalies_json"])),
+            validated_diagnostic=redact_sensitive_text(
+                str(row["validated_diagnostic"])
+            ),
+            action=redact_sensitive_value(json.loads(row["action_json"])),
+            result=redact_sensitive_text(str(row["result"])),
         )
 
     @staticmethod

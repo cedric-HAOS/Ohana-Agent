@@ -824,8 +824,88 @@ def test_terminal_collection_failure_is_visible_and_stops(setup, status):
         )
         assert poll(s) is None
     assert s.incidents.get_followup(str(req.request_id))["status"] == "failed"
+    incident = s.incidents.get(s.incident.incident_id)
+    assessment = incident_assessment(incident)
+    assert assessment["label"] == "Investigation interrompue"
+    assert assessment["next_action"] == "details"
+    assert assessment["followup"]["status"] == "failed"
+    assert "non aboutie" in assessment["followup"]["detail"]
+    # Both compact and detailed projections must recover the existing failure.
+    reopened = TsunadeIncidentRepository(s.jobs.path.parent / "incidents.db")
+    try:
+        for restored in (reopened.get(s.incident.incident_id), reopened.list()[0]):
+            assert incident_assessment(restored)["label"] == "Investigation interrompue"
+    finally:
+        reopened.close()
     assert s.jobs.count("ai.inference") == 1
     assert poll(s) is None
+
+    # Failure is not a permanent label: newer evidence, decisions and actual
+    # work in flight take precedence while its detail remains historical.
+    newer = incident.model_copy(
+        update={
+            "last_observed_at": datetime.fromisoformat(incident.followup["failed_at"])
+            + timedelta(seconds=1)
+        }
+    )
+    assert incident_assessment(newer)["label"] != "Investigation interrompue"
+    assert incident_assessment(newer)["next_action"] == "diagnose"
+    queued = incident.model_copy(update={"expertise_state": "ai_queued"})
+    assert incident_assessment(queued)["state"] == "analyzing"
+    resolved = incident.model_copy(update={"state": "resolved"})
+    assert incident_assessment(resolved)["state"] == "resolved"
+    s.incidents.append_record(
+        incident.incident_id,
+        {
+            "kind": "diagnostic",
+            "summary": "Nouveau contrôle déterministe",
+            "payload": {
+                "cycle_status": "deterministic_decision",
+                "decision": "watch",
+                "conclusion": "Surveillance sur nouvelles preuves",
+            },
+        },
+    )
+    refreshed = incident_assessment(s.incidents.get(incident.incident_id))
+    assert refreshed["state"] == "watch"
+    assert refreshed["followup"]["status"] == "failed"
+
+
+@pytest.mark.parametrize("phase", ["ai", "collection", "review"])
+@pytest.mark.parametrize("claimed", [False, True])
+@pytest.mark.parametrize("view", ["list", "detail", "companion"])
+def test_expired_work_is_reconciled_without_worker_poll(setup, phase, claimed, view):
+    s = setup
+    if phase == "ai":
+        s.expertise.diagnose(s.incident.incident_id, log_result=s.incident.context,
+                             operator_requested=True)
+    else:
+        propose(s)
+        authorize(s)
+        if phase == "review":
+            collected(s)
+    if claimed:
+        assert poll(s) is not None
+    counts = (s.jobs.count("ai.inference"), s.jobs.count("logs.investigate"))
+    s.jobs._clock = lambda: datetime.now(ZoneInfo("Europe/Paris")) + timedelta(days=1)
+
+    def read():
+        if view == "list":
+            return s.service.list_incidents()
+        if view == "detail":
+            return s.service.read_incident(str(s.incident.incident_id))
+        return s.service.read_companion_summary()
+
+    read()
+    incident = s.incidents.get(s.incident.incident_id)
+    assert incident_assessment(incident)["state"] == "incomplete"
+    if phase != "ai":
+        assert incident.followup["status"] == "failed"
+    assert s.jobs.pending_completions() == []
+    event_count = len(incident.events)
+    read()
+    assert len(s.incidents.get(s.incident.incident_id).events) == event_count
+    assert (s.jobs.count("ai.inference"), s.jobs.count("logs.investigate")) == counts
 
 
 def test_companion_cannot_override_plan(setup):

@@ -433,6 +433,7 @@ class AdministrationService:
     def list_incidents(self, state: str = "active") -> object:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
+        self._refresh_failed_jobs()
         if self.followups is not None and self.followups.automatic_read_only:
             self._reconcile_followup_proposals()
         summary = self.incident_repository.statistics()
@@ -474,12 +475,14 @@ class AdministrationService:
     def read_incident(self, incident_id: str) -> object:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
+        self._refresh_failed_jobs()
         return self.incident_repository.get(incident_id)
 
     def read_companion_summary(self) -> object:
         """Return the smallest useful Konoha overview for a personal companion."""
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
+        self._refresh_failed_jobs()
         self._reconcile_followup_proposals()
         requests = self.incident_repository.list_user_requests(state="pending").requests
         incidents = self.incident_repository.list(state="active", limit=500)
@@ -698,6 +701,7 @@ class AdministrationService:
         if self.expertise_service is None:
             raise LookupError("Tsunade expertise is unavailable")
         with self._worker_cycle_lock:
+            self._refresh_failed_jobs()
             if self.followups is not None and self.followups.automatic_read_only:
                 self._reconcile_followup_proposals()
             if self.incident_repository is not None:
@@ -1330,6 +1334,14 @@ class AdministrationService:
                 if str(pending.job_id) == job_id:
                     self._process_job_completion(pending)
             return job
+
+    def _refresh_failed_jobs(self) -> None:
+        """Expose bounded terminal failures even when no worker polls again."""
+        if self.job_repository is None:
+            return
+        with self._worker_cycle_lock:
+            for job in self.job_repository.pending_completions(failures_only=True):
+                self._process_job_completion(job)
 
     def _process_job_completion(self, job: Any) -> None:
         """Commit decisions and follow-up jobs before releasing idle workers."""

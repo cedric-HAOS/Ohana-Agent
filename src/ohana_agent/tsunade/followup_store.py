@@ -138,6 +138,18 @@ class FollowupPersistence:
             result = self._followup(row)
             if result["status"] == "pending" and row["request_state"] != "pending":
                 result["status"] = row["request_state"]
+            if result["status"] == "failed":
+                # Read the durable transition, including legacy rows. No schema
+                # migration or rewrite of historical conclusions is necessary.
+                transition = self._connection.execute(
+                    """SELECT occurred_at FROM tsunade_incident_events
+                    WHERE incident_id=? AND kind='investigation'
+                    AND json_extract(payload_json,'$.request_id')=?
+                    AND json_extract(payload_json,'$.status')='failed'
+                    ORDER BY event_id DESC LIMIT 1""",
+                    (incident_id, result["request_id"]),
+                ).fetchone()
+                result["failed_at"] = transition["occurred_at"] if transition else None
             return result
 
     def answer_followup(

@@ -34,6 +34,15 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         current = datetime.fromisoformat(str(basis)) >= incident.last_observed_at
     except (ValueError, TypeError):
         current = False
+    try:
+        failed_at = datetime.fromisoformat(str(followup.get("failed_at")))
+        failure_current = (
+            followup_status == "failed"
+            and failed_at >= incident.last_observed_at
+            and (not decided_at or failed_at >= datetime.fromisoformat(str(decided_at)))
+        )
+    except (ValueError, TypeError):
+        failure_current = False
     if incident.state == "resolved":
         state, label, action = "resolved", "Résolu", None
     elif followup_status == "pending":
@@ -56,6 +65,8 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
             "Analyse Katsuyu en cours ou en attente",
             None,
         )
+    elif failure_current:
+        state, label, action = "incomplete", "Investigation interrompue", "details"
     elif (
         followup_status in {"completed", "incomplete"}
         and followup_covers_observation(incident)
@@ -131,13 +142,19 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         "hypothesis": hypothesis,
         "reason": decision.get("reason"),
         "confidence": decision.get("confidence"),
-        "recommended_action": decision.get("recommended_action"),
+        "recommended_action": (
+            "Examiner l’échec et la disponibilité de Katsuyu avant de demander "
+            "une nouvelle investigation."
+            if failure_current and state == "incomplete"
+            else decision.get("recommended_action")
+        ),
         "observed_at": incident.last_observed_at.isoformat(),
         "finding_count": len(incident.context.get("findings", []))
         if incident.capability_id == "logs.health"
         else None,
         "followup": {
             "status": followup_status,
+            "failed_at": followup.get("failed_at"),
             "detail": (
                 "L’investigation et sa réévaluation sont terminées. "
                 "La cause reste à confirmer. Aucune nouvelle collecte n’est "

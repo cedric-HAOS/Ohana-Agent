@@ -297,6 +297,8 @@ class TsunadeExpertiseService:
                             *self._experience_proposals(experiences),
                         ][:16]
                     ),
+                    decision="watch",
+                    decision_source="fallback",
                 )
                 self.incidents.append_record(
                     incident.incident_id,
@@ -306,7 +308,21 @@ class TsunadeExpertiseService:
                         "payload": {
                             "cycle_status": "insufficient_context",
                             "facts": facts,
-                            "decision": "pending",
+                            "decision": outcome.decision,
+                            "decision_source": outcome.decision_source,
+                            "epistemic_status": "insufficient_context",
+                            "verdict": "INSUFFICIENT_CONTEXT",
+                            "conclusion": outcome.diagnosis,
+                            "reason": (
+                                "Les contrôles disponibles ne confirment pas la cause. "
+                                "Aucune expertise Katsuyu n’a pu être mise en file."
+                            ),
+                            "recommended_action": (
+                                "Maintenir la surveillance ; vérifier les limites des "
+                                "sondes et la disponibilité de Katsuyu avant de "
+                                "demander une nouvelle expertise."
+                            ),
+                            "basis_observed_at": incident.last_observed_at.isoformat(),
                         },
                     },
                 )
@@ -1378,10 +1394,12 @@ class TsunadeExpertiseService:
 
     @staticmethod
     def _concrete_failure(operation: str, result: InvestigationResult) -> bool:
-        if result.status in {"KO", "TIMEOUT"}:
-            return True
+        # Execution failure supplies no measurement of the target. A completed
+        # plugin check can still report success=False and confirm a failed probe.
+        if result.status != "OK":
+            return False
         data = result.result
-        if data.get("success") is False or data.get("enabled") is False:
+        if data.get("success") is False:
             return True
         status = str(data.get("status", "")).casefold()
         if status in {"ko", "error", "failed", "unhealthy", "degraded", "offline"}:

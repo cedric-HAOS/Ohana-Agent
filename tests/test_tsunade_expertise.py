@@ -1,12 +1,15 @@
 """Tests for Tsunade's deterministic-first, optional-AI expertise cycle."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+import pytest
+
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.expertise import TsunadeExpertiseService
+from ohana_agent.tsunade.incident_summary import incident_assessment
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 from ohana_agent.tsunade.investigations import InvestigationResult
 
@@ -51,6 +54,158 @@ class FakeInvestigations:
             duration_seconds=0,
             result=self.result,
         )
+
+
+@pytest.mark.parametrize("probe_status", ["KO", "TIMEOUT"])
+@pytest.mark.parametrize("service_name", ["memory", "dns", "mqtt", "systemd"])
+def test_unavailable_probe_never_confirms_target_failure(
+    tmp_path, probe_status, service_name
+):
+    database = tmp_path / "control.db"
+    repository = TsunadeIncidentRepository(database)
+    incident = _incident(
+        repository, service=service_name, capability=f"{service_name}.health"
+    )
+
+    class UnavailableInvestigations(FakeInvestigations):
+        def execute(self, payload):
+            result = super().execute(payload)
+            return result.model_copy(
+                update={"status": probe_status, "error": "Probe unavailable"}
+            )
+
+    investigations = UnavailableInvestigations()
+    service = TsunadeExpertiseService(
+        incidents=repository, investigations=investigations
+    )
+    try:
+        outcome = service.diagnose(incident.incident_id)
+    finally:
+        repository.close()
+    assert outcome.status == "INSUFFICIENT_CONTEXT"
+    assert outcome.decision == "watch"
+    assert investigations.operations
+
+    # The same conclusion must survive restart and reach both UI projections.
+    repository = TsunadeIncidentRepository(database)
+    try:
+        for updated in (repository.get(incident.incident_id), repository.list()[0]):
+            assessment = incident_assessment(updated)
+            assert updated.state == "active"
+            assert updated.expertise_state == "insufficient_context"
+            assert assessment["conclusion"] == outcome.diagnosis
+            assert assessment["reason"]
+            assert assessment["recommended_action"]
+            assert assessment["decision"] == "watch"
+        assert not any(
+            e.payload.get("epistemic_status") == "confirmed_by_probe"
+            for e in repository.get(incident.incident_id).events
+        )
+    finally:
+        repository.close()
+
+
+def test_disabled_backup_is_not_a_confirmed_backup_failure(tmp_path):
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = _incident(repository, service="backup", capability="backup.health")
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=FakeInvestigations({"enabled": False, "status": "disabled"}),
+    )
+    try:
+        assert service.diagnose(incident.incident_id).status == "INSUFFICIENT_CONTEXT"
+    finally:
+        repository.close()
+
+
+@pytest.mark.parametrize(
+    ("service_name", "measurement"),
+    [
+        ("dns", {"success": False}),
+        ("mqtt", {"success": False}),
+        ("memory", {"memory_percent": 95}),
+        ("cpu", {"cpu_percent": 99}),
+        ("disk", {"disk_percent": 95}),
+        ("systemd", {"failed_systemd_units": ["example.service"]}),
+        ("backup", {"enabled": False, "status": "FAILED"}),
+    ],
+)
+def test_confirmed_fault_and_healthy_recovery_without_katsuyu(
+    tmp_path, service_name, measurement
+):
+    database = tmp_path / "control.db"
+    repository = TsunadeIncidentRepository(database)
+    incident = _incident(
+        repository, service=service_name, capability=f"{service_name}.health"
+    )
+    service = TsunadeExpertiseService(
+        incidents=repository, investigations=FakeInvestigations(measurement)
+    )
+    try:
+        outcome = service.diagnose(incident.incident_id)
+        assert outcome.status == "DETERMINISTIC"
+        assert outcome.ai_job_id is None
+        assert outcome.decision == "action_required"
+        assert repository.get(incident.incident_id).state == "active"
+    finally:
+        repository.close()
+    repository = TsunadeIncidentRepository(database)
+    try:
+        assert (
+            incident_assessment(repository.get(incident.incident_id))["state"]
+            == "action_required"
+        )
+        recovered = repository.process(
+            Observation(
+                node="infra-01",
+                service=service_name,
+                capability=f"{service_name}.health",
+                status=ObservationStatus.HEALTHY,
+                success=True,
+                message="Healthy again",
+                source=f"{service_name}.health",
+                id=uuid4(),
+                timestamp=incident.last_observed_at + timedelta(minutes=5),
+                metadata={"device_id": "infra-01"},
+            )
+        )
+        assert recovered.incident_id == incident.incident_id
+        assert recovered.state == "resolved"
+        assert incident_assessment(recovered)["state"] == "resolved"
+    finally:
+        repository.close()
+
+
+def test_unavailable_probe_can_use_optional_ai_without_confirming_failure(tmp_path):
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = _incident(repository, service="memory", capability="memory.health")
+    dispatched = []
+
+    class UnavailableInvestigations(FakeInvestigations):
+        def execute(self, payload):
+            return super().execute(payload).model_copy(update={"status": "TIMEOUT"})
+
+    def dispatch(payload):
+        dispatched.append(payload)
+        return SimpleNamespace(job_id=uuid4())
+
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=UnavailableInvestigations(),
+        ai_dispatcher=dispatch,
+    )
+    try:
+        assert service.diagnose(incident.incident_id).status == "AI_QUEUED"
+        assert len(dispatched) == 1
+        evidence = dispatched[0]["parameters"]["evidence"]
+        assert any(
+            item["source"] == "investigations.deterministic"
+            and "TIMEOUT" in item["content"]
+            for item in evidence
+        )
+        assert repository.get(incident.incident_id).state == "active"
+    finally:
+        repository.close()
 
 
 def test_known_procedure_stays_deterministic_when_probe_confirms_failure(

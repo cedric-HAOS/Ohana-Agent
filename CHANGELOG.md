@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Une sonde Tsunade en erreur ou hors délai ne confirme plus une panne de la
+  cible. Une sauvegarde désactivée ne constitue pas à elle seule un échec.
+  Sans worker IA compatible, Tsunade conserve une décision de surveillance avec
+  contexte insuffisant, conclusion, justification et prochaine action explicites.
+  Les exceptions des sondes n'exportent plus leur message brut dans les preuves
+  et journaux ; seul leur type est conservé.
+
 - Tsunade mémorise les groupes de preuves ayant déjà conduit à une expertise,
   indépendamment de la baseline complète. Des anomalies identiques toujours
   marquées nouvelles dans des collectes tronquées ne relancent plus l'IA.

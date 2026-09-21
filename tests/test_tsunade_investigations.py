@@ -126,3 +126,19 @@ def test_backup_status_exposes_latest_distributed_failure() -> None:
     assert result.result["status"] == "FAILED"
     assert result.result["last_error"] == "Vision indisponible avant le transfert"
     assert result.result["latest_distributed_job"]["type"] == "backup.infra"
+
+
+def test_probe_exception_does_not_export_credentials(caplog) -> None:
+    executor = _executor()
+
+    def unavailable():
+        raise RuntimeError("http://operator:fictional-password@host/stok=fake-session/")
+
+    executor.host_health_reader = unavailable
+    result = executor.execute({"operation": "memory.status", "timeout_seconds": 1})
+    assert result.status == "KO"
+    assert result.result == {}
+    assert result.error == "RuntimeError"
+    for secret in ("fictional-password", "fake-session"):
+        assert secret not in result.model_dump_json()
+        assert secret not in caplog.text

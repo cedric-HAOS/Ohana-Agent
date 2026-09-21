@@ -174,7 +174,9 @@ class InvestigationExecutor:
             error = "Investigation exceeded its declared timeout"
         else:
             status = "KO" if exception is not None else "OK"
-            error = str(exception)[:1000] if exception is not None else None
+            # Provider exceptions can embed authenticated URLs or response bodies.
+            # Keep a useful error class, never their raw text in logs or evidence.
+            error = type(exception).__name__ if exception is not None else None
             result = result or {}
         if status == "KO":
             LOGGER.error("Investigation %s failed: %s", investigation_id, error)

@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## [1.29.15] — 2026-09-21 — Sûreté des preuves Tsunade
+
+- Tsunade applique désormais une sanitation centralisée aux preuves techniques
+  susceptibles de contenir des secrets avant leur persistance, leur utilisation
+  diagnostique ou leur exposition aux interfaces.
+
+- Les identifiants intégrés aux URL, tokens génériques et variantes `*_token`,
+  clés API, mots de passe, secrets et en-têtes d'autorisation sont masqués tout
+  en conservant autant que possible le contexte utile au diagnostic.
+
+- Les chemins de session caméra `/stok=.../` conservent leur structure après
+  masquage. Par exemple `/stok=<secret>/ds` devient
+  `/stok=[redacted]/ds`, sans supprimer inutilement le suffixe diagnostique.
+
+- Les résultats des investigations, erreurs distribuées utilisées comme preuves,
+  messages et contextes d'incident, événements, résultats finaux et erreurs de
+  réparation sont protégés avant persistance.
+
+- Les dossiers transmis à Katsuyu sont nettoyés avant l'inférence. Les résultats
+  IA retournés par Katsuyu, notamment interprétations, résumés, findings et
+  hypothèses, sont également assainis avant validation et persistance.
+
+- Les plans, jobs, détails et résultats des investigations complémentaires
+  (`follow-up`) sont protégés à l'écriture et à la lecture.
+
+- Les expériences mémorisées par Tsunade relisent leur contexte, observations,
+  anomalies, diagnostic, action et résultat à travers la même frontière de
+  sanitation.
+
+- Les anciennes données SQLite déjà persistées sont également assainies lors de
+  leur lecture. Cette protection évite d'exposer une preuve historique sensible
+  sans imposer de migration destructive des dossiers existants.
+
+- La projection commune destinée à Vision et Shizune n'expose plus directement
+  une hypothèse contenant un secret connu.
+
+- La campagne de validation atteint 1557 tests réussis et 1 test ignoré.
+  Les 9 scénarios Ohana Sandbox restent PASS et le full-stack avec worker HTTPS,
+  inférence Ministral réelle et rendu Vision reste PASS.
+
 ## [1.29.14] — 2026-09-21 — Stabilisation des suivis et niveaux de diagnostic
 
 - Les résultats terminaux `FAILED`, `TIMEOUT` et `CANCELLED` sont désormais

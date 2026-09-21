@@ -1,6 +1,40 @@
 # CHANGELOG
 
-## Non publié
+## [1.29.14] — 2026-09-21 — Stabilisation des suivis et niveaux de diagnostic
+
+- Les résultats terminaux `FAILED`, `TIMEOUT` et `CANCELLED` sont désormais
+  réconciliés lors de la consultation des incidents, même lorsqu'aucun worker
+  Katsuyu ne repasse ensuite. Un suivi expiré ne peut plus rester silencieusement
+  affiché comme « en cours ».
+
+- La réconciliation vide tous les lots de résultats terminaux disponibles, y
+  compris au-delà de la limite interne de 16 résultats. Le traitement est
+  idempotent et ne relance aucun travail déjà terminal.
+
+- Une investigation interrompue est explicitement projetée comme
+  `Investigation interrompue`. La date de l'échec est conservée afin de
+  distinguer un échec encore pertinent d'un échec historique remplacé par une
+  observation, une décision ou un travail plus récent.
+
+- Tsunade persiste et expose désormais explicitement les niveaux de diagnostic
+  `CONFIRMED`, `PROBABLE` et `INSUFFICIENT_CONTEXT`.
+
+- `CONFIRMED` correspond à une panne réellement confirmée par une preuve
+  déterministe et ne possède aucun `confirmation_gap`.
+
+- `PROBABLE` reste une hypothèse non autoritative. Les éléments encore
+  nécessaires à sa confirmation sont conservés dans `confirmation_gap` et ce
+  niveau ne peut pas, à lui seul, produire une décision `action_required`.
+
+- `INSUFFICIENT_CONTEXT` devient un niveau explicite lorsque les preuves ne
+  permettent pas d'établir une cause ou lorsque l'expertise Katsuyu facultative
+  n'aboutit pas. La décision reste alors bornée, sans transformer l'absence de
+  preuve en panne confirmée.
+
+- Les niveaux de diagnostic et leurs limites sont propagés jusqu'à la projection
+  d'incident commune aux interfaces.
+
+## [1.29.2–1.29.13] — 2026-09-15 au 2026-09-21 — Stabilisation progressive de Tsunade
 
 - Une sonde Tsunade en erreur ou hors délai ne confirme plus une panne de la
   cible. Une sauvegarde désactivée ne constitue pas à elle seule un échec.
@@ -15,6 +49,7 @@
   La mémoire survit aux redémarrages et à la limite d'affichage des événements ;
   l'historique récent antérieur au correctif est reconnu sans réécriture.
   Une nouvelle preuve ou un diagnostic explicitement demandé reste admissible.
+
 - Les références de compteurs sont sélectionnées parmi les collectes complètes
   de même durée réelle que le contrôle demandé. Une fenêtre courte ne devient
   plus la référence d'une fenêtre longue, y compris au changement d'heure.
@@ -22,10 +57,12 @@
 - La collecte journald détecte le dépassement de 10 000 lignes avec une ligne
   témoin. Une collecte tronquée ne peut plus clôturer un incident ni justifier
   une conclusion de stabilité ; l'historique reste séparé des éléments courants.
+
 - Les preuves IA volumineuses restent du JSON valide, avec réduction explicite,
   compteurs d'origine, fenêtre et nombre de groupes non datés. Les anomalies
   critiques/nouvelles sont prioritaires dans l'extrait. Les résultats historiques
   ne sont pas réécrits.
+
 - Les sondes distinguent HEAD refusé (405), accès refusé, redirection et erreur
   serveur. Une saturation des sondes retourne immédiatement les opérations non
   démarrées comme `busy`, sans attendre leur délai d'exécution.
@@ -36,7 +73,7 @@
 
 - Les investigations peuvent sonder en HTTP l'URL Home Assistant déjà configurée
   pour la cible Supervisor active, même sans service HTTP dans l'architecture.
-  Le HEAD / reste sans authentification ni redirection, dans le budget existant ;
+  Le HEAD `/` reste sans authentification ni redirection, dans le budget existant ;
   les preuves indiquent la provenance `backup.targets.url` sans chemin ni secret.
 
 - Les snapshots d'investigation sélectionnent les cibles HTTP/HTTPS avant
@@ -67,19 +104,17 @@
 - Les incidents de journaux INFRA-01 sont attribués à `system-journal`.
   Un incident actif hérité de `home-assistant` conserve son identité et son
   historique lors du prochain contrôle, sans création d'un doublon.
+
 - Les corrélations temporelles examinées sont mémorisées. Leur répétition ne
   suffit plus à relancer l'IA ; elles restent disponibles dans les preuves.
-
-## Non publié
 
 - Le contrôle des journaux masque les paramètres de session caméra dans sa
   baseline historique avant persistance et envoi à Katsuyu. Le filtrage est
   partagé avec la construction des preuves IA ; les compteurs sont conservés.
 
-## Non publié
-
 - Les paramètres de session caméra sont masqués dans les preuves JSON construites
   pour Katsuyu, y compris depuis les anomalies enregistrées par un ancien worker.
+
 - Les instructions de réévaluation distinguent les anomalies non datées de
   l'heure de collecte ; leur appartenance à la fenêtre n'est pas présumée.
 

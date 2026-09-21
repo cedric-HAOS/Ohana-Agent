@@ -497,7 +497,9 @@ class DistributedJobRepository:
         )
         return True
 
-    def pending_completions(self, *, failures_only: bool = False) -> list[DistributedJobDocument]:
+    def pending_completions(
+        self, *, failures_only: bool = False
+    ) -> list[DistributedJobDocument]:
         """Resume durable result processing before considering a worker idle."""
         with self._lock, self._connection:
             self._recover_locked(self._now())

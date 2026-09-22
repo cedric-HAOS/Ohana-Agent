@@ -36,11 +36,13 @@
   démarrage direct sans logs, absence de boucle sur occurrence répétée, priorité
   aux journaux lorsque disponibles et absence de double traitement.
 
-- Qualification locale avant publication :
+- Qualification avant publication :
   - **1569 tests réussis, 1 ignoré** ;
   - Ruff propre ;
   - `tsunade-observation-wiring` PASS ;
-  - suite Sandbox existante **11/11 PASS** avant ajout du scénario Katsuyu ambigu.
+  - suite Ohana Sandbox **12/12 PASS** ;
+  - full-stack avec worker HTTPS, llama.cpp, vrai modèle Ministral et rendu
+    Vision : PASS.
 
 - La campagne de Phase 1 a également validé localement un incident ambigu
   `logs.health` :
@@ -57,8 +59,29 @@
   a produit un résultat `KO` structuré avec hypothèse et contexte manquant,
   accepté par Tsunade comme `PROBABLE` puis rendu dans Vision.
 
-Cette release prépare la requalification opérationnelle des pannes contrôlées
-réseau et de l'incident ambigu sur Konoha.
+- Après déploiement sur INFRA-01, la recette
+  `post-deploy agent 1.29.19` est PASS : bonne version, service actif,
+  `NRestarts=0`, port d'administration accessible, aucun job actif, aucun
+  résultat terminal non traité et aucune erreur Agent récente.
+
+- Le rejeu réel de la panne réseau `SHE-04` valide le correctif en production.
+  Après trois échecs ICMP consécutifs, un unique incident
+  `network.reachable` est ouvert et Tsunade démarre automatiquement son
+  expertise malgré l'absence de source de journaux pour l'équipement.
+
+- L'investigation déterministe confirme que le réseau de référence reste
+  accessible en testant la FreeBox `192.168.1.1`. Tsunade sollicite ensuite
+  automatiquement Katsuyu, dont la contribution reste une hypothèse
+  `PROBABLE` avec décision `investigate`.
+
+- Les dix observations de panne suivantes alimentent le même incident sans
+  redémarrer Tsunade ni créer de second job IA.
+
+- Après remise sous tension de `SHE-04`, le même incident est automatiquement
+  résolu sur le contrôle ICMP sain suivant.
+
+La correction introduite par 1.29.19 est donc validée localement puis sur
+Konoha réel.
 
 ## [1.29.18] — 2026-09-22 — État Supervisor Téléinformation `error`
 
@@ -85,7 +108,6 @@ réseau et de l'incident ambigu sur Konoha.
 
 - Validation ciblée : les 8 scénarios de
   `test_teleinformation_supervisor_evidence.py` réussissent.
-
 
 ## [1.29.17] — 2026-09-22 — Persistance des preuves Supervisor Téléinformation
 

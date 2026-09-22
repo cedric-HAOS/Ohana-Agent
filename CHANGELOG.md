@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## [1.29.16] — 2026-09-22 — Diagnostic Téléinformation déterministe
+
+- Tsunade exploite désormais l'inspection Supervisor disponible pour les
+  incidents `teleinformation.freshness` en mode `direct_http` avant toute
+  escalade vers Katsuyu AI.
+
+- Lorsque Supervisor indique que l'add-on `teleinfo2mqtt` est `stopped`,
+  Tsunade établit directement un diagnostic `CONFIRMED`, avec preuve
+  déterministe et `confirmation_gap` vide. Aucune expertise IA n'est demandée
+  pour expliquer une panne déjà établie par cette preuve.
+
+- L'absence d'information Supervisor, une inspection inaccessible ou un état
+  ne confirmant pas l'arrêt ne sont pas transformés artificiellement en preuve :
+  le cycle d'investigation habituel reste alors applicable.
+
+- Les décisions Téléinformation conservent désormais une empreinte stable de
+  leur base diagnostique. Le simple vieillissement d'une trame ou la répétition
+  d'une observation matériellement identique ne rend plus immédiatement
+  l'analyse obsolète.
+
+- Une modification significative du contexte diagnostique, par exemple du mode,
+  de la source, du compteur, de la sévérité ou du seuil de fraîcheur, modifie
+  cette empreinte et provoque correctement une nouvelle analyse.
+
+- La projection persistée des incidents conserve cette empreinte afin que
+  Vision puisse distinguer une nouvelle occurrence du même défaut d'une
+  information réellement nouvelle.
+
+- Deux tests de régression reproduisent les défauts observés sur Konoha :
+  priorité de la preuve Supervisor sur l'IA et maintien d'un diagnostic courant
+  lors d'observations Téléinformation équivalentes.
+
+- Validation locale : 1 559 tests Agent réussis.
+  Les 9 scénarios Ohana Sandbox restent PASS.
+
 ## [1.29.15] — 2026-09-21 — Sûreté des preuves Tsunade
 
 - Tsunade applique désormais une sanitation centralisée aux preuves techniques

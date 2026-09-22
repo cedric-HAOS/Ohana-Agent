@@ -21,6 +21,7 @@ from ohana_agent.contracts.administration import (
     AiInferenceParameters,
     AiInferenceResult,
 )
+from ohana_agent.tsunade.diagnostic_basis import incident_basis_fingerprint
 from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
 from ohana_agent.tsunade.evidence_privacy import (
     redact_sensitive_text,
@@ -150,6 +151,55 @@ class TsunadeExpertiseOutcome(AdministrationModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+def _teleinformation_addon_state(
+    incident: TsunadeIncident,
+    diagnostics: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    """Extract the current teleinfo2mqtt Supervisor state when relevant."""
+
+    if incident.capability_id != "teleinformation.freshness":
+        return None, None
+
+    context = incident.context
+
+    if context.get("mode") != "direct_http":
+        return None, None
+
+    if not isinstance(diagnostics, dict):
+        return None, None
+
+    inspection = diagnostics.get("configuration_inspection")
+
+    if not isinstance(inspection, dict):
+        return None, None
+
+    remote = inspection.get("remote")
+
+    if not isinstance(remote, dict):
+        return None, None
+
+    addons = remote.get("addons")
+
+    if not isinstance(addons, list):
+        return None, None
+
+    for addon in addons:
+        if not isinstance(addon, dict):
+            continue
+
+        addon_id = str(addon.get("addon") or "")
+        normalized = addon_id.casefold()
+
+        if "teleinfo" not in normalized:
+            continue
+
+        state = str(addon.get("state") or "").strip().casefold()
+
+        return state or None, addon_id or None
+
+    return None, None
+
+
 class TsunadeExpertiseService:
     """Run finite probes first and request local AI only when still insufficient."""
 
@@ -269,6 +319,86 @@ class TsunadeExpertiseService:
                         facts=facts,
                         cycle_status="deterministic_decision",
                     )
+                    return outcome
+
+            # A stale direct HTTP teleinformation feed can have a deterministic
+            # explanation available from the node's read-only configuration
+            # inspection. Check it before escalating to Katsuyu.
+            if (
+                incident.capability_id == "teleinformation.freshness"
+                and incident.context.get("mode") == "direct_http"
+            ):
+                try:
+                    diagnostics = self.investigations.read_only_snapshot(
+                        incident.node_id
+                    )
+                except Exception:
+                    LOGGER.exception(
+                        "Read-only inspection failed for incident %s",
+                        incident.incident_id,
+                    )
+                    diagnostics = None
+
+                addon_state, addon_id = _teleinformation_addon_state(
+                    incident,
+                    diagnostics,
+                )
+
+                if addon_state == "stopped":
+                    addon_name = addon_id or "teleinfo2mqtt"
+
+                    decision = TsunadeDecisionResult(
+                        decision="investigate",
+                        source="deterministic",
+                        conclusion=(
+                            f"Le Supervisor de {incident.node_id.upper()} "
+                            f"indique que l’add-on {addon_name} est arrêté. "
+                            "En mode direct_http, cet arrêt explique "
+                            "l’absence de nouvelles trames Téléinformation "
+                            "vers Agent."
+                        ),
+                        reason=(
+                            "L’état courant fourni par le Supervisor "
+                            f"pour {addon_name} est « stopped »."
+                        ),
+                        confidence=1.0,
+                        recommended_action=(
+                            f"Vérifier pourquoi l’add-on {addon_name} "
+                            "est arrêté avant toute remise en service."
+                        ),
+                        reevaluate_after="next_observation",
+                    )
+
+                    deterministic_facts = [
+                        *facts,
+                        (
+                            f"Supervisor : l’add-on {addon_name} est arrêté "
+                            f"sur {incident.node_id.upper()}."
+                        ),
+                    ][:32]
+
+                    outcome = TsunadeExpertiseOutcome(
+                        incident_id=incident.incident_id,
+                        status="DETERMINISTIC",
+                        known_procedure=procedure is not None,
+                        diagnosis=decision.conclusion,
+                        facts=deterministic_facts,
+                        proposals=[decision.recommended_action],
+                        decision=decision.decision,
+                        decision_source=decision.source,
+                        confidence=decision.confidence,
+                    )
+
+                    self._record_decision(
+                        incident.incident_id,
+                        decision,
+                        facts=deterministic_facts,
+                        cycle_status="deterministic_decision",
+                        epistemic_status="confirmed_by_supervisor",
+                        diagnostic_level="CONFIRMED",
+                        basis_observed_at=incident.last_observed_at.isoformat(),
+                    )
+
                     return outcome
 
             parameters = self._ai_parameters(
@@ -1338,23 +1468,47 @@ class TsunadeExpertiseService:
         *,
         facts: list[str],
         cycle_status: str,
+        epistemic_status: str | None = None,
+        diagnostic_level: str | None = None,
+        basis_observed_at: str | None = None,
     ) -> None:
+        incident = self.incidents.get(incident_id)
+
+        payload: dict[str, Any] = {
+            "cycle_status": cycle_status,
+            "decision": decision.decision,
+            "decision_source": decision.source,
+            "conclusion": decision.conclusion,
+            "reason": decision.reason,
+            "confidence": decision.confidence,
+            "recommended_action": decision.recommended_action,
+            "reevaluate_after": decision.reevaluate_after,
+            "facts": facts,
+        }
+
+        if epistemic_status is not None:
+            payload["epistemic_status"] = epistemic_status
+
+        if diagnostic_level is not None:
+            payload["diagnostic_level"] = diagnostic_level
+
+            if diagnostic_level == "CONFIRMED":
+                payload["confirmation_gap"] = []
+
+        if basis_observed_at is not None:
+            payload["basis_observed_at"] = basis_observed_at
+
+        basis_fingerprint = incident_basis_fingerprint(incident)
+
+        if basis_fingerprint is not None:
+            payload["basis_fingerprint"] = basis_fingerprint
+
         self.incidents.append_record(
             incident_id,
             {
                 "kind": "diagnostic",
                 "summary": decision.conclusion,
-                "payload": {
-                    "cycle_status": cycle_status,
-                    "decision": decision.decision,
-                    "decision_source": decision.source,
-                    "conclusion": decision.conclusion,
-                    "reason": decision.reason,
-                    "confidence": decision.confidence,
-                    "recommended_action": decision.recommended_action,
-                    "reevaluate_after": decision.reevaluate_after,
-                    "facts": facts,
-                },
+                "payload": payload,
             },
         )
 

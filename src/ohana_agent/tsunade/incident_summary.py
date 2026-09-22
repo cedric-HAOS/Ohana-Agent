@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Any
 
+from ohana_agent.tsunade.diagnostic_basis import incident_basis_fingerprint
 from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
 from ohana_agent.tsunade.evidence_privacy import redact_sensitive_text
 from ohana_agent.tsunade.incidents import TsunadeIncident
@@ -29,11 +30,25 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
     followup = incident.followup or {}
     followup_status = followup.get("status")
     decided_at = decision.get("occurred_at")
+
+    current_basis = incident_basis_fingerprint(incident)
+    stored_basis = decision.get("basis_fingerprint")
+
+    same_basis = bool(
+        current_basis is not None
+        and isinstance(stored_basis, str)
+        and stored_basis == current_basis
+    )
+
     try:
         basis = decision.get("basis_observed_at") or decided_at
-        current = datetime.fromisoformat(str(basis)) >= incident.last_observed_at
+        current_by_time = (
+            datetime.fromisoformat(str(basis)) >= incident.last_observed_at
+        )
     except (ValueError, TypeError):
-        current = False
+        current_by_time = False
+
+    current = same_basis or current_by_time
     try:
         failed_at = datetime.fromisoformat(str(followup.get("failed_at")))
         failure_current = (

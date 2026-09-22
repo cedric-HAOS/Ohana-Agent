@@ -56,6 +56,57 @@ class FakeInvestigations:
         )
 
 
+def _teleinformation_observation(
+    *,
+    timestamp: datetime,
+    age_seconds: int,
+    maximum_age_seconds: int = 30,
+) -> Observation:
+    return Observation(
+        node="linky-01",
+        service="tic-linky",
+        capability="teleinformation.freshness",
+        status=ObservationStatus.UNHEALTHY,
+        success=False,
+        message=(f"Aucune trame téléinformation reçue depuis {age_seconds} secondes."),
+        source="teleinformation.freshness",
+        id=uuid4(),
+        timestamp=timestamp,
+        metadata={
+            "device_id": "linky-01",
+            "mode": "direct_http",
+            "source_id": "rpi-linky",
+            "meter_id": "041964385922",
+            "maximum_age_seconds": maximum_age_seconds,
+            "age_seconds": age_seconds,
+        },
+    )
+
+
+class TeleinformationInvestigations(FakeInvestigations):
+    def __init__(self, addon_state: str = "stopped") -> None:
+        super().__init__()
+        self.addon_state = addon_state
+        self.snapshot_nodes: list[str] = []
+
+    def read_only_snapshot(self, node_id: str) -> dict:
+        self.snapshot_nodes.append(node_id)
+
+        return {
+            "configuration_inspection": {
+                "remote": {
+                    "origin": "linky-01 / Supervisor",
+                    "addons": [
+                        {
+                            "addon": "6fc079ce_teleinfo2mqtt_ohana",
+                            "state": self.addon_state,
+                        }
+                    ],
+                }
+            }
+        }
+
+
 @pytest.mark.parametrize("probe_status", ["KO", "TIMEOUT"])
 @pytest.mark.parametrize("service_name", ["memory", "dns", "mqtt", "systemd"])
 def test_unavailable_probe_never_confirms_target_failure(
@@ -601,5 +652,131 @@ def test_ai_result_is_redacted_before_persistence(
             "fake-hypothesis-bearer",
         ):
             assert secret not in rendered
+    finally:
+        repository.close()
+
+
+def test_teleinformation_stopped_addon_is_confirmed_before_ai(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+
+    incident = repository.process(
+        _teleinformation_observation(
+            timestamp=datetime(2026, 9, 21, 18, 41, tzinfo=UTC),
+            age_seconds=96,
+        )
+    )
+    assert incident is not None
+
+    investigations = TeleinformationInvestigations()
+    dispatched: list[dict[str, object]] = []
+
+    def dispatch(payload):
+        dispatched.append(payload)
+        return SimpleNamespace(job_id=uuid4())
+
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=investigations,  # type: ignore[arg-type]
+        ai_dispatcher=dispatch,
+    )
+
+    try:
+        outcome = service.diagnose(incident.incident_id)
+        updated = repository.get(incident.incident_id)
+    finally:
+        repository.close()
+
+    assert outcome.status == "DETERMINISTIC"
+    assert outcome.ai_job_id is None
+    assert outcome.decision == "investigate"
+    assert outcome.decision_source == "deterministic"
+
+    # Supervisor must have been inspected on the incident's actual node.
+    assert investigations.snapshot_nodes == ["linky-01"]
+
+    # A deterministic proof must prevent any Katsuyu escalation.
+    assert dispatched == []
+
+    decision = updated.latest_decision
+    assert decision is not None
+    assert decision["epistemic_status"] == "confirmed_by_supervisor"
+    assert decision["diagnostic_level"] == "CONFIRMED"
+    assert decision["confirmation_gap"] == []
+    assert decision["decision_source"] == "deterministic"
+    assert decision["confidence"] == 1.0
+    assert decision["basis_fingerprint"]
+    assert "stopped" in decision["reason"].casefold()
+    assert "teleinfo2mqtt" in decision["conclusion"].casefold()
+
+
+def test_identical_teleinformation_observation_keeps_diagnosis_current(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+
+    started_at = datetime(2026, 9, 21, 18, 41, tzinfo=UTC)
+
+    incident = repository.process(
+        _teleinformation_observation(
+            timestamp=started_at,
+            age_seconds=96,
+        )
+    )
+    assert incident is not None
+
+    investigations = TeleinformationInvestigations()
+
+    service = TsunadeExpertiseService(
+        incidents=repository,
+        investigations=investigations,  # type: ignore[arg-type]
+    )
+
+    try:
+        outcome = service.diagnose(incident.incident_id)
+        assert outcome.status == "DETERMINISTIC"
+
+        diagnosed = repository.get(incident.incident_id)
+        before = incident_assessment(diagnosed)
+
+        assert before["decision_current"] is True
+
+        # Shikamaru observes the same fault one minute later.
+        # Only the duration/message changed.
+        repeated = repository.process(
+            _teleinformation_observation(
+                timestamp=started_at + timedelta(minutes=1),
+                age_seconds=156,
+            )
+        )
+        assert repeated is not None
+
+        after = incident_assessment(repository.get(incident.incident_id))
+
+        assert repeated.occurrence_count == 2
+
+        # The passage of time alone is not new diagnostic evidence.
+        assert after["decision_current"] is True
+        assert after["state"] == "investigate"
+        assert after["label"] == "À approfondir"
+
+        # A material change in the monitored contract MUST invalidate
+        # the previous diagnostic basis.
+        changed = repository.process(
+            _teleinformation_observation(
+                timestamp=started_at + timedelta(minutes=2),
+                age_seconds=216,
+                maximum_age_seconds=60,
+            )
+        )
+        assert changed is not None
+
+        changed_assessment = incident_assessment(repository.get(incident.incident_id))
+
+        assert changed_assessment["decision_current"] is False
+        assert changed_assessment["state"] == "stale"
+        assert changed_assessment["label"] == "Analyse à actualiser"
+
     finally:
         repository.close()

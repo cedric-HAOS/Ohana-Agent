@@ -1640,6 +1640,7 @@ class TsunadeIncidentRepository(FollowupPersistence):
                         "reevaluate_after",
                         "cycle_status",
                         "basis_observed_at",
+                        "basis_fingerprint",
                         "verdict",
                         "ai_job_id",
                     }

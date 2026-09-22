@@ -2173,31 +2173,34 @@ def build_production_agent(
                             }
                         )
             logs_config = administration_config.jobs.logs
-            if (
-                incident is None
-                or incident.occurrence_count != 1
-                or not logs_config.enabled
-                or incident.node_id not in logs_config.sources
-            ):
+
+            if incident is None or incident.occurrence_count != 1:
                 return
-            current = datetime.now(UTC)
-            administration_service.create_job(
-                {
-                    "protocol_version": 1,
-                    "job_id": str(uuid4()),
-                    "type": "logs.health_check",
-                    "created_at": current.isoformat(),
-                    "parameters": {
-                        "sources": [incident.node_id],
-                        "window_started_at": (current - timedelta(hours=1)).isoformat(),
-                        "window_ended_at": current.isoformat(),
-                        "max_bytes_per_source": logs_config.max_bytes_per_source,
-                        "baseline": [],
-                        "incident_id": str(incident.incident_id),
-                    },
-                    "timeout": logs_config.timeout_seconds,
-                }
-            )
+
+            if logs_config.enabled and incident.node_id in logs_config.sources:
+                current = datetime.now(UTC)
+                administration_service.create_job(
+                    {
+                        "protocol_version": 1,
+                        "job_id": str(uuid4()),
+                        "type": "logs.health_check",
+                        "created_at": current.isoformat(),
+                        "parameters": {
+                            "sources": [incident.node_id],
+                            "window_started_at": (
+                                current - timedelta(hours=1)
+                            ).isoformat(),
+                            "window_ended_at": current.isoformat(),
+                            "max_bytes_per_source": logs_config.max_bytes_per_source,
+                            "baseline": [],
+                            "incident_id": str(incident.incident_id),
+                        },
+                        "timeout": logs_config.timeout_seconds,
+                    }
+                )
+                return
+
+            expertise_service.start(incident.incident_id)
 
         event_bus.subscribe(ObservationPublished, handle_tsunade_observation)
         if job_repository is not None and backup_config.infra_01.use_katsuyu:

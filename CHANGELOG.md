@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## [1.29.19] — 2026-09-22 — Déclenchement Tsunade pour les incidents sans source de journaux
+
+- Le câblage de production entre les observations Shikamaru et l'expertise
+  Tsunade ne dépend plus de la présence du nœud dans les sources de journaux
+  Katsuyu.
+
+- Lors de la première occurrence d'un incident actif, si le nœud concerné ne
+  possède pas de source de journaux configurée, Tsunade démarre désormais
+  directement son expertise déterministe au lieu d'arrêter silencieusement le
+  traitement.
+
+- Pour les nœuds disposant d'une source de journaux configurée, le comportement
+  précédent reste conservé : un `logs.health_check` est demandé en priorité et
+  aucune expertise directe concurrente n'est lancée.
+
+- Les observations répétées du même incident ne redémarrent pas l'expertise et
+  ne créent pas de nouveau travail. Le déclenchement automatique reste limité à
+  la première occurrence.
+
+- Ce défaut a été identifié pendant la panne contrôlée réseau de `SHE-04` :
+  Shikamaru ouvrait correctement l'incident `network.reachable`, les occurrences
+  suivantes alimentaient le même dossier et le retour sain le résolvait, mais
+  Tsunade ne lançait aucune investigation parce que `SHE-04` n'était pas une
+  source de journaux Katsuyu.
+
+- Deux tests de régression couvrent désormais explicitement le câblage de
+  production :
+  - incident sans source de journaux → expertise Tsunade démarrée une seule fois ;
+  - incident avec source de journaux → `logs.health_check` créé sans expertise
+    directe concurrente.
+
+- Un scénario Ohana Sandbox dédié, `tsunade-observation-wiring`, exerce le même
+  embranchement depuis le câblage de production et valide sept propriétés :
+  démarrage direct sans logs, absence de boucle sur occurrence répétée, priorité
+  aux journaux lorsque disponibles et absence de double traitement.
+
+- Qualification locale avant publication :
+  - **1569 tests réussis, 1 ignoré** ;
+  - Ruff propre ;
+  - `tsunade-observation-wiring` PASS ;
+  - suite Sandbox existante **11/11 PASS** avant ajout du scénario Katsuyu ambigu.
+
+- La campagne de Phase 1 a également validé localement un incident ambigu
+  `logs.health` :
+  - Agent déclenche automatiquement un unique `ai.inference` lorsque les preuves
+    déterministes ne suffisent pas ;
+  - le résultat Katsuyu reste une hypothèse `PROBABLE` ;
+  - aucune hypothèse IA ne devient `action_required` ;
+  - une même preuve ne relance pas l'IA.
+
+- Le laboratoire full-stack a ensuite reproduit ce cycle avec le vrai worker
+  Katsuyu, le runtime llama.cpp et le modèle
+  `Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf`. L'escalade vers Katsuyu est
+  automatique, sans demande explicite de diagnostic par l'opérateur. Le modèle
+  a produit un résultat `KO` structuré avec hypothèse et contexte manquant,
+  accepté par Tsunade comme `PROBABLE` puis rendu dans Vision.
+
+Cette release prépare la requalification opérationnelle des pannes contrôlées
+réseau et de l'incident ambigu sur Konoha.
+
 ## [1.29.18] — 2026-09-22 — État Supervisor Téléinformation `error`
 
 - Tsunade reconnaît désormais les états Supervisor `stopped` et `error` de

@@ -321,6 +321,7 @@ class TsunadeExpertiseService:
                     )
                     return outcome
 
+            supervisor_evidence = None
             # A stale direct HTTP teleinformation feed can have a deterministic
             # explanation available from the node's read-only configuration
             # inspection. Check it before escalating to Katsuyu.
@@ -332,12 +333,51 @@ class TsunadeExpertiseService:
                     diagnostics = self.investigations.read_only_snapshot(
                         incident.node_id
                     )
-                except Exception:
-                    LOGGER.exception(
-                        "Read-only inspection failed for incident %s",
+                except Exception as error:
+                    LOGGER.warning(
+                        "Read-only inspection failed for incident %s: %s",
                         incident.incident_id,
+                        type(error).__name__,
                     )
-                    diagnostics = None
+                    diagnostics = {
+                        "status": "unavailable",
+                        "error": type(error).__name__,
+                    }
+
+                snapshot = diagnostics if isinstance(diagnostics, dict) else {}
+                supervisor_evidence = json.loads(
+                    self._bounded_json(
+                        {
+                            "node": incident.node_id,
+                            "observed_at": snapshot.get("observed_at"),
+                            "recorded_at": datetime.now(
+                                ZoneInfo("Europe/Paris")
+                            ).isoformat(),
+                            "basis_observed_at": incident.last_observed_at.isoformat(),
+                            "status": snapshot.get("status"),
+                            "error": snapshot.get("error"),
+                            "reason": snapshot.get("reason"),
+                            "configuration_inspection": snapshot.get(
+                                "configuration_inspection",
+                                {
+                                    "status": "unavailable",
+                                    "reason": "Inspection absente",
+                                },
+                            ),
+                        }
+                    )
+                )
+                self.incidents.append_record(
+                    incident.incident_id,
+                    {
+                        "kind": "investigation",
+                        "summary": "Tsunade a inspecté le Supervisor Téléinformation.",
+                        "payload": {
+                            "source": "supervisor.teleinformation",
+                            **supervisor_evidence,
+                        },
+                    },
+                )
 
                 addon_state, addon_id = _teleinformation_addon_state(
                     incident,
@@ -407,6 +447,7 @@ class TsunadeExpertiseService:
                 investigation_results,
                 log_result,
                 experiences,
+                supervisor_evidence=supervisor_evidence,
             )
             job = (
                 self.ai_dispatcher(parameters)
@@ -1289,6 +1330,8 @@ class TsunadeExpertiseService:
         results: list[InvestigationResult],
         log_result: dict[str, Any] | None,
         experiences: list[TsunadeExperience],
+        *,
+        supervisor_evidence: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         evidence: list[dict[str, str]] = [
             {
@@ -1410,6 +1453,13 @@ class TsunadeExpertiseService:
                             ),
                         }
                     ),
+                }
+            )
+        if supervisor_evidence is not None:
+            evidence.append(
+                {
+                    "source": "supervisor.teleinformation",
+                    "content": self._bounded_json(supervisor_evidence),
                 }
             )
         if procedure is not None:

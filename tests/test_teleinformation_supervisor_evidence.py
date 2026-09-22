@@ -20,6 +20,7 @@ from ohana_agent.tsunade.investigations import InvestigationExecutor
     "case",
     [
         "stopped",
+        "error",
         "started",
         "stats_unavailable",
         "auth_rejected",
@@ -64,7 +65,13 @@ def test_supervisor_evidence_survives_restart_and_reaches_ai(
                 "/hardware/info": {},
                 f"/addons/{slug}/info": {
                     "slug": slug,
-                    "state": "started" if case == "started" else "stopped",
+                    "state": (
+                        "started"
+                        if case == "started"
+                        else "error"
+                        if case == "error"
+                        else "stopped"
+                    ),
                     "options": {"OHANA_TOKEN": "private-secret-value"},
                 },
                 f"/addons/{slug}/stats": {},
@@ -180,8 +187,10 @@ def test_supervisor_evidence_survives_restart_and_reaches_ai(
             assert payload["status"] == "unavailable"
         elif case == "busy":
             assert payload["configuration_inspection"]["status"] == "busy"
-        if case in {"stopped", "stats_unavailable"}:
-            assert remote["addons"][0]["state"] == "stopped"
+        if case in {"stopped", "error", "stats_unavailable"}:
+            expected_state = "error" if case == "error" else "stopped"
+
+            assert remote["addons"][0]["state"] == expected_state
             assert persisted.latest_decision["diagnostic_level"] == "CONFIRMED"
             assert outcome.status == "DETERMINISTIC"
             assert dispatched == []

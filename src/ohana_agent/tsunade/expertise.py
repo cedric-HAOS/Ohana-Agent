@@ -384,27 +384,33 @@ class TsunadeExpertiseService:
                     diagnostics,
                 )
 
-                if addon_state == "stopped":
+                if addon_state in {"stopped", "error"}:
                     addon_name = addon_id or "teleinfo2mqtt"
+
+                    if addon_state == "stopped":
+                        state_description = "arrêté"
+                    else:
+                        state_description = "dans un état d’erreur"
 
                     decision = TsunadeDecisionResult(
                         decision="investigate",
                         source="deterministic",
                         conclusion=(
                             f"Le Supervisor de {incident.node_id.upper()} "
-                            f"indique que l’add-on {addon_name} est arrêté. "
-                            "En mode direct_http, cet arrêt explique "
-                            "l’absence de nouvelles trames Téléinformation "
-                            "vers Agent."
+                            f"indique que l’add-on {addon_name} est "
+                            f"{state_description}. "
+                            "En mode direct_http, cet état non opérationnel "
+                            "explique l’absence de nouvelles trames "
+                            "Téléinformation vers Agent."
                         ),
                         reason=(
                             "L’état courant fourni par le Supervisor "
-                            f"pour {addon_name} est « stopped »."
+                            f"pour {addon_name} est « {addon_state} »."
                         ),
                         confidence=1.0,
                         recommended_action=(
                             f"Vérifier pourquoi l’add-on {addon_name} "
-                            "est arrêté avant toute remise en service."
+                            "n’est pas opérationnel avant toute remise en service."
                         ),
                         reevaluate_after="next_observation",
                     )
@@ -412,7 +418,8 @@ class TsunadeExpertiseService:
                     deterministic_facts = [
                         *facts,
                         (
-                            f"Supervisor : l’add-on {addon_name} est arrêté "
+                            f"Supervisor : l’add-on {addon_name} "
+                            f"est dans l’état « {addon_state} » "
                             f"sur {incident.node_id.upper()}."
                         ),
                     ][:32]

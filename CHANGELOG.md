@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## [1.29.18] — 2026-09-22 — État Supervisor Téléinformation `error`
+
+- Tsunade reconnaît désormais les états Supervisor `stopped` et `error` de
+  l'add-on `teleinfo2mqtt` comme des preuves déterministes que le service n'est
+  pas opérationnel lors d'un incident `teleinformation.freshness` en mode
+  `direct_http`.
+
+- L'état Supervisor original reste conservé dans les preuves. Un état `error`
+  n'est pas réécrit artificiellement en `stopped` et Tsunade ne déduit pas la
+  cause de cet état au-delà de ce que le Supervisor permet d'établir.
+
+- Lorsque `teleinfo2mqtt` est `stopped` ou `error`, Tsunade établit un diagnostic
+  `CONFIRMED`, avec `epistemic_status=confirmed_by_supervisor` et une confiance
+  de `1.0`, sans solliciter Katsuyu AI pour expliquer une panne déjà confirmée.
+
+- Le cas réel découvert pendant la campagne de stabilisation de Tsunade est
+  désormais couvert par le test Supervisor : un arrêt de `teleinfo2mqtt` peut
+  être remonté par Home Assistant Supervisor avec l'état `error` plutôt que
+  `stopped`.
+
+- Le test de régression vérifie que la preuve conserve bien `state=error`,
+  que le diagnostic reste déterministe et qu'aucun job IA n'est créé.
+
+- Validation ciblée : les 8 scénarios de
+  `test_teleinformation_supervisor_evidence.py` réussissent.
+
+
+## [1.29.17] — 2026-09-22 — Persistance des preuves Supervisor Téléinformation
+
+- L'inspection Supervisor réalisée pendant un incident
+  `teleinformation.freshness` en mode `direct_http` est désormais enregistrée
+  immédiatement dans l'historique de l'incident sous la source
+  `supervisor.teleinformation`.
+
+- La preuve conserve notamment le nœud concerné, les dates d'observation et
+  d'enregistrement, la base d'observation ayant déclenché le diagnostic ainsi
+  que l'inspection de configuration Supervisor disponible.
+
+- Une erreur d'accès au snapshot Supervisor est représentée explicitement comme
+  une preuve indisponible avec son type d'erreur, sans exposer de message brut
+  susceptible de contenir un secret.
+
+- Lorsque la preuve Supervisor ne permet pas une conclusion déterministe,
+  cette même preuve persistée est transmise à Katsuyu afin que l'analyse IA
+  dispose du contexte effectivement observé par Tsunade.
+
+- La preuve est bornée et assainie avant persistance et avant transmission à
+  Katsuyu. Les tests vérifient qu'un secret Supervisor ne se retrouve ni dans
+  les incidents persistés, ni dans les jobs IA, ni dans les journaux.
+
+- Une campagne dédiée couvre les états `stopped`, `started`, l'indisponibilité
+  des statistiques, le refus d'authentification, le timeout, l'échec de snapshot
+  et la saturation d'une inspection.
+
 ## [1.29.16] — 2026-09-22 — Diagnostic Téléinformation déterministe
 
 - Tsunade exploite désormais l'inspection Supervisor disponible pour les

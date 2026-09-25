@@ -38,6 +38,7 @@ from ohana_agent.jobs.log_sources import LogSourceBroker
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.jobs.wake_on_lan import WakeOnLanSender
 from ohana_agent.observation import ObservationPublished, PluginObservationDispatcher
+from ohana_agent.observation.events import HostHealthObserved
 from ohana_agent.observation.exporters import VisionInfrastructureMapper
 from ohana_agent.plugins.administration import PluginAdministrationRepository
 from ohana_agent.plugins.backup.config import BackupConfig
@@ -232,16 +233,15 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
             str(incident_id), {}, automatic=True
         )
     )
-    context.event_bus.subscribe(
-        ObservationPublished,
-        TsunadeObservationHandler(
-            incidents=incident_repository,
-            expertise=expertise_service,
-            administration=administration_service,
-            logs_config=administration_config.jobs.logs,
-            notifications=companions.notifications if companions else None,
-        ),
+    tsunade_handler = TsunadeObservationHandler(
+        incidents=incident_repository,
+        expertise=expertise_service,
+        administration=administration_service,
+        logs_config=administration_config.jobs.logs,
+        notifications=companions.notifications if companions else None,
     )
+    context.event_bus.subscribe(ObservationPublished, tsunade_handler)
+    context.event_bus.subscribe(HostHealthObserved, tsunade_handler)
     if (
         job_repository is not None
         and context.plugins["backup"].config.infra_01.use_katsuyu

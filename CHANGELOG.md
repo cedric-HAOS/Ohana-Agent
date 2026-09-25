@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- La santé de l'hôte de l'Agent (`host.health` : unités `ohana-*` inactives ou en
+  échec, disque, mémoire, CPU, redémarrages de l'Agent) est aussi transmise à
+  Tsunade par un événement dédié, `HostHealthObserved`. Un
+  `ohana-vision.service` arrêté ouvre un incident, confirmé par la sonde
+  `service.status` sans IA et résolu au retour du service. Les exports vers
+  Vision et Home Assistant sont inchangés ; le résumé Home Assistant ne compte
+  pas l'hôte comme un service.
 ## [1.33.0] — 2026-09-25 — Refus et report des réparations depuis Vision
 
 - Réparations supervisées : l'API d'administration permet de refuser

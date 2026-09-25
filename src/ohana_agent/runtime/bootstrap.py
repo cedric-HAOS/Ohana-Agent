@@ -35,6 +35,7 @@ from ohana_agent.observation import (
     PluginObservationDispatcher,
     PluginObservationExecutor,
 )
+from ohana_agent.observation.events import HostHealthObserved
 from ohana_agent.observation.exporters import (
     DurableVisionClient,
     HttpVisionClient,
@@ -271,6 +272,13 @@ def build_production_agent(
             mqtt_home_assistant_publisher.publish_host_health,
             lambda snapshot: vision_observation_exporter.export(
                 host_health_observation_mapper.to_observation(snapshot)
+            ),
+            # Tsunade opens incidents on the Agent host (an inactive
+            # ohana-vision.service, a full disk) like on any capability.
+            lambda snapshot: event_bus.publish(
+                HostHealthObserved(
+                    host_health_observation_mapper.to_observation(snapshot)
+                )
             ),
         ),
     )

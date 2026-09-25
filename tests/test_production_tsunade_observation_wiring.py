@@ -273,3 +273,25 @@ def test_resolving_a_single_occurrence_incident_starts_nothing(
         assert created_jobs == []
     finally:
         _close_service(service)
+
+
+def test_host_health_observations_reach_tsunade(tmp_path, monkeypatch) -> None:
+    # host.health was exported to Vision only: an inactive ohana-vision.service
+    # never opened a Tsunade incident (Phase 1 hardening).
+    from ohana_agent.observation.events import HostHealthObserved
+
+    subscriptions: list[tuple[type[Any], str]] = []
+    original_subscribe = EventBus.subscribe
+
+    def record(self: EventBus, event_type: type[Any], handler: Any) -> None:
+        subscriptions.append((event_type, type(handler).__name__))
+        original_subscribe(self, event_type, handler)
+
+    monkeypatch.setattr(EventBus, "subscribe", record)
+    _handler, _started, _jobs, service = _build_tsunade_observation_handler(
+        tmp_path, monkeypatch, []
+    )
+    try:
+        assert (HostHealthObserved, "TsunadeObservationHandler") in subscriptions
+    finally:
+        _close_service(service)

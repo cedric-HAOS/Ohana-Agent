@@ -66,6 +66,8 @@ development = [
     "build",
     "pytest",
     "ruff",
+    "setuptools>=77",
+    "wheel",
 ]
 
 

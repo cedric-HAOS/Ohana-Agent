@@ -6,20 +6,36 @@ import hmac
 import json
 import logging
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Thread
 from typing import Any
 
+from aiohttp import web
+
+from ohana_agent.core.http_listener import ThreadedHTTPListener, json_response
 from ohana_agent.plugins.teleinformation.frame_store import (
     TeleinformationFrameStore,
 )
 
 LOGGER = logging.getLogger(__name__)
 _MAXIMUM_REQUEST_BYTES = 131_072
+FRAMES_PATH = "/v1/teleinformation/frames"
 
 
-class TeleinformationIngestionHTTPServer:
+class _Rejected(Exception):
+    def __init__(self, status: HTTPStatus, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _error_response(status: HTTPStatus, message: str) -> web.Response:
+    return json_response(status, {"error": message}, compact=False)
+
+
+class TeleinformationIngestionHTTPServer(ThreadedHTTPListener):
     """Small authenticated receiver isolated from the administration API."""
+
+    thread_name = "ohana-agent-teleinformation-ingestion"
+    server_header = "Ohana-Agent-Teleinformation/1"
 
     def __init__(
         self,
@@ -29,48 +45,17 @@ class TeleinformationIngestionHTTPServer:
         host: str = "0.0.0.0",
         port: int = 8770,
     ) -> None:
+        super().__init__(host=host, port=port, logger=LOGGER)
         self.frame_store = frame_store
-        self.host = host
-        self.port = port
         self._token = self._normalize_token(token)
-        self._server: ThreadingHTTPServer | None = None
-        self._thread: Thread | None = None
-
-    @property
-    def running(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
-
-    @property
-    def address(self) -> tuple[str, int] | None:
-        if self._server is None:
-            return None
-        host, port = self._server.server_address[:2]
-        return str(host), int(port)
 
     def start(self) -> None:
         if self.running:
             return
-        self._server = ThreadingHTTPServer(
-            (self.host, self.port), self._handler_class()
-        )
-        self._thread = Thread(
-            target=self._server.serve_forever,
-            name="ohana-agent-teleinformation-ingestion",
-            daemon=True,
-        )
-        self._thread.start()
+        super().start()
         LOGGER.info(
             "Téléinformation ingestion listening on http://%s:%s", *self.address
         )
-
-    def stop(self) -> None:
-        if self._server is not None:
-            self._server.shutdown()
-            self._server.server_close()
-        if self._thread is not None:
-            self._thread.join(timeout=5)
-        self._server = None
-        self._thread = None
 
     def reconfigure(self, *, host: str, port: int, token: str) -> None:
         """Apply listener settings, restarting only when required."""
@@ -91,107 +76,77 @@ class TeleinformationIngestionHTTPServer:
             raise ValueError("Téléinformation ingestion token cannot be empty.")
         return normalized
 
-    def _handler_class(self) -> type[BaseHTTPRequestHandler]:
-        frame_store = self.frame_store
-        server_instance = self
+    def build_application(self) -> web.Application:
+        application = web.Application(client_max_size=_MAXIMUM_REQUEST_BYTES + 1)
+        application.router.add_route("*", "/{path:.*}", self._dispatch)
+        return application
 
-        class TeleinformationRequestHandler(BaseHTTPRequestHandler):
-            server_version = "Ohana-Agent-Teleinformation/1"
+    async def _dispatch(self, request: web.Request) -> web.Response:
+        if request.method != "POST":
+            return _error_response(HTTPStatus.NOT_IMPLEMENTED, "Unsupported method")
+        if request.raw_path.split("?", 1)[0] != FRAMES_PATH:
+            return _error_response(HTTPStatus.NOT_FOUND, "Endpoint not found")
 
-            def do_POST(self) -> None:  # noqa: N802
-                path = self.path.split("?", 1)[0]
-                if path != "/v1/teleinformation/frames":
-                    self._write_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
-                    return
-                if not self._authorized():
-                    return
-                payload = self._read_json()
-                if payload is None:
-                    return
-                try:
-                    schema_version = payload.get("schema_version")
-                    if schema_version != 1:
-                        raise ValueError("schema_version must be 1.")
-                    source = payload.get("source")
-                    meter_id = payload.get("meter_id")
-                    frame = payload.get("frame")
-                    if not isinstance(frame, dict):
-                        raise ValueError("frame must be a JSON object.")
-                    stored = frame_store.put(
-                        source=source,
-                        meter_id=meter_id,
-                        frame=frame,
-                    )
-                except ValueError as error:
-                    self._write_error(HTTPStatus.UNPROCESSABLE_ENTITY, str(error))
-                    return
-                self._write_json(
-                    HTTPStatus.ACCEPTED,
-                    {
-                        "accepted": True,
-                        "source": stored.source,
-                        "meter_id": stored.meter_id,
-                        "received_at": stored.received_at.isoformat(),
-                    },
-                )
+        try:
+            self._authorize(request)
+            payload = await self._read_json(request)
+            stored = await self.run_blocking(lambda: self._store(payload))
+        except _Rejected as rejection:
+            return _error_response(rejection.status, rejection.message)
 
-            def log_message(self, format: str, *args: object) -> None:
-                LOGGER.info("%s - %s", self.address_string(), format % args)
+        return json_response(
+            HTTPStatus.ACCEPTED,
+            {
+                "accepted": True,
+                "source": stored.source,
+                "meter_id": stored.meter_id,
+                "received_at": stored.received_at.isoformat(),
+            },
+            compact=False,
+        )
 
-            def _authorized(self) -> bool:
-                authorization = self.headers.get("Authorization", "")
-                prefix = "Bearer "
-                supplied = (
-                    authorization.removeprefix(prefix)
-                    if authorization.startswith(prefix)
-                    else ""
-                )
-                if not supplied or not hmac.compare_digest(
-                    supplied, server_instance._token
-                ):
-                    self._write_error(
-                        HTTPStatus.UNAUTHORIZED,
-                        "A valid Téléinformation ingestion token is required",
-                    )
-                    return False
-                return True
+    def _authorize(self, request: web.Request) -> None:
+        authorization = request.headers.get("Authorization", "")
+        prefix = "Bearer "
+        supplied = (
+            authorization.removeprefix(prefix)
+            if authorization.startswith(prefix)
+            else ""
+        )
+        if not supplied or not hmac.compare_digest(supplied, self._token):
+            raise _Rejected(
+                HTTPStatus.UNAUTHORIZED,
+                "A valid Téléinformation ingestion token is required",
+            )
 
-            def _read_json(self) -> dict[str, Any] | None:
-                try:
-                    content_length = int(self.headers.get("Content-Length", "0"))
-                except ValueError:
-                    self._write_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
-                    return None
-                if content_length <= 0 or content_length > _MAXIMUM_REQUEST_BYTES:
-                    self._write_error(
-                        HTTPStatus.BAD_REQUEST, "Invalid request body size"
-                    )
-                    return None
-                try:
-                    payload = json.loads(
-                        self.rfile.read(content_length).decode("utf-8")
-                    )
-                except (UnicodeDecodeError, json.JSONDecodeError):
-                    self._write_error(
-                        HTTPStatus.BAD_REQUEST, "Request body must be valid JSON"
-                    )
-                    return None
-                if not isinstance(payload, dict):
-                    self._write_error(
-                        HTTPStatus.BAD_REQUEST, "Request body must be a JSON object"
-                    )
-                    return None
-                return payload
+    @staticmethod
+    async def _read_json(request: web.Request) -> dict[str, Any]:
+        content_length = request.content_length or 0
+        if content_length <= 0 or content_length > _MAXIMUM_REQUEST_BYTES:
+            raise _Rejected(HTTPStatus.BAD_REQUEST, "Invalid request body size")
+        try:
+            payload = json.loads((await request.read()).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise _Rejected(
+                HTTPStatus.BAD_REQUEST, "Request body must be valid JSON"
+            ) from error
+        if not isinstance(payload, dict):
+            raise _Rejected(
+                HTTPStatus.BAD_REQUEST, "Request body must be a JSON object"
+            )
+        return payload
 
-            def _write_error(self, status: HTTPStatus, message: str) -> None:
-                self._write_json(status, {"error": message})
-
-            def _write_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-                body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-                self.send_response(status.value)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-        return TeleinformationRequestHandler
+    def _store(self, payload: dict[str, Any]) -> Any:
+        try:
+            if payload.get("schema_version") != 1:
+                raise ValueError("schema_version must be 1.")
+            frame = payload.get("frame")
+            if not isinstance(frame, dict):
+                raise ValueError("frame must be a JSON object.")
+            return self.frame_store.put(
+                source=payload.get("source"),
+                meter_id=payload.get("meter_id"),
+                frame=frame,
+            )
+        except ValueError as error:
+            raise _Rejected(HTTPStatus.UNPROCESSABLE_ENTITY, str(error)) from error

@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.33.0] — 2026-09-25 — Refus et report des réparations depuis Vision
+
 - Réparations supervisées : l'API d'administration permet de refuser
   (`POST /v1/incidents/{id}/repairs/refuse`) ou de reporter
   (`POST /v1/incidents/{id}/repairs/defer`) une proposition, comme Shizune.

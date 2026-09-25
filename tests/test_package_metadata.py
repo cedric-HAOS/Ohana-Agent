@@ -72,6 +72,8 @@ def test_package_declares_development_dependencies() -> None:
         "build",
         "pytest",
         "ruff",
+        "setuptools>=77",
+        "wheel",
     ]
 
 

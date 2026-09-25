@@ -764,22 +764,25 @@ créer d'abord le jeton local ignoré par Git :
 python -c "import secrets; from pathlib import Path; Path('config/management.development.token').write_text(secrets.token_urlsafe(32), encoding='utf-8')"
 ```
 
-Utiliser ensuite le profil de développement et l'infrastructure complète :
+Utiliser ensuite le profil de développement, l'infrastructure complète et les
+configurations de plugins d'exemple. Les fichiers `config/plugins/*.yaml` sans
+`.example` décrivent Konoha : ils attendent une Téléinformation via Home Assistant
+et activent l'export MQTT vers le Home Assistant réel.
 
 ```bash
 ohana-agent \
   --config config/shikamaru.development.yaml \
   --infrastructure config/infrastructure.example.yaml \
-  --dhcp-config config/plugins/dhcp.yaml \
-  --dns-config config/plugins/dns.yaml \
-  --ntp-config config/plugins/ntp.yaml \
-  --mqtt-config config/plugins/mqtt.yaml \
-  --network-config config/plugins/network.yaml \
-  --zwave-config config/plugins/zwave.yaml \
-  --wireguard-config config/plugins/wireguard.yaml \
-  --home-assistant-telemetry-config config/plugins/home-assistant-telemetry.yaml \
-  --teleinformation-config config/plugins/teleinformation.yaml \
-  --backup-config config/plugins/backup.yaml
+  --dhcp-config config/plugins/dhcp.example.yaml \
+  --dns-config config/plugins/dns.example.yaml \
+  --ntp-config config/plugins/ntp.example.yaml \
+  --mqtt-config config/plugins/mqtt.example.yaml \
+  --network-config config/plugins/network.example.yaml \
+  --zwave-config config/plugins/zwave.example.yaml \
+  --wireguard-config config/plugins/wireguard.example.yaml \
+  --home-assistant-telemetry-config config/plugins/home-assistant-telemetry.example.yaml \
+  --teleinformation-config config/plugins/teleinformation.example.yaml \
+  --backup-config config/plugins/backup.example.yaml
 ```
 
 Version :

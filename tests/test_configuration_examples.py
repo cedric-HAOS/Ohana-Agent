@@ -1,8 +1,13 @@
 """Tests for the example configuration files."""
 
+import re
 from pathlib import Path
 
 from ohana_agent.configuration.administration import WakeOnLanConfig
+from ohana_agent.configuration.builders import (
+    InfrastructureBuilder,
+    TeleinformationConfigurationBuilder,
+)
 from ohana_agent.configuration.loader import ConfigurationLoader
 from ohana_agent.configuration.loaders.dhcp import DHCPConfigLoader
 from ohana_agent.configuration.loaders.dns import DNSConfigLoader
@@ -215,4 +220,27 @@ def test_teleinformation_example_configuration_is_valid() -> None:
     assert configuration.listen_port == 8770
     assert configuration.ingestion_token_environment_variable == (
         "OHANA_TELEINFORMATION_INGESTION_TOKEN"
+    )
+
+
+def test_readme_development_command_uses_consistent_example_files() -> None:
+    """The documented local run pairs the example infrastructure with examples."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    command = readme[readme.index("ohana-agent \\\n  --config") :]
+    command = command[: command.index("```")]
+    paths = re.findall(r"--([a-z-]+) (config/\S+)", command)
+
+    assert paths
+    for option, path in paths:
+        assert Path(path).is_file(), path
+        if option.endswith("-config") and option != "config":
+            assert path.endswith(".example.yaml"), path
+
+    documented = dict(paths)
+    infrastructure = InfrastructureBuilder().build(
+        InfrastructureLoader().load(documented["infrastructure"])
+    )
+    TeleinformationConfigurationBuilder().build(
+        infrastructure,
+        TeleinformationConfigLoader().load(documented["teleinformation-config"]),
     )

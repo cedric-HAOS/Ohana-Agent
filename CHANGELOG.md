@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- La résolution d'un incident qui n'avait eu qu'une observation en échec
+  n'est plus traitée comme une première occurrence. Pendant la réparation
+  Mosquitto réelle, elle avait relancé un `logs.health_check` pour HA-01 ; sur
+  un équipement sans source de journaux, elle démarrait une expertise sur un
+  incident déjà résolu.
+
 - Tsunade n'utilise plus que l'heure de Paris. Les incidents, leurs
   événements, les réparations, les demandes utilisateur, les investigations et
   les notifications de réparation sont écrits en Europe/Paris, et l'API les

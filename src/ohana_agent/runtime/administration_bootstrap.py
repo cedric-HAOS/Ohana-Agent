@@ -582,6 +582,10 @@ class TsunadeObservationHandler:
         if notification is not None and self._notifications is not None:
             self._notifications.publish(notification)
 
+        if incident.state != "active":
+            # A resolution is not a first occurrence, even after one observation.
+            return
+
         if incident.occurrence_count != 1:
             if self._upstream_resolved(incident):
                 # The symptom outlived the upstream incident it was attached to:

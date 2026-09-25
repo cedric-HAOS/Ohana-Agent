@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -234,5 +235,41 @@ def test_first_incident_with_log_source_queues_logs_without_direct_expertise(
         assert job["type"] == "logs.health_check"
         assert job["parameters"]["sources"] == ["infra-01"]
         assert job["parameters"]["incident_id"] == str(incident_id)
+    finally:
+        _close_service(service)
+
+
+@pytest.mark.parametrize("node_id", ["infra-01", "camera-01"])
+def test_resolving_a_single_occurrence_incident_starts_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    node_id: str,
+) -> None:
+    # Mosquitto repair, 25 September: the MQTT incident had one failing
+    # observation, so its resolution looked like a first occurrence and queued
+    # a second logs.health_check for HA-01.
+    resolved = SimpleNamespace(
+        incident_id=uuid4(),
+        state="resolved",
+        severity="critical",
+        occurrence_count=1,
+        node_id=node_id,
+        repairs=[],
+        final_result="La capacité est revenue à un état sain.",
+        message="MQTT round trip succeeded.",
+        ended_at=datetime(2026, 9, 25, 14, 54, tzinfo=UTC),
+        last_observed_at=datetime(2026, 9, 25, 14, 54, tzinfo=UTC),
+        latest_decision=None,
+    )
+
+    handler, expertise_started, created_jobs, service = (
+        _build_tsunade_observation_handler(tmp_path, monkeypatch, [resolved])
+    )
+
+    try:
+        handler(SimpleNamespace(observation=object()))
+
+        assert expertise_started == []
+        assert created_jobs == []
     finally:
         _close_service(service)

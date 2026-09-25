@@ -20,6 +20,16 @@
   l'opérateur n'est pas absorbée par la corrélation. Si le symptôme survit à la
   résolution de l'incident amont, l'observation suivante relance l'expertise.
 
+- Phase 2, réparations supervisées sans état ambigu :
+  - une proposition devient `expired` dès que son incident est résolu ou que
+    sa demande d'autorisation expire ; elle ne peut plus être autorisée ni
+    refusée, et aucune action n'est exécutée ;
+  - une réparation exécutée que Shikamaru ne confirme pas dans les 15 minutes
+    devient `unverified` au lieu de rester `verifying` indéfiniment ; elle
+    n'est pas répétée automatiquement, et une observation saine tardive résout
+    l'incident sans la réécrire en succès ;
+  - chaque fermeture est tracée par un événement d'incident explicite.
+
 ## [1.30.0] — 2026-09-25 — Registre de plugins, serveur aiohttp et découpage des gros modules
 
 - Les titres de commit sont vérifiés en CI (Conventional Commits).

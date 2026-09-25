@@ -23,7 +23,14 @@ IncidentExpertiseState = Literal[
 ]
 IncidentRecordKind = Literal["investigation", "diagnostic", "action", "result"]
 RepairStatus = Literal[
-    "proposed", "authorized", "refused", "verifying", "succeeded", "failed"
+    "proposed",
+    "authorized",
+    "refused",
+    "expired",
+    "verifying",
+    "succeeded",
+    "failed",
+    "unverified",
 ]
 ValidationSource = Literal["vision", "shizune"]
 UserRequestState = Literal["pending", "answered", "expired", "cancelled", "resolved"]

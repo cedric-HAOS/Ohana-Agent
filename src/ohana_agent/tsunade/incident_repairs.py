@@ -25,6 +25,10 @@ from ohana_agent.tsunade.incident_models import (
     ValidationSource,
 )
 
+# Shikamaru must confirm an executed repair within this delay; otherwise the
+# repair ends ``unverified`` instead of waiting indefinitely in ``verifying``.
+REPAIR_VERIFICATION_SECONDS = 900
+
 
 class TsunadeRepairs:
     """Repair proposals, authorizations, verification and learned experiences."""
@@ -123,14 +127,7 @@ class TsunadeRepairs:
         incident = self.get(incident_id)
         now = datetime.now(UTC)
         with self._lock, self._connection:
-            row = self._connection.execute(
-                "SELECT * FROM tsunade_repairs WHERE repair_id=? AND incident_id=?",
-                (str(request.repair_id), str(incident.incident_id)),
-            ).fetchone()
-            if row is None:
-                raise LookupError("Proposition de réparation inconnue")
-            if row["status"] != "proposed":
-                raise ValueError("Cette réparation n’attend plus de validation")
+            self._pending_proposal_locked(request.repair_id, incident.incident_id, now)
             self._connection.execute(
                 """UPDATE tsunade_repairs SET status='authorized',authorized_at=?,
                 authorization_source=?,authorized_by=? WHERE repair_id=?""",
@@ -178,14 +175,7 @@ class TsunadeRepairs:
         incident = self.get(incident_id)
         now = datetime.now(UTC)
         with self._lock, self._connection:
-            row = self._connection.execute(
-                "SELECT * FROM tsunade_repairs WHERE repair_id=? AND incident_id=?",
-                (str(repair_id), str(incident.incident_id)),
-            ).fetchone()
-            if row is None:
-                raise LookupError("Proposition de réparation inconnue")
-            if row["status"] != "proposed":
-                raise ValueError("Cette réparation n’attend plus de validation")
+            self._pending_proposal_locked(repair_id, incident.incident_id, now)
             self._connection.execute(
                 """UPDATE tsunade_repairs SET status='refused',authorized_at=?,
                 authorization_source=?,authorized_by=?,result=? WHERE repair_id=?""",
@@ -261,6 +251,106 @@ class TsunadeRepairs:
                 payload={"repair_id": str(repair_id), "status": "failed"},
             )
         return self.get_repair(repair_id)
+
+    def _pending_proposal_locked(
+        self, repair_id: UUID | str, incident_id: UUID, now: datetime
+    ) -> sqlite3.Row:
+        """Return a proposal that can still receive a human decision."""
+        self._expire_repairs_locked(now)
+        row = self._connection.execute(
+            "SELECT * FROM tsunade_repairs WHERE repair_id=? AND incident_id=?",
+            (str(repair_id), str(incident_id)),
+        ).fetchone()
+        if row is None:
+            raise LookupError("Proposition de réparation inconnue")
+        if row["status"] == "expired":
+            raise ValueError(
+                "Cette proposition de réparation a expiré ; aucune action n’a été "
+                "exécutée"
+            )
+        if row["status"] != "proposed":
+            raise ValueError("Cette réparation n’attend plus de validation")
+        return row
+
+    def _sweep_repairs(self, now: datetime | None = None) -> None:
+        """Apply repair deadlines, reusing the caller's transaction if any."""
+        with self._lock:
+            if self._connection.in_transaction:
+                self._expire_repairs_locked(now or datetime.now(UTC))
+            else:
+                with self._connection:
+                    self._expire_repairs_locked(now or datetime.now(UTC))
+
+    def _expire_repairs_locked(self, now: datetime) -> None:
+        """Close repairs that can no longer progress, each with an explicit event."""
+        # A proposal is only valid while its incident is active and its
+        # authorization request is still pending: no late authorization.
+        stale = self._connection.execute(
+            """SELECT r.repair_id,r.incident_id,i.ended_at
+            FROM tsunade_repairs r
+            JOIN tsunade_incidents i ON i.incident_id=r.incident_id
+            LEFT JOIN tsunade_user_requests u ON u.action_reference=r.repair_id
+            WHERE r.status='proposed' AND (
+                i.ended_at IS NOT NULL
+                OR u.state IN ('expired','resolved','cancelled')
+                OR (u.state='pending' AND julianday(u.expires_at)<=julianday(?))
+            )""",
+            (now.isoformat(),),
+        ).fetchall()
+        for row in stale:
+            result = (
+                "L’incident s’est résolu avant toute autorisation ; "
+                "aucune action n’a été exécutée."
+                if row["ended_at"] is not None
+                else "La demande d’autorisation a expiré ; "
+                "aucune action n’a été exécutée."
+            )
+            self._close_repair_locked(row, "expired", now, result, kind="decision")
+        deadline = now - timedelta(seconds=REPAIR_VERIFICATION_SECONDS)
+        overdue = self._connection.execute(
+            """SELECT repair_id,incident_id FROM tsunade_repairs
+            WHERE status='verifying' AND julianday(executed_at)<=julianday(?)""",
+            (deadline.isoformat(),),
+        ).fetchall()
+        for row in overdue:
+            self._close_repair_locked(
+                row,
+                "unverified",
+                now,
+                (
+                    "Aucune observation Shikamaru n’a confirmé le résultat dans "
+                    f"les {REPAIR_VERIFICATION_SECONDS // 60} minutes suivant "
+                    "l’exécution. La réparation n’est pas répétée automatiquement."
+                ),
+                kind="result",
+            )
+
+    def _close_repair_locked(
+        self,
+        row: sqlite3.Row,
+        status: str,
+        now: datetime,
+        result: str,
+        *,
+        kind: str,
+    ) -> None:
+        self._connection.execute(
+            """UPDATE tsunade_repairs SET status=?,verified_at=?,result=?
+            WHERE repair_id=?""",
+            (status, now.isoformat(), result, row["repair_id"]),
+        )
+        self._connection.execute(
+            """UPDATE tsunade_user_requests SET state='expired'
+            WHERE action_reference=? AND state='pending'""",
+            (row["repair_id"],),
+        )
+        self._event(
+            UUID(row["incident_id"]),
+            kind=kind,
+            occurred_at=now,
+            summary=result,
+            payload={"repair_id": row["repair_id"], "status": status},
+        )
 
     def get_repair(self, repair_id: UUID | str) -> TsunadeRepair:
         with self._lock:

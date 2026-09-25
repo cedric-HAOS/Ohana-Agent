@@ -163,6 +163,7 @@ class TsunadeIncidentRepository(
             "all": "1 = 1",
         }[state]
         with self._lock:
+            self._sweep_repairs()
             rows = self._connection.execute(
                 f"""SELECT * FROM tsunade_incidents WHERE {condition}
                 ORDER BY (ended_at IS NULL) DESC,
@@ -225,6 +226,7 @@ class TsunadeIncidentRepository(
     def get(self, incident_id: UUID | str) -> TsunadeIncident:
         """Return one incident with its complete bounded evolution."""
         with self._lock:
+            self._sweep_repairs()
             row = self._connection.execute(
                 "SELECT * FROM tsunade_incidents WHERE incident_id = ?",
                 (str(incident_id),),
@@ -382,6 +384,8 @@ class TsunadeIncidentRepository(
             WHERE incident_id=? AND state='pending'""",
             (str(incident.incident_id),),
         )
+        # A proposal never outlives its incident: close it before the event.
+        self._expire_repairs_locked(observation.timestamp)
         self._event(
             incident.incident_id,
             kind="resolved",

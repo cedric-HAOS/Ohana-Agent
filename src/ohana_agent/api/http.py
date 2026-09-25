@@ -560,6 +560,14 @@ def _administration_routes(
                 _call_with_body(service.authorize_incident_repair),
             ),
             _route(
+                "/v1/incidents/{incident_id}/repairs/refuse",
+                _call_with_body(service.refuse_incident_repair),
+            ),
+            _route(
+                "/v1/incidents/{incident_id}/repairs/defer",
+                _call_with_body(service.defer_incident_repair),
+            ),
+            _route(
                 "/v1/incidents/{incident_id}/repairs",
                 _call_with_body(service.propose_incident_repair),
             ),

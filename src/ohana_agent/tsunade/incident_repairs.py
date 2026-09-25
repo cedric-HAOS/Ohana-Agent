@@ -340,6 +340,16 @@ class TsunadeRepairs:
             payload={"repair_id": row["repair_id"], "status": status},
         )
 
+    def repair_request_id(self, repair_id: UUID | str) -> str | None:
+        """Return the pending authorization request of one proposal."""
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT request_id FROM tsunade_user_requests
+                WHERE action_reference=? AND state='pending'""",
+                (str(repair_id),),
+            ).fetchone()
+        return row["request_id"] if row is not None else None
+
     def get_repair(self, repair_id: UUID | str) -> TsunadeRepair:
         with self._lock:
             return self._repair(self._required_repair(repair_id))
@@ -515,7 +525,17 @@ class TsunadeRepairs:
     @staticmethod
     def _repair(row: sqlite3.Row) -> TsunadeRepair:
         spec = repair_spec(row["operation"], row["target"])
+        deferred_until = (
+            datetime.fromisoformat(row["deferred_until"])
+            if "deferred_until" in row.keys()
+            and row["deferred_until"]
+            and row["status"] == "proposed"
+            else None
+        )
+        if deferred_until is not None and deferred_until <= paris_now():
+            deferred_until = None  # The deferral is over: back to pending.
         return TsunadeRepair(
+            deferred_until=deferred_until,
             repair_id=row["repair_id"],
             incident_id=row["incident_id"],
             operation=row["operation"],

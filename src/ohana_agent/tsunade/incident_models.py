@@ -49,6 +49,8 @@ class TsunadeRepair(AdministrationModel):
     consequences: list[str] = Field(default_factory=list, max_length=8)
     expected_result: str | None = None
     status: RepairStatus
+    # A proposal the user asked to reconsider later stays pending until then.
+    deferred_until: ParisDatetime | None = None
     proposed_at: ParisDatetime
     authorized_at: ParisDatetime | None = None
     authorization_source: ValidationSource | None = None
@@ -147,6 +149,14 @@ class TsunadeRepairAuthorizationRequest(AdministrationModel):
     repair_id: UUID
     source: ValidationSource
     authorized_by: str = Field(default="utilisateur", min_length=1, max_length=120)
+
+
+class TsunadeRepairDecisionRequest(AdministrationModel):
+    """A refusal or a deferral of one proposal; neither executes anything."""
+
+    repair_id: UUID
+    source: ValidationSource
+    answered_by: str = Field(default="utilisateur", min_length=1, max_length=120)
 
 
 class TsunadeExperienceConfirmationRequest(AdministrationModel):

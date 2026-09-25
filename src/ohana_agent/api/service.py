@@ -51,6 +51,7 @@ from ohana_agent.tsunade.expertise_catalog import (
 from ohana_agent.tsunade.followups import TsunadeFollowupService
 from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
+    TsunadeRepairDecisionRequest,
     TsunadeRepairProposalRequest,
 )
 from ohana_agent.tsunade.incident_summary import (
@@ -831,6 +832,51 @@ class AdministrationService:
             )
             return result
         return self.incident_repository.mark_repair_executed(repair.repair_id)
+
+    def refuse_incident_repair(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Record an explicit refusal; the proposal can never run afterwards."""
+        if self.incident_repository is None:
+            raise LookupError("Les réparations supervisées sont indisponibles")
+        request = TsunadeRepairDecisionRequest.model_validate(payload)
+        return self.incident_repository.refuse_repair(
+            incident_id,
+            request.repair_id,
+            source=request.source,
+            answered_by=request.answered_by,
+        )
+
+    def defer_incident_repair(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Keep a proposal pending for a bounded delay, without executing it."""
+        if self.incident_repository is None:
+            raise LookupError("Les réparations supervisées sont indisponibles")
+        request = TsunadeRepairDecisionRequest.model_validate(payload)
+        incident = self.incident_repository.get(incident_id)
+        repair = next(
+            (item for item in incident.repairs if item.repair_id == request.repair_id),
+            None,
+        )
+        if repair is None:
+            raise LookupError("Proposition de réparation inconnue")
+        request_id = self.incident_repository.repair_request_id(repair.repair_id)
+        if repair.status != "proposed" or request_id is None:
+            raise ValueError("Cette réparation n’attend plus de validation")
+        self.incident_repository.defer_user_request(
+            request_id,
+            {
+                "choice": "LATER",
+                "source": request.source,
+                "answered_by": request.answered_by,
+            },
+        )
+        return next(
+            item
+            for item in self.incident_repository.get(incident_id).repairs
+            if item.repair_id == repair.repair_id
+        )
 
     def _publish_notification(self, payload: dict[str, Any]) -> None:
         """Keep notifications strictly optional for Agent and Tsunade."""

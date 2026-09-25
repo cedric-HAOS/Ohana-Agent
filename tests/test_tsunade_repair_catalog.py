@@ -272,3 +272,60 @@ def test_restart_addon_posts_to_the_supervisor_and_reports_refusal(
     assert calls == [("/addons/core_mosquitto/restart", "post")] * 2
     with pytest.raises(ValueError, match="invalide"):
         configuration_inspection.restart_addon(object(), "ha-01", "../core")
+
+
+def test_vision_deferral_keeps_the_proposal_pending_without_executing(
+    repository, infrastructure
+) -> None:
+    executed: list[tuple[str, str]] = []
+    service = _service(repository, infrastructure, executed)
+    incident = _confirmed(repository, "mqtt", REFUSED)
+    repair = service.propose_incident_repair(str(incident.incident_id), {})
+
+    deferred = service.defer_incident_repair(
+        str(incident.incident_id),
+        {"repair_id": str(repair.repair_id), "source": "vision"},
+    )
+
+    assert deferred.status == "proposed"
+    assert deferred.deferred_until is not None
+    assert deferred.deferred_until.utcoffset() is not None
+    assert executed == []
+    [request] = repository.list_user_requests().requests
+    assert request.state == "pending"
+    assert request.deferred_until == deferred.deferred_until
+    # The user may still decide during the deferral; only then does it run.
+    service.authorize_incident_repair(
+        str(incident.incident_id),
+        {"repair_id": str(repair.repair_id), "source": "vision"},
+    )
+    assert executed == [("ha-01", "core_mosquitto")]
+
+
+def test_vision_refusal_is_final_and_never_executes(repository, infrastructure):
+    executed: list[tuple[str, str]] = []
+    service = _service(repository, infrastructure, executed)
+    incident = _confirmed(repository, "mqtt", REFUSED)
+    repair = service.propose_incident_repair(str(incident.incident_id), {})
+
+    refused = service.refuse_incident_repair(
+        str(incident.incident_id),
+        {"repair_id": str(repair.repair_id), "source": "vision"},
+    )
+
+    assert refused.status == "refused"
+    with pytest.raises(ValueError, match="n’attend plus"):
+        service.authorize_incident_repair(
+            str(incident.incident_id),
+            {"repair_id": str(repair.repair_id), "source": "vision"},
+        )
+    with pytest.raises(ValueError, match="n’attend plus"):
+        service.defer_incident_repair(
+            str(incident.incident_id),
+            {"repair_id": str(repair.repair_id), "source": "vision"},
+        )
+    assert (
+        service.propose_incident_repair(str(incident.incident_id), {}, automatic=True)
+        is None
+    )
+    assert executed == []

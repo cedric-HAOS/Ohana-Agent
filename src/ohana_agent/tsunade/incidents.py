@@ -475,8 +475,11 @@ class TsunadeIncidentRepository(
     def _incident(self, row: sqlite3.Row, *, include_events: bool) -> TsunadeIncident:
         events: list[TsunadeIncidentEvent] = []
         repair_rows = self._connection.execute(
-            """SELECT * FROM tsunade_repairs WHERE incident_id=?
-            ORDER BY julianday(proposed_at) DESC LIMIT 20""",
+            """SELECT r.*, u.deferred_until AS deferred_until
+            FROM tsunade_repairs r LEFT JOIN tsunade_user_requests u
+            ON u.action_reference=r.repair_id AND u.state='pending'
+            WHERE r.incident_id=?
+            ORDER BY julianday(r.proposed_at) DESC LIMIT 20""",
             (row["incident_id"],),
         ).fetchall()
         repairs = [self._repair(repair) for repair in repair_rows]

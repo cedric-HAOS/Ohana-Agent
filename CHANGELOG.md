@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Réparations supervisées : l'API d'administration permet de refuser
+  (`POST /v1/incidents/{id}/repairs/refuse`) ou de reporter
+  (`POST /v1/incidents/{id}/repairs/defer`) une proposition, comme Shizune.
+  Un refus est définitif et n'exécute rien ; un report garde la proposition en
+  attente une heure au plus, l'autorisation restant possible. Chaque
+  réparation indique `deferred_until` tant que le report court.
+
 ## [1.32.0] — 2026-09-25 — Durcissement de la Phase 1 : heures de Paris, expertises de journaux et procédure NTP
 
 - Audit étendu des secrets sur INFRA-01 (25 septembre, lecture seule, valeurs

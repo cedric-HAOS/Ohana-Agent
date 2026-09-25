@@ -2,6 +2,14 @@
 
 ## Non publié
 
+- Audit étendu des secrets sur INFRA-01 (25 septembre, lecture seule, valeurs
+  jamais affichées) : aucun jeton, mot de passe ou identifiant d'URL dans les
+  incidents et jobs, sauf deux résultats `logs.health_check` du 27 août qui
+  conservent des sessions de caméra `/stok=` antérieures au masquage Katsuyu.
+  Les événements d'incident étaient déjà masqués à la lecture ; les résultats
+  de jobs le sont désormais aussi (document de job, dernier résultat, sources
+  de journaux), sans réécrire l'historique.
+
 - Procédure déterministe NTP : nouvelle sonde `ntp.status` (requête NTP
   configurée) et procédure connue pour les incidents `ntp.query` et le service
   `chrony`. Un chrony arrêté est confirmé par la sonde sans expertise Katsuyu ;

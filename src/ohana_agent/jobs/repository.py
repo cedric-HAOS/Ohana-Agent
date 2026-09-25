@@ -32,8 +32,18 @@ from ohana_agent.jobs.job_types import (
 from ohana_agent.jobs.pairings import DistributedWorkerPairings
 from ohana_agent.jobs.schema import DistributedJobSchema
 from ohana_agent.jobs.workers import DistributedWorkerRegistry
+from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _stored_json(text: str) -> Any:
+    """Decode a stored result, masking camera sessions kept by older workers.
+
+    Log results written before Katsuyu masked /stok= paths still hold them;
+    idempotency comparisons read the raw text, every exposed read masks it.
+    """
+    return json.loads(redact_session_paths(text))
 
 
 class DistributedJobRepository(
@@ -194,7 +204,7 @@ class DistributedJobRepository(
                 ORDER BY finished_at DESC LIMIT 1""",
                 (job_type, DistributedJobStatus.SUCCEEDED.value),
             ).fetchone()
-        return json.loads(row["result_json"]) if row is not None else None
+        return _stored_json(row["result_json"]) if row is not None else None
 
     def latest_log_health_sources(
         self, sources: list[str], *, window_seconds: int | None = None
@@ -225,7 +235,7 @@ class DistributedJobRepository(
                     ),
                 ).fetchone()
                 if row is not None:
-                    results.append(json.loads(row["source_json"]))
+                    results.append(_stored_json(row["source_json"]))
         return results
 
     def latest(self, job_type: str) -> DistributedJobDocument | None:
@@ -796,7 +806,7 @@ class DistributedJobRepository(
                 if row["finished_at"]
                 else None
             ),
-            result=json.loads(row["result_json"]) if row["result_json"] else None,
+            result=_stored_json(row["result_json"]) if row["result_json"] else None,
             result_sha256=row["result_sha256"],
             error=json.loads(row["error_json"]) if row["error_json"] else None,
             worker_id=row["worker_id"],

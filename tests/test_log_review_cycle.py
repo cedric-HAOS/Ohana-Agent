@@ -509,3 +509,40 @@ def test_next_worker_endpoint_requires_worker_authentication(cycle):
         }
     finally:
         server.stop()
+
+
+def test_stored_worker_results_are_read_with_camera_sessions_masked(cycle):
+    # Two 27 August logs.health_check results on INFRA-01 still store raw
+    # /stok= camera sessions written before Katsuyu masked them.
+    service, jobs, _incidents, now = cycle
+    service.log_analysis_enabled = True
+    service.log_sources = ("ha-01",)
+    created = service.request_log_health_check(now=now[0])
+    secret = "0123456789abcdef0123456789abcdef"
+    stored = {
+        "status": "KO",
+        "window_started_at": "2026-08-27T15:00:00+02:00",
+        "window_ended_at": "2026-08-27T16:00:00+02:00",
+        "sources": [
+            {
+                "source": "ha-01",
+                "truncated": False,
+                "findings": [{"signature": f"camera /stok={secret}/ds failed"}],
+            }
+        ],
+    }
+    with jobs._connection:  # noqa: SLF001 - a row written by an older worker.
+        jobs._connection.execute(  # noqa: SLF001
+            "UPDATE distributed_jobs SET status='SUCCEEDED', result_json=?, "
+            "finished_at=? WHERE job_id=?",
+            (json.dumps(stored), now[0].isoformat(), str(created.job_id)),
+        )
+
+    reads = [
+        jobs.get(str(created.job_id)).result,
+        jobs.latest_successful_result("logs.health_check"),
+        jobs.latest_log_health_sources(["ha-01"]),
+    ]
+    encoded = json.dumps(reads)
+    assert secret not in encoded
+    assert encoded.count("/stok=[redacted]/ds") == 3

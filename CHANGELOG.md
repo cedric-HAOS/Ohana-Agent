@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.34.0] — 2026-09-25 — Catalogue de réparations enrichi
+
 - Catalogue de réparations enrichi, même mécanisme que Mosquitto (proposition
   par Tsunade, autorisation humaine, vérification par Shikamaru, jamais de
   nouvelle proposition automatique après refus ou échec) :

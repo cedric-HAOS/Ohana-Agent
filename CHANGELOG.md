@@ -4,6 +4,42 @@
 
 - Les titres de commit sont vérifiés en CI (Conventional Commits).
 
+- Registre de plugins : chaque plugin de production est déclaré une seule fois
+  (`runtime/plugin_catalog.py`) sous forme de `PluginSpec` (chargement YAML,
+  construction de la configuration, tâches planifiées, auto-test, binding
+  d'administration). `ProductionPlugins` (`runtime/plugin_specs.py`) charge,
+  enregistre, planifie et reconfigure l'ensemble. Une modification
+  d'infrastructure prépare toujours toutes les configurations avant d'en
+  appliquer une seule. `build_production_agent` passe d'environ 1 590 à
+  environ 200 lignes. Le câblage Tsunade (API d'administration, Katsuyu,
+  compagnons) vit dans `runtime/administration_bootstrap.py`.
+
+- `http.server` est remplacé par `aiohttp.web`, déjà présent dans les
+  dépendances, pour l'API d'administration, les écouteurs TLS Katsuyu et
+  compagnon, et la réception Téléinformation directe. Chaque écouteur tourne
+  dans son propre thread avec une boucle asyncio. Les opérations synchrones du
+  service passent par un pool de threads dédié. Les routes sont déclarées dans
+  une table par écouteur, ce qui supprime `_handler_class` (complexité 147) et
+  `do_POST` (79). Changements visibles :
+  - la source de sauvegarde INFRA-01 est envoyée en HTTP/1.1 « chunked » ;
+    une erreur en cours de flux coupe la connexion au lieu de produire une
+    archive tronquée d'apparence valide ;
+  - l'écouteur compagnon (réseau, TLS) n'accepte plus les écritures `PUT`
+    d'administration, même avec le jeton d'administration ;
+  - une erreur inattendue renvoie un JSON 500 au lieu de fermer la connexion
+    sans réponse, et une méthode non prise en charge renvoie 501.
+
+- Découpage des modules de plus de 1 500 lignes, sans changement de
+  comportement ni d'import public pour `TsunadeIncidentRepository`,
+  `TsunadeExpertiseService` et `DistributedJobRepository` :
+  - `tsunade/incidents.py` (1 873 → 636 lignes) : modèles
+    (`incident_models.py`), demandes compagnon, réparations et expériences,
+    incidents de journaux, schéma SQLite ;
+  - `tsunade/expertise.py` (1 863 → 787 lignes) : catalogue des procédures
+    connues (`expertise_catalog.py`), escalade IA Katsuyu, revue des journaux ;
+  - `jobs/repository.py` (1 724 → 845 lignes) : types de travaux
+    (`job_types.py`), registre des workers, appairage, schéma SQLite.
+
 ## [1.29.19] — 2026-09-22 — Déclenchement Tsunade pour les incidents sans source de journaux
 
 - Le câblage de production entre les observations Shikamaru et l'expertise

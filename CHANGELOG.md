@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.30.0] — 2026-09-25 — Registre de plugins, serveur aiohttp et découpage des gros modules
+
 - Les titres de commit sont vérifiés en CI (Conventional Commits).
 
 - Registre de plugins : chaque plugin de production est déclaré une seule fois

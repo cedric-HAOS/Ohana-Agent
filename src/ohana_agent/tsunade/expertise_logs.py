@@ -85,6 +85,9 @@ class TsunadeLogExpertise:
                 new_correlations.append(correlation)
         evidence["new_correlations"] = new_correlations
         evidence["reviewed_log_findings"] = self._reviewed_log_findings(incident)
+        evidence["reviewed_log_signatures"] = self.incidents.reviewed_log_signatures(
+            incident.incident_id
+        )
         outcome = self.diagnose(incident_id, log_result=evidence)
         if outcome is not None and outcome.status == "INSUFFICIENT_CONTEXT":
             # No AI job was dispatched: keep correlations eligible for a later
@@ -108,6 +111,11 @@ class TsunadeLogExpertise:
                             or fingerprint in evidence["reviewed_log_findings"]
                         )
                     ],
+                    "reviewed_log_signatures": (
+                        self._log_signature_markers(source.get("findings", []))
+                        if outcome is not None and outcome.status == "AI_QUEUED"
+                        else {}
+                    ),
                 },
             },
         )
@@ -138,6 +146,39 @@ class TsunadeLogExpertise:
         return hashlib.sha256(
             json.dumps(canonical, sort_keys=True, default=str).encode()
         ).hexdigest()
+
+    @staticmethod
+    def _log_signature_key(finding: dict[str, Any]) -> str | None:
+        """Identify an anomaly across checks, whatever its count or last date."""
+        if not isinstance(finding, dict):
+            return None
+        signature = finding.get("signature")
+        if not isinstance(signature, str) or not signature:
+            return None
+        canonical = {
+            "signature": redact_sensitive_text(signature),
+            "severity": finding.get("severity"),
+            "category": finding.get("category"),
+        }
+        return hashlib.sha256(
+            json.dumps(canonical, sort_keys=True, default=str).encode()
+        ).hexdigest()
+
+    @classmethod
+    def _log_signature_markers(cls, findings: object) -> dict[str, int]:
+        """Record each reviewed anomaly with the occurrences Katsuyu saw."""
+        markers: dict[str, int] = {}
+        for finding in findings[:64] if isinstance(findings, list) else []:
+            if (key := cls._log_signature_key(finding)) is not None:
+                occurrences = int(finding.get("occurrences") or 0)
+                markers[key] = max(markers.get(key, 0), occurrences)
+        return markers
+
+    @staticmethod
+    def _materially_worse(occurrences: int, reviewed_occurrences: int) -> bool:
+        # A reviewed anomaly recurs every day with a different count and date;
+        # only a clearly higher rate is new evidence worth another expertise.
+        return occurrences >= max(2 * reviewed_occurrences, reviewed_occurrences + 5)
 
     def _reviewed_log_findings(self, incident: TsunadeIncident) -> list[str]:
         reviewed = self.incidents.reviewed_log_findings(incident.incident_id)
@@ -228,6 +269,7 @@ class TsunadeLogExpertise:
         warning_changes: list[dict[str, Any]] = []
         critical_findings: list[dict[str, Any]] = []
         reviewed = set(payload.get("reviewed_log_findings", []))
+        reviewed_signatures = payload.get("reviewed_log_signatures") or {}
         already_reviewed = 0
 
         for finding in findings:
@@ -242,7 +284,10 @@ class TsunadeLogExpertise:
             elif reference == 0 and occurrences > 0:
                 relative_change = 1.0
 
-            if cls._log_finding_fingerprint(finding) in reviewed:
+            known = reviewed_signatures.get(cls._log_signature_key(finding))
+            if cls._log_finding_fingerprint(finding) in reviewed or (
+                known is not None and not cls._materially_worse(occurrences, known)
+            ):
                 already_reviewed += int(
                     severity == "critical"
                     or trend in {"new", "increasing"}

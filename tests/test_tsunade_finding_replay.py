@@ -119,10 +119,11 @@ def test_repeated_new_findings_do_not_restart_ai_after_reopen(tmp_path, legacy):
     assert len(dispatched) == 2
 
 
-@pytest.mark.parametrize(
-    "change", ["count", "date", "signature", "severity", "correlation"]
-)
-def test_material_new_evidence_remains_eligible(tmp_path, change):
+@pytest.mark.parametrize("change", ["count", "date"])
+def test_recurring_reviewed_anomaly_does_not_trigger_daily_ai(tmp_path, change):
+    # HA-01 and LINKY-01 log incidents open since August triggered two
+    # ai.inference per day: each daily check saw the same anomalies with a new
+    # count and date, which the old fingerprint treated as new evidence.
     path = tmp_path / "incidents.db"
     dispatched = []
     result = evidence()
@@ -130,8 +131,23 @@ def test_material_new_evidence_remains_eligible(tmp_path, change):
     for finding in result["sources"][0]["findings"][:2]:
         if change == "count":
             finding["occurrences"] += 1
-        elif change == "date":
+        else:
             finding["last_at"] = "2026-09-20T17:00:00+02:00"
+    incident = review(path, dispatched, result)
+    assert len(dispatched) == 1
+    assert incident.latest_decision["decision"] == "watch"
+
+
+@pytest.mark.parametrize("change", ["doubled", "signature", "severity", "correlation"])
+def test_material_new_evidence_remains_eligible(tmp_path, change):
+    path = tmp_path / "incidents.db"
+    dispatched = []
+    result = evidence()
+    review(path, dispatched, result)
+    for finding in result["sources"][0]["findings"][:2]:
+        if change == "doubled":
+            finding["occurrences"] = max(2 * finding["occurrences"], 5)
+            finding["occurrences"] += 5
         elif change == "signature":
             finding["signature"] += " additional failure"
         elif change == "severity":

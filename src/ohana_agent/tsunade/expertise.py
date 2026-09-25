@@ -415,6 +415,11 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                         ]
                         if incident.capability_id == "logs.health"
                         else [],
+                        "reviewed_log_signatures": self._log_signature_markers(
+                            (log_result or incident.context).get("findings", [])
+                        )
+                        if incident.capability_id == "logs.health"
+                        else {},
                         "decision": "investigate",
                         "decision_source": "deterministic",
                         "conclusion": (

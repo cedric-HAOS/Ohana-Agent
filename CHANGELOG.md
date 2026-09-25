@@ -2,6 +2,16 @@
 
 ## Non publié
 
+- Coût des expertises sur les incidents `logs.health` longs : une anomalie de
+  journaux déjà examinée par Katsuyu est reconnue par sa signature, sa gravité
+  et sa catégorie, et non plus par son nombre d'occurrences et sa dernière
+  date, qui changent à chaque contrôle. Elle ne relance une expertise que si sa
+  fréquence double (au moins +5) ; une signature ou une gravité nouvelle et
+  une corrélation nouvelle restent éligibles. Mesuré le 25 septembre :
+  62 `ai.inference` en 7 jours, dont 2 par jour pour chacun des incidents HA-01
+  et LINKY-01 ouverts depuis le 24 août. Les incidents existants passent par
+  une dernière expertise, qui enregistre ces nouveaux repères.
+
 - La résolution d'un incident qui n'avait eu qu'une observation en échec
   n'est plus traitée comme une première occurrence. Pendant la réparation
   Mosquitto réelle, elle avait relancé un `logs.health_check` pour HA-01 ; sur

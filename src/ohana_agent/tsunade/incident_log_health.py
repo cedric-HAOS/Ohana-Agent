@@ -222,6 +222,19 @@ class TsunadeLogHealthIncidents:
             ).fetchall()
         return {row[0] for row in rows}
 
+    def reviewed_log_signatures(self, incident_id: UUID | str) -> dict[str, int]:
+        """Return each reviewed anomaly with the highest count already examined."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT marker.key, MAX(marker.value)
+                FROM tsunade_incident_events event,
+                json_each(event.payload_json, '$.reviewed_log_signatures') marker
+                WHERE event.incident_id=? AND marker.type='integer'
+                GROUP BY marker.key""",
+                (str(incident_id),),
+            ).fetchall()
+        return {row[0]: int(row[1]) for row in rows}
+
     def _resolve_log_incident(
         self,
         incident: TsunadeIncident,

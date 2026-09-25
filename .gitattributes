@@ -1,4 +1,4 @@
-﻿# Normaliser les fichiers texte en LF dans le dépôt
+# Normaliser les fichiers texte en LF dans le dépôt
 * text=auto eol=lf
 
 # Fichiers Windows conservés en CRLF

@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.31.0] — 2026-09-25 — Corrélation entre incidents et catalogue de réparations supervisées
+
 - Le résumé d'une investigation Tsunade distingue l'exécution de l'opération
   du résultat de la sonde : `mqtt.status : exécutée, résultat en échec` au lieu
   de `mqtt.status: OK` lorsque l'aller-retour MQTT est refusé (constat de la

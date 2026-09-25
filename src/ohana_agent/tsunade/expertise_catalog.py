@@ -60,6 +60,13 @@ class KnownProcedure:
 
 
 KNOWN_PROCEDURES = (
+    # Before "dns": a dnsmasq message would otherwise select the DNS procedure.
+    KnownProcedure(
+        ("dhcp",),
+        ("dhcp.status",),
+        "Le service DHCP local échoue à une vérification déterministe.",
+        ("Vérifier l’état de dnsmasq et son pool d’adresses avant d’intervenir.",),
+    ),
     KnownProcedure(
         ("dns",),
         ("dns.query", "network.ping"),

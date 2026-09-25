@@ -84,6 +84,11 @@ class InvestigationExecutor:
                 20,
                 lambda: self._test("mqtt"),
             ),
+            "dhcp.status": (
+                "Test configured local dnsmasq DHCP service",
+                15,
+                lambda: self._test("dhcp"),
+            ),
             "backup.status": ("Read backup runtime status", 5, self._backup_status),
             "memory.status": (
                 "Read bounded host memory metrics",

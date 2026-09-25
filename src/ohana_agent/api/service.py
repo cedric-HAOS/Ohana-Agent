@@ -49,6 +49,10 @@ from ohana_agent.tsunade.expertise_catalog import (
     TsunadeExpertiseConflictError,
 )
 from ohana_agent.tsunade.followups import TsunadeFollowupService
+from ohana_agent.tsunade.incident_models import (
+    TsunadeIncident,
+    TsunadeRepairProposalRequest,
+)
 from ohana_agent.tsunade.incident_summary import (
     followup_covers_observation,
     incident_assessment,
@@ -61,6 +65,7 @@ from ohana_agent.tsunade.investigations import (
     InvestigationRequest,
     investigation_summary,
 )
+from ohana_agent.tsunade.repair_catalog import eligible_repair, repair_spec
 
 LOGGER = logging.getLogger(__name__)
 
@@ -119,11 +124,21 @@ class AdministrationService:
         companion_ca_sha256: str | None = None,
         companion_ca_certificate_pem: str | None = None,
         notification_publisher: Callable[[dict[str, Any]], None] | None = None,
+        repair_executors: (
+            dict[str, Callable[[TsunadeIncident, str], None]] | None
+        ) = None,
         wake_enabled: bool = False,
         on_wake_enabled_changed: Callable[[bool], None] | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
+        # One concrete executor per catalogue repair; nothing else can run.
+        self.repair_executors = dict(repair_executors or {})
+        if dhcp_repository is not None:
+            self.repair_executors.setdefault(
+                "dnsmasq.restart",
+                lambda _incident, _target: dhcp_repository.request_supervised_restart(),
+            )
         self.plugin_repository = plugin_repository
         self.network_repository = network_repository
         self.job_repository = job_repository
@@ -752,11 +767,26 @@ class AdministrationService:
         return {"schema_version": 1, "status": outcome.status}
 
     def propose_incident_repair(
-        self, incident_id: str, payload: dict[str, Any]
+        self,
+        incident_id: str,
+        payload: dict[str, Any],
+        *,
+        automatic: bool = False,
     ) -> object:
-        if self.incident_repository is None or self.dhcp_repository is None:
+        """Let Tsunade select the catalogue repair whose preconditions hold."""
+        if self.incident_repository is None:
             raise LookupError("Les réparations supervisées sont indisponibles")
-        repair = self.incident_repository.propose_repair(incident_id, payload)
+        request = TsunadeRepairProposalRequest.model_validate(payload)
+        incident = self.incident_repository.get(incident_id)
+        if automatic and incident.repairs:
+            # After a refusal, expiry or failure only a human asks again.
+            return None
+        spec = eligible_repair(incident, self.infrastructure_repository.read())
+        if request.operation not in (None, spec.operation):
+            raise ValueError("Cette opération ne correspond pas à la réparation connue")
+        if spec.key not in self.repair_executors:
+            raise LookupError("L’exécution de cette réparation n’est pas configurée")
+        repair = self.incident_repository.propose_repair(incident_id, spec)
         self._publish_notification(
             {
                 "schema_version": 1,
@@ -774,11 +804,15 @@ class AdministrationService:
         self, incident_id: str, payload: dict[str, Any]
     ) -> object:
         """Audit authorization, invoke one concrete helper, then await Shikamaru."""
-        if self.incident_repository is None or self.dhcp_repository is None:
+        if self.incident_repository is None:
             raise LookupError("Les réparations supervisées sont indisponibles")
         repair = self.incident_repository.authorize_repair(incident_id, payload)
         try:
-            self.dhcp_repository.request_supervised_restart()
+            spec = repair_spec(repair.operation, repair.target)
+            executor = self.repair_executors.get(spec.key) if spec else None
+            if executor is None:
+                raise LookupError("Aucun exécuteur pour cette réparation")
+            executor(self.incident_repository.get(incident_id), repair.target)
         except Exception as error:
             result = self.incident_repository.mark_repair_execution_failed(
                 repair.repair_id, error

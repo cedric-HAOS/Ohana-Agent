@@ -21,9 +21,9 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
     TsunadeRepair,
     TsunadeRepairAuthorizationRequest,
-    TsunadeRepairProposalRequest,
     ValidationSource,
 )
+from ohana_agent.tsunade.repair_catalog import RepairSpec, repair_spec
 
 # Shikamaru must confirm an executed repair within this delay; otherwise the
 # repair ends ``unverified`` instead of waiting indefinitely in ``verifying``.
@@ -34,25 +34,12 @@ class TsunadeRepairs:
     """Repair proposals, authorizations, verification and learned experiences."""
 
     def propose_repair(
-        self, incident_id: UUID | str, payload: dict[str, Any]
+        self, incident_id: UUID | str, spec: RepairSpec
     ) -> TsunadeRepair:
-        """Persist one allowlisted proposal without executing it."""
-        request = TsunadeRepairProposalRequest.model_validate(payload)
+        """Persist one catalogue proposal whose preconditions were checked."""
         incident = self.get(incident_id)
         if incident.state != "active":
             raise ValueError("Une réparation exige un incident actif")
-        identity = " ".join(
-            (
-                incident.node_id,
-                incident.service_id,
-                incident.capability_id,
-                incident.message,
-            )
-        ).casefold()
-        if request.operation != "restart_service" or not any(
-            token in identity for token in ("dns", "dnsmasq")
-        ):
-            raise ValueError("Aucune réparation autorisée ne correspond à cet incident")
         now = datetime.now(UTC)
         with self._lock, self._connection:
             existing = self._connection.execute(
@@ -71,9 +58,9 @@ class TsunadeRepairs:
                 (
                     str(repair_id),
                     str(incident.incident_id),
-                    request.operation,
-                    "dnsmasq.service",
-                    "low",
+                    spec.operation,
+                    spec.target,
+                    spec.risk,
                     now.isoformat(),
                 ),
             )
@@ -89,11 +76,11 @@ class TsunadeRepairs:
                     str(incident.incident_id),
                     (
                         f"{incident.equipment_id} : {incident.message} "
-                        "Tsunade propose une réparation supervisée."
+                        f"Tsunade propose {spec.action}."
                     ),
-                    "Autoriser le redémarrage supervisé de dnsmasq ?",
+                    spec.question,
                     json.dumps(["AUTHORIZE", "REFUSE", "LATER"]),
-                    "low",
+                    spec.risk,
                     now.isoformat(),
                     (now + timedelta(days=7)).isoformat(),
                     str(repair_id),
@@ -103,12 +90,12 @@ class TsunadeRepairs:
                 incident.incident_id,
                 kind="action",
                 occurred_at=now,
-                summary="Tsunade propose le redémarrage supervisé de dnsmasq.",
+                summary=f"Tsunade propose {spec.action}.",
                 payload={
                     "repair_id": str(repair_id),
-                    "operation": request.operation,
-                    "target": "dnsmasq.service",
-                    "risk": "low",
+                    "operation": spec.operation,
+                    "target": spec.target,
+                    "risk": spec.risk,
                     "status": "proposed",
                     "authorized": False,
                     "request_id": str(request_id),
@@ -526,12 +513,16 @@ class TsunadeRepairs:
 
     @staticmethod
     def _repair(row: sqlite3.Row) -> TsunadeRepair:
+        spec = repair_spec(row["operation"], row["target"])
         return TsunadeRepair(
             repair_id=row["repair_id"],
             incident_id=row["incident_id"],
             operation=row["operation"],
             target=row["target"],
+            action=spec.action if spec else None,
             risk=row["risk"],
+            consequences=list(spec.consequences) if spec else [],
+            expected_result=spec.expected_result if spec else None,
             status=row["status"],
             proposed_at=datetime.fromisoformat(row["proposed_at"]),
             authorized_at=(

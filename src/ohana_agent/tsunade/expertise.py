@@ -59,6 +59,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         self.incidents = incidents
         self.investigations = investigations
         self.ai_dispatcher = ai_dispatcher
+        self.repair_proposer: Callable[[UUID], object] | None = None
         self._lock = Lock()
         self._inflight: set[str] = set()
 
@@ -66,6 +67,9 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         self, dispatcher: Callable[[dict[str, Any]], object | None]
     ) -> None:
         self.ai_dispatcher = dispatcher
+
+    def set_repair_proposer(self, proposer: Callable[[UUID], object]) -> None:
+        self.repair_proposer = proposer
 
     def start(
         self,
@@ -140,6 +144,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                     confidence=1.0,
                 )
                 self._record_deterministic(outcome, failures)
+                self._propose_known_repair(incident.incident_id)
                 return outcome
 
             if incident.capability_id == "logs.health":
@@ -455,6 +460,18 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             )
         return results
 
+    def _propose_known_repair(self, incident_id: UUID) -> None:
+        """Offer the catalogue repair; only a human authorization can run it."""
+        if self.repair_proposer is None:
+            return
+        try:
+            self.repair_proposer(incident_id)
+        except (LookupError, ValueError) as error:
+            # Most confirmed diagnoses have no known repair: that is expected.
+            LOGGER.info("No supervised repair proposed for %s: %s", incident_id, error)
+        except Exception:
+            LOGGER.exception("Supervised repair proposal failed for %s", incident_id)
+
     def _active_upstream(self, incident: TsunadeIncident) -> TsunadeIncident | None:
         reader = getattr(self.investigations, "infrastructure_reader", None)
         if reader is None:
@@ -670,9 +687,12 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
 
     @staticmethod
     def _operation_timeout(operation: str) -> int:
-        return {"mqtt.status": 20, "network.ping": 15, "dns.query": 15}.get(
-            operation, 5
-        )
+        return {
+            "mqtt.status": 20,
+            "network.ping": 15,
+            "dns.query": 15,
+            "dhcp.status": 15,
+        }.get(operation, 5)
 
     @staticmethod
     def _experience_proposals(experiences: list[TsunadeExperience]) -> list[str]:

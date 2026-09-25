@@ -11,6 +11,7 @@ from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
+from ohana_agent.tsunade.repair_catalog import repair_spec
 
 
 def _observation(
@@ -377,7 +378,7 @@ def test_repair_requires_authorization_and_experience_requires_confirmation(
             },
         )
         repair = repository.propose_repair(
-            incident.incident_id, {"operation": "restart_service"}
+            incident.incident_id, repair_spec("restart_service", "dnsmasq.service")
         )
         assert repair.status == "proposed"
         assert repair.authorized_at is None

@@ -42,17 +42,12 @@ class TsunadeRepair(AdministrationModel):
 
     repair_id: UUID
     incident_id: UUID
-    operation: Literal["restart_service"]
-    target: Literal["dnsmasq.service"]
-    risk: Literal["low"] = "low"
-    consequences: list[str] = Field(
-        default_factory=lambda: [
-            "Interruption brève de la résolution DNS locale.",
-            "Aucune configuration réseau n’est modifiée.",
-            "Shikamaru vérifie le retour de la capacité après l’action.",
-        ],
-        max_length=8,
-    )
+    operation: Literal["restart_service", "restart_addon"]
+    target: str = Field(min_length=1, max_length=120)
+    action: str | None = None
+    risk: Literal["low", "medium", "high"] = "low"
+    consequences: list[str] = Field(default_factory=list, max_length=8)
+    expected_result: str | None = None
     status: RepairStatus
     proposed_at: datetime
     authorized_at: datetime | None = None
@@ -143,7 +138,9 @@ class TsunadeIncidentRecordRequest(AdministrationModel):
 
 
 class TsunadeRepairProposalRequest(AdministrationModel):
-    operation: Literal["restart_service"]
+    """Ask Tsunade for its catalogue repair; the client never names a target."""
+
+    operation: Literal["restart_service", "restart_addon"] | None = None
 
 
 class TsunadeRepairAuthorizationRequest(AdministrationModel):

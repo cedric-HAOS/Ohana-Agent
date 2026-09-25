@@ -9,6 +9,7 @@ import pytest
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.incident_repairs import REPAIR_VERIFICATION_SECONDS
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.repair_catalog import repair_spec
 
 
 def _observation(status: ObservationStatus, observed_at: datetime) -> Observation:
@@ -36,7 +37,7 @@ def repository(tmp_path: Path):
 def _proposed(repository: TsunadeIncidentRepository, started: datetime):
     incident = repository.process(_observation(ObservationStatus.UNHEALTHY, started))
     repair = repository.propose_repair(
-        incident.incident_id, {"operation": "restart_service"}
+        incident.incident_id, repair_spec("restart_service", "dnsmasq.service")
     )
     return incident, repair
 

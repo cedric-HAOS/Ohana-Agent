@@ -30,6 +30,29 @@
     l'incident sans la réécrire en succès ;
   - chaque fermeture est tracée par un événement d'incident explicite.
 
+- Phase 2, catalogue déclaratif des réparations (`tsunade/repair_catalog.py`).
+  Chaque réparation déclare symptôme, préconditions, action, cible, risque,
+  conséquences et résultat attendu. Une réparation n'est proposée que pour un
+  service déclaré du bon type et de la bonne implémentation, après un
+  diagnostic `confirmed_by_probe` dont la sonde confirme précisément le
+  symptôme corrigé. L'ancienne règle (« dns » dans le message → redémarrer
+  dnsmasq) aurait visé dnsmasq pour une panne AdGuard Home ; elle disparaît.
+  - `dnsmasq.restart` : service `dhcp` implémenté par dnsmasq, nouvelle sonde
+    `dhcp.status` confirmant `service_active=false` (un pool DHCP plein ne
+    déclenche pas de redémarrage). Nouvelle procédure connue DHCP.
+  - `mosquitto.restart` (deuxième réparation) : service `mqtt` implémenté par
+    Mosquitto, aller-retour `mqtt.status` en échec ; redémarrage de l'add-on
+    `core_mosquitto` par le Supervisor (`POST /addons/core_mosquitto/restart`
+    via `supervisor/api`), avec l'accès Home Assistant `ha-01` déjà utilisé
+    pour l'inspection. Un refus du Supervisor laisse la réparation `failed`.
+  - Tsunade propose lui-même la réparation après un diagnostic déterministe
+    confirmé ; seule une autorisation humaine l'exécute. Après un refus, une
+    expiration ou un échec, il ne la repropose pas : une nouvelle demande
+    vient de l'utilisateur. Le client ne choisit plus l'opération : la requête
+    de proposition peut être vide.
+  - La connexion Supervisor authentifiée est partagée entre l'inspection en
+    lecture seule et le redémarrage (`supervisor_api`).
+
 ## [1.30.0] — 2026-09-25 — Registre de plugins, serveur aiohttp et découpage des gros modules
 
 - Les titres de commit sont vérifiés en CI (Conventional Commits).

@@ -55,6 +55,7 @@ from ohana_agent.scheduler.clock import Clock
 from ohana_agent.tsunade.configuration_inspection import (
     configured_http_target,
     inspect_configuration,
+    restart_addon,
 )
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
@@ -216,9 +217,20 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         notification_publisher=(
             companions.notifications.publish if companions else None
         ),
+        repair_executors={
+            # The Supervisor access is the one already used for inspection.
+            "mosquitto.restart": lambda incident, target: restart_addon(
+                context.plugins["backup"].config, incident.node_id, target
+            ),
+        },
     )
     expertise_service.set_ai_dispatcher(
         _AIJobDispatcher(job_repository, administration_service)
+    )
+    expertise_service.set_repair_proposer(
+        lambda incident_id: administration_service.propose_incident_repair(
+            str(incident_id), {}, automatic=True
+        )
     )
     context.event_bus.subscribe(
         ObservationPublished,

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from typing import Any
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -142,93 +145,140 @@ def configured_http_target(
     return (f"supervisor-http:{target_id}", target.url) if target else None
 
 
-async def _remote(config: BackupConfig, node_id: str) -> dict:
+class SupervisorUnavailableError(RuntimeError):
+    """Raised when no authenticated Supervisor access is configured."""
+
+
+SupervisorCall = Callable[[str, str], Awaitable[dict[str, Any]]]
+
+
+@asynccontextmanager
+async def supervisor_api(
+    config: BackupConfig, node_id: str, *, timeout_seconds: float = 8
+) -> AsyncIterator[SupervisorCall]:
+    """Open the authenticated Home Assistant WebSocket used for Supervisor calls."""
     target_id = "ha-01" if node_id == "infra-01" else node_id
     target = next((t for t in config.targets if t.id == target_id and t.enabled), None)
     if target is None:
-        return {"status": "unavailable", "reason": "Aucun accès Supervisor configuré"}
+        raise SupervisorUnavailableError("Aucun accès Supervisor configuré")
     token = target.token or resolve_backup_secret(
         config.environment_file, target.token_environment_variable
     )
     if not token:
-        return {"status": "unavailable", "reason": "Authentification non configurée"}
-    async with asyncio.timeout(8):
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=8)
-        ) as session:
-            url = target.url.rstrip("/").replace("http", "ws", 1) + "/api/websocket"
-            async with session.ws_connect(
-                url, ssl=None if target.verify_tls else False, max_msg_size=1024 * 1024
-            ) as ws:
-                if (await ws.receive_json()).get("type") != "auth_required":
-                    raise ValueError("Unexpected authentication challenge")
-                await ws.send_json({"type": "auth", "access_token": token})
-                if (await ws.receive_json()).get("type") != "auth_ok":
-                    raise ValueError("Supervisor authentication rejected")
-                index = 0
+        raise SupervisorUnavailableError("Authentification non configurée")
+    async with aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+    ) as session:
+        url = target.url.rstrip("/").replace("http", "ws", 1) + "/api/websocket"
+        async with session.ws_connect(
+            url, ssl=None if target.verify_tls else False, max_msg_size=1024 * 1024
+        ) as ws:
+            if (await ws.receive_json()).get("type") != "auth_required":
+                raise ValueError("Unexpected authentication challenge")
+            await ws.send_json({"type": "auth", "access_token": token})
+            if (await ws.receive_json()).get("type") != "auth_ok":
+                raise ValueError("Supervisor authentication rejected")
+            index = 0
 
-                async def get(endpoint):
-                    nonlocal index
-                    index += 1
-                    await ws.send_json(
-                        {
-                            "id": index,
-                            "type": "supervisor/api",
-                            "endpoint": endpoint,
-                            "method": "get",
-                        }
-                    )
-                    reply = await ws.receive_json()
-                    if not reply.get("success"):
-                        return {"unavailable": True}
-                    result = reply.get("result")
-                    return result if isinstance(result, dict) else {}
+            async def call(endpoint: str, method: str) -> dict[str, Any]:
+                nonlocal index
+                index += 1
+                await ws.send_json(
+                    {
+                        "id": index,
+                        "type": "supervisor/api",
+                        "endpoint": endpoint,
+                        "method": method,
+                    }
+                )
+                reply = await ws.receive_json()
+                return reply if isinstance(reply, dict) else {}
 
-                listing = await get("/addons")
-                hardware = await get("/hardware/info")
-                patterns = {
-                    "linky-01": ("teleinfo", "linky"),
-                    "zwave-01": ("z-wave js", "zwavejs", "zwave_js"),
-                }.get(node_id, ("mosquitto", "mqtt"))
-                results = []
-                for addon in listing.get("addons", []):
-                    slug = addon.get("slug", "")
-                    if not slug or not all(c.isalnum() or c in "_-" for c in slug):
-                        continue
-                    if not any(
-                        p in (slug + " " + addon.get("name", "")).lower()
-                        for p in patterns
-                    ):
-                        continue
-                    info = await get(f"/addons/{slug}/info")
-                    stats = await get(f"/addons/{slug}/stats")
-                    results.append(addon_facts(info, hardware, stats))
-                    if len(results) == 2:
-                        break
-                core = await get("/core/info")
-                return {
-                    "origin": target_id + " / Supervisor",
-                    "transport": "authenticated GET",
-                    "addons": results,
-                    "addon_selection": {
-                        "patterns": list(patterns),
-                        "status": (
-                            "unavailable"
-                            if listing.get("unavailable")
-                            else "matched"
-                            if results
-                            else "no_match"
-                        ),
-                        "limit": "Une absence de correspondance ne prouve pas "
-                        "que le service est arrêté ou absent de la machine.",
-                    },
-                    "hardware_available": not hardware.get("unavailable"),
-                    "core": {
-                        k: core.get(k) for k in ("version", "state", "update_available")
-                    },
-                    "limits": "Options déclarées et état Supervisor, sans commandes "
-                    "dans le conteneur ni lecture de fichiers arbitraires.",
-                }
+            yield call
+
+
+def _valid_slug(slug: str) -> bool:
+    return bool(slug) and all(c.isalnum() or c in "_-" for c in slug)
+
+
+def restart_addon(config: BackupConfig, node_id: str, slug: str) -> None:
+    """Ask the Supervisor to restart one add-on; raise on any refusal."""
+    if not _valid_slug(slug):
+        raise ValueError("Identifiant d’add-on invalide")
+
+    async def run() -> None:
+        async with asyncio.timeout(60):
+            async with supervisor_api(config, node_id, timeout_seconds=60) as call:
+                reply = await call(f"/addons/{slug}/restart", "post")
+        if not reply.get("success"):
+            error = reply.get("error")
+            detail = error.get("message") if isinstance(error, dict) else None
+            raise RuntimeError(
+                f"Le Supervisor a refusé le redémarrage de {slug}"
+                + (f" : {str(detail)[:200]}" if detail else "")
+            )
+
+    asyncio.run(run())
+
+
+async def _remote(config: BackupConfig, node_id: str) -> dict:
+    target_id = "ha-01" if node_id == "infra-01" else node_id
+    try:
+        async with asyncio.timeout(8):
+            async with supervisor_api(config, node_id) as call:
+                return await _remote_facts(call, node_id, target_id)
+    except SupervisorUnavailableError as error:
+        return {"status": "unavailable", "reason": str(error)}
+
+
+async def _remote_facts(call: SupervisorCall, node_id: str, target_id: str) -> dict:
+    async def get(endpoint: str) -> dict:
+        reply = await call(endpoint, "get")
+        if not reply.get("success"):
+            return {"unavailable": True}
+        result = reply.get("result")
+        return result if isinstance(result, dict) else {}
+
+    listing = await get("/addons")
+    hardware = await get("/hardware/info")
+    patterns = {
+        "linky-01": ("teleinfo", "linky"),
+        "zwave-01": ("z-wave js", "zwavejs", "zwave_js"),
+    }.get(node_id, ("mosquitto", "mqtt"))
+    results = []
+    for addon in listing.get("addons", []):
+        slug = addon.get("slug", "")
+        if not _valid_slug(slug):
+            continue
+        if not any(p in (slug + " " + addon.get("name", "")).lower() for p in patterns):
+            continue
+        info = await get(f"/addons/{slug}/info")
+        stats = await get(f"/addons/{slug}/stats")
+        results.append(addon_facts(info, hardware, stats))
+        if len(results) == 2:
+            break
+    core = await get("/core/info")
+    return {
+        "origin": target_id + " / Supervisor",
+        "transport": "authenticated GET",
+        "addons": results,
+        "addon_selection": {
+            "patterns": list(patterns),
+            "status": (
+                "unavailable"
+                if listing.get("unavailable")
+                else "matched"
+                if results
+                else "no_match"
+            ),
+            "limit": "Une absence de correspondance ne prouve pas "
+            "que le service est arrêté ou absent de la machine.",
+        },
+        "hardware_available": not hardware.get("unavailable"),
+        "core": {k: core.get(k) for k in ("version", "state", "update_available")},
+        "limits": "Options déclarées et état Supervisor, sans commandes "
+        "dans le conteneur ni lecture de fichiers arbitraires.",
+    }
 
 
 def inspect_configuration(plugins, config: BackupConfig, node_id: str) -> dict:

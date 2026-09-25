@@ -40,6 +40,7 @@ services:
     type: dhcp
     node: infra-01
     port: 67
+    implementation: dnsmasq
 topology:
   devices:
     - id: infra-01
@@ -142,12 +143,12 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
     incident = incidents.process(
         Observation(
             node="infra-01",
-            service="dns",
-            capability="dns.resolve",
+            service="dhcp-primary",
+            capability="dhcp.status",
             status=ObservationStatus.DEGRADED,
             success=False,
-            message="DNS degraded",
-            source="dns.resolve",
+            message="dnsmasq is inactive",
+            source="dhcp.status",
             timestamp=datetime(2026, 8, 24, 12, tzinfo=UTC),
         )
     )
@@ -231,6 +232,35 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
             method="POST",
         )
         assert diagnosis["status"] == "AI_QUEUED"
+        # Without a probe-confirmed diagnosis Tsunade proposes nothing.
+        with pytest.raises(HTTPError) as unconfirmed:
+            request_json(
+                server,
+                f"/v1/incidents/{incident.incident_id}/repairs",
+                method="POST",
+                payload={},
+            )
+        assert unconfirmed.value.code in {400, 409, 422}
+        incidents.append_record(
+            incident.incident_id,
+            {
+                "kind": "investigation",
+                "summary": "dhcp.status : exécutée, résultat en échec",
+                "payload": {
+                    "operation": "dhcp.status",
+                    "status": "OK",
+                    "result": {"success": False, "metadata": {"service_active": False}},
+                },
+            },
+        )
+        incidents.append_record(
+            incident.incident_id,
+            {
+                "kind": "diagnostic",
+                "summary": "Le service DHCP local échoue.",
+                "payload": {"epistemic_status": "confirmed_by_probe"},
+            },
+        )
         proposal = request_json(
             server,
             f"/v1/incidents/{incident.incident_id}/repairs",

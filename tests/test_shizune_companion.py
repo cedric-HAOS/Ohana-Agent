@@ -100,7 +100,8 @@ nodes:
   - id: infra-01
     name: INFRA-01
     endpoint: {type: ip, address: 192.168.1.10}
-services: []
+services:
+  - {id: dnsmasq, name: DHCP, type: dhcp, node: infra-01, implementation: dnsmasq}
 """
 
 
@@ -195,15 +196,35 @@ def test_companion_listener_exposes_only_synthetic_contract_and_executes_once(
         Observation(
             node="infra-01",
             service="dnsmasq",
-            capability="dns.resolve",
+            capability="dhcp.status",
             status=ObservationStatus.DEGRADED,
             success=False,
-            message="La résolution DNS est dégradée.",
-            source="dns.resolve",
+            message="dnsmasq est inactif.",
+            source="dhcp.status",
             timestamp=datetime(2026, 8, 24, 12, tzinfo=UTC),
         )
     )
     assert incident is not None
+    incidents.append_record(
+        incident.incident_id,
+        {
+            "kind": "investigation",
+            "summary": "dhcp.status : exécutée, résultat en échec",
+            "payload": {
+                "operation": "dhcp.status",
+                "status": "OK",
+                "result": {"success": False, "metadata": {"service_active": False}},
+            },
+        },
+    )
+    incidents.append_record(
+        incident.incident_id,
+        {
+            "kind": "diagnostic",
+            "summary": "Le service DHCP local échoue.",
+            "payload": {"epistemic_status": "confirmed_by_probe"},
+        },
+    )
     reload_request = tmp_path / "run" / "dhcp-reload.request"
     service = AdministrationService(
         infrastructure_repository=InfrastructureConfigurationRepository(

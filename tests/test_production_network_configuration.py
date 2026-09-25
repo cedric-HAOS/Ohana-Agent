@@ -8,7 +8,7 @@ from ohana_agent.plugins.network.config import (
     NetworkConfig,
     NetworkDeviceConfig,
 )
-from ohana_agent.runtime.bootstrap import _build_network_tasks
+from ohana_agent.runtime.plugin_catalog import build_network_tasks
 
 
 def test_production_network_configuration_uses_expected_settings() -> None:
@@ -43,7 +43,7 @@ def test_network_tasks_are_spread_across_the_interval() -> None:
         ]
     )
 
-    tasks = _build_network_tasks(
+    tasks = build_network_tasks(
         network_config=config,
         interval_seconds=60,
         start_at=start_at,

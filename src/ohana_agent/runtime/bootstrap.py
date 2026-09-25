@@ -3,76 +3,27 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
-from zoneinfo import ZoneInfo
 
-from ohana_agent.api.http import (
-    AdministrationHTTPServer,
-    AdministrationServerGroup,
-    certificate_sha256,
-)
 from ohana_agent.api.service import AdministrationService
-from ohana_agent.companions.notifications import APNsNotificationPublisher
-from ohana_agent.companions.repository import CompanionRepository
-from ohana_agent.configuration.administration import (
-    DistributedJobsConfig,
-    DistributedLogAnalysisConfig,
-)
-from ohana_agent.configuration.backup import BackupPluginConfig
 from ohana_agent.configuration.builders import (
-    BackupConfigurationBuilder,
-    DHCPConfigurationBuilder,
-    DNSConfigurationBuilder,
-    HomeAssistantTelemetryConfigurationBuilder,
     InfrastructureBuilder,
-    MQTTConfigurationBuilder,
-    NetworkConfigurationBuilder,
-    NTPConfigurationBuilder,
-    TeleinformationConfigurationBuilder,
-    WireGuardConfigurationBuilder,
-    ZWaveConfigurationBuilder,
 )
-from ohana_agent.configuration.dhcp import DHCPPluginConfig
-from ohana_agent.configuration.dns import DNSPluginConfig
+from ohana_agent.configuration.configuration import Configuration
 from ohana_agent.configuration.enums import Environment
-from ohana_agent.configuration.home_assistant_telemetry import (
-    HomeAssistantTelemetryPluginConfig,
-)
 from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.configuration.infrastructure_validator import InfrastructureValidator
 from ohana_agent.configuration.loader import ConfigurationLoader
 from ohana_agent.configuration.loaders import (
-    BackupConfigLoader,
-    DHCPConfigLoader,
-    DNSConfigLoader,
-    HomeAssistantTelemetryConfigLoader,
     InfrastructureLoader,
-    MQTTConfigLoader,
-    NetworkConfigLoader,
-    NTPConfigLoader,
-    TeleinformationConfigLoader,
-    WireGuardConfigLoader,
-    ZWaveConfigLoader,
 )
-from ohana_agent.configuration.mqtt_plugin import MQTTPluginConfig
-from ohana_agent.configuration.network import NetworkPluginConfig
-from ohana_agent.configuration.ntp import NTPPluginConfig
 from ohana_agent.configuration.teleinformation import TeleinformationPluginConfig
-from ohana_agent.configuration.wireguard import WireGuardPluginConfig
-from ohana_agent.configuration.zwave import ZWavePluginConfig
 from ohana_agent.core.events import EventBus
-from ohana_agent.host.dhcp import DnsmasqDHCPRepository
-from ohana_agent.host.network import NetworkManagerRepository
 from ohana_agent.infrastructure import InfrastructureRuntime
 from ohana_agent.infrastructure.infrastructure_health_manager import (
     InfrastructureHealthManager,
 )
-from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
-from ohana_agent.jobs.log_sources import LogSourceBroker
-from ohana_agent.jobs.repository import DistributedJobRepository
-from ohana_agent.jobs.wake_on_lan import WakeOnLanSender
 from ohana_agent.observation import (
     InfrastructureObservationMapper,
     ObservationEngine,
@@ -80,7 +31,6 @@ from ohana_agent.observation import (
     ObservationExportHandler,
     ObservationExportPipeline,
     ObservationPublished,
-    ObserverResult,
     ObserverResultMapper,
     PluginObservationDispatcher,
     PluginObservationExecutor,
@@ -95,55 +45,23 @@ from ohana_agent.observation.exporters import (
     VisionObservationOutbox,
 )
 from ohana_agent.observation.monitoring import MonitoringScheduleRegistry
-from ohana_agent.plugins.administration import (
-    PluginAdministrationBinding,
-    PluginAdministrationRepository,
-)
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.coordinator import BackupCoordinator
-from ohana_agent.plugins.backup.distributed_infra_backup import (
-    DistributedInfraBackupCoordinator,
-    DistributedInfraBackupTransfer,
-)
-from ohana_agent.plugins.backup.plugin import BackupPlugin
 from ohana_agent.plugins.dhcp.check import DHCPCheck
-from ohana_agent.plugins.dhcp.config import DHCPConfig
-from ohana_agent.plugins.dhcp.plugin import DHCPPlugin
-from ohana_agent.plugins.dns.check import DNSCheck
-from ohana_agent.plugins.dns.config import DNSConfig
-from ohana_agent.plugins.dns.plugin import DNSPlugin
 from ohana_agent.plugins.home_assistant_telemetry.check import (
     HomeAssistantTelemetryCheck,
 )
-from ohana_agent.plugins.home_assistant_telemetry.config import (
-    HomeAssistantTelemetryConfig,
-)
-from ohana_agent.plugins.home_assistant_telemetry.plugin import (
-    HomeAssistantTelemetryPlugin,
-)
-from ohana_agent.plugins.mqtt.check import MQTTCheck
-from ohana_agent.plugins.mqtt.config import MQTTConfig
-from ohana_agent.plugins.mqtt.home_assistant_publisher import MQTTHomeAssistantPublisher
 from ohana_agent.plugins.mqtt.host_health import (
     HostHealthMonitor,
     HostHealthObservationMapper,
     HostHealthReporter,
     SystemHostProbe,
 )
-from ohana_agent.plugins.mqtt.plugin import MQTTPlugin
 from ohana_agent.plugins.network.check import NetworkCheck
-from ohana_agent.plugins.network.config import NetworkConfig
-from ohana_agent.plugins.network.plugin import NetworkPlugin
-from ohana_agent.plugins.ntp.check import NTPCheck
-from ohana_agent.plugins.ntp.config import NTPConfig
-from ohana_agent.plugins.ntp.plugin import NTPPlugin
 from ohana_agent.plugins.runtime.plugin_context import PluginContext
 from ohana_agent.plugins.runtime.plugin_manager import PluginManager
 from ohana_agent.plugins.teleinformation.check import (
     TeleinformationCheck,
-)
-from ohana_agent.plugins.teleinformation.config import (
-    TeleinformationConfig,
 )
 from ohana_agent.plugins.teleinformation.frame_store import (
     TeleinformationFrameStore,
@@ -151,491 +69,25 @@ from ohana_agent.plugins.teleinformation.frame_store import (
 from ohana_agent.plugins.teleinformation.ingestion import (
     TeleinformationIngestionHTTPServer,
 )
-from ohana_agent.plugins.teleinformation.plugin import (
-    TeleinformationPlugin,
-)
 from ohana_agent.plugins.wireguard.check import WireGuardCheck
-from ohana_agent.plugins.wireguard.config import WireGuardConfig
-from ohana_agent.plugins.wireguard.plugin import WireGuardPlugin
 from ohana_agent.plugins.zwave.check import ZWaveCheck
-from ohana_agent.plugins.zwave.config import ZWaveConfig
 from ohana_agent.plugins.zwave.discovery import ZWaveDiscoveryHandler
-from ohana_agent.plugins.zwave.plugin import ZWavePlugin
+from ohana_agent.runtime.administration_bootstrap import (
+    AdministrationContext,
+    attach_administration,
+)
 from ohana_agent.runtime.agent import ProductionAgent
+from ohana_agent.runtime.plugin_catalog import (
+    production_plugin_specs,
+)
+from ohana_agent.runtime.plugin_specs import ProductionPlugins
 from ohana_agent.scheduler import (
-    CronTrigger,
     DispatcherTaskExecutor,
-    IntervalTrigger,
     Scheduler,
-    Task,
 )
 from ohana_agent.scheduler.clock import Clock, SystemClock
-from ohana_agent.tsunade.configuration_inspection import (
-    configured_http_target,
-    inspect_configuration,
-)
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
-from ohana_agent.tsunade.investigations import InvestigationExecutor
 
 DEFAULT_PRODUCTION_OUTBOX_PATH = Path("/var/lib/ohana-agent/vision-outbox.db")
-LOCAL_SCHEDULE_TIMEZONE = ZoneInfo("Europe/Paris")
-
-
-def _build_dhcp_tasks(
-    *,
-    dhcp_config: DHCPConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one scheduled status observation per DHCP service."""
-    return [
-        Task(
-            id=f"dhcp.status:{server.name}",
-            name=f"Observe DHCP service {server.name}",
-            command="dhcp.status",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "server": server.address,
-                "port": server.port,
-                "service_id": server.name,
-            },
-            metadata={
-                "managed_by": "dhcp",
-                "node_id": server.node_id,
-                "service_id": server.name,
-                "server": server.address,
-                "port": server.port,
-            },
-        )
-        for server in dhcp_config.servers
-        if server.enabled
-    ]
-
-
-def _build_dns_tasks(
-    *,
-    dns_config: DNSConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one scheduled observation per DNS service and query."""
-    tasks: list[Task] = []
-
-    for server in dns_config.servers:
-        if not server.enabled:
-            continue
-
-        for query_index, hostname in enumerate(dns_config.queries):
-            tasks.append(
-                Task(
-                    id=(f"dns.resolve:{server.name}:{query_index}:{hostname}"),
-                    name=(f"Resolve {hostname} through {server.name}"),
-                    command="dns.resolve",
-                    trigger=IntervalTrigger(
-                        interval=timedelta(seconds=interval_seconds),
-                        start_at=start_at,
-                    ),
-                    arguments={
-                        "hostname": hostname,
-                        "server": server.address,
-                        "service_id": server.name,
-                    },
-                    metadata={
-                        "managed_by": "dns",
-                        "node_id": server.node_id,
-                        "service_id": server.name,
-                        "server": server.address,
-                    },
-                )
-            )
-
-    return tasks
-
-
-def _build_ntp_tasks(
-    *,
-    ntp_config: NTPConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one scheduled observation per enabled NTP service."""
-    return [
-        Task(
-            id=f"ntp.query:{server.name}",
-            name=f"Query time through {server.name}",
-            command="ntp.query",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "server": server.address,
-                "port": server.port,
-                "service_id": server.name,
-            },
-            metadata={
-                "managed_by": "ntp",
-                "node_id": server.node_id,
-                "service_id": server.name,
-                "server": server.address,
-                "port": server.port,
-            },
-        )
-        for server in ntp_config.servers
-        if server.enabled
-    ]
-
-
-def _build_mqtt_tasks(
-    *,
-    mqtt_config: MQTTConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one scheduled round-trip observation per enabled MQTT broker."""
-    return [
-        Task(
-            id=f"mqtt.roundtrip:{broker.name}",
-            name=f"Test MQTT round trip through {broker.name}",
-            command="mqtt.roundtrip",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "broker": broker.address,
-                "port": broker.port,
-                "service_id": broker.name,
-            },
-            metadata={
-                "managed_by": "mqtt",
-                "node_id": broker.node_id,
-                "service_id": broker.name,
-                "broker": broker.address,
-                "port": broker.port,
-            },
-        )
-        for broker in mqtt_config.brokers
-        if broker.enabled
-    ]
-
-
-def _build_network_tasks(
-    *,
-    network_config: NetworkConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build presence observations spread evenly across one interval."""
-    devices = [device for device in network_config.devices if device.enabled]
-
-    if not devices:
-        return []
-
-    spacing_seconds = interval_seconds / len(devices)
-
-    return [
-        Task(
-            id=f"network.reachable:{device.name}",
-            name=f"Check network presence of {device.label}",
-            command="network.reachable",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at + timedelta(seconds=device_index * spacing_seconds),
-            ),
-            arguments={
-                "address": device.address,
-                "device_id": device.name,
-                "label": device.label,
-                "node_id": device.node_id,
-            },
-            metadata={
-                "managed_by": "network",
-                "node_id": device.node_id or device.name,
-                "device_id": device.name,
-                "address": device.address,
-            },
-        )
-        for device_index, device in enumerate(devices)
-    ]
-
-
-def _build_zwave_tasks(
-    *,
-    zwave_config: ZWaveConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one scheduled health observation per Z-Wave service."""
-    return [
-        Task(
-            id=f"zwave.status:{service.name}",
-            name=f"Check Z-Wave controller {service.name}",
-            command="zwave.status",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "url": service.url,
-                "service_id": service.name,
-            },
-            metadata={
-                "managed_by": "zwave",
-                "node_id": service.node_id,
-                "service_id": service.name,
-                "url": service.url,
-            },
-        )
-        for service in zwave_config.services
-        if service.enabled
-    ]
-
-
-def _build_wireguard_tasks(
-    *,
-    wireguard_config: WireGuardConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one scheduled inspection per Freebox WireGuard service."""
-    return [
-        Task(
-            id=f"wireguard.status:{service.name}",
-            name=f"Inspect Freebox WireGuard service {service.name}",
-            command="wireguard.status",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "base_url": service.base_url,
-                "server_name": service.server_name,
-                "service_id": service.name,
-            },
-            metadata={
-                "managed_by": "wireguard",
-                "node_id": service.node_id,
-                "service_id": service.name,
-                "base_url": service.base_url,
-                "server_name": service.server_name,
-            },
-        )
-        for service in wireguard_config.services
-        if service.enabled
-    ]
-
-
-def _build_home_assistant_telemetry_tasks(
-    *,
-    home_assistant_telemetry_config: HomeAssistantTelemetryConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one telemetry freshness observation per declared service."""
-    return [
-        Task(
-            id=f"home_assistant.telemetry.freshness:{service.name}",
-            name=f"Check Home Assistant telemetry service {service.name}",
-            command="home_assistant_telemetry.freshness",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "service_id": service.name,
-                "service_name": service.label,
-                "node_id": service.node_id,
-                "primary_entity_id": service.primary_entity_id,
-                "secondary_entity_id": service.secondary_entity_id,
-                "maximum_age_seconds": service.maximum_age_seconds,
-            },
-            metadata={
-                "managed_by": "home_assistant_telemetry",
-                "service_id": service.name,
-                "service_name": service.label,
-                "node_id": service.node_id,
-                "primary_entity_id": service.primary_entity_id,
-                "secondary_entity_id": service.secondary_entity_id,
-                "maximum_age_seconds": service.maximum_age_seconds,
-            },
-        )
-        for service in home_assistant_telemetry_config.services
-        if service.enabled
-    ]
-
-
-def _build_teleinformation_tasks(
-    *,
-    teleinformation_config: TeleinformationConfig,
-    interval_seconds: int,
-    start_at: datetime,
-) -> list[Task]:
-    """Build one Linky Téléinformation observation per declared service."""
-    return [
-        Task(
-            id=f"teleinformation.freshness:{service.name}",
-            name=f"Check Linky teleinformation service {service.name}",
-            command="teleinformation.freshness",
-            trigger=IntervalTrigger(
-                interval=timedelta(seconds=interval_seconds),
-                start_at=start_at,
-            ),
-            arguments={
-                "service_id": service.name,
-                "service_name": service.label,
-                "node_id": service.node_id,
-                "source_id": service.source_id,
-                "meter_id": service.meter_id,
-                "apparent_power_entity_id": service.apparent_power_entity_id,
-                "tariff_entity_id": service.tariff_entity_id,
-                "blue_off_peak_entity_id": service.blue_off_peak_entity_id,
-                "blue_peak_entity_id": service.blue_peak_entity_id,
-                "white_off_peak_entity_id": service.white_off_peak_entity_id,
-                "white_peak_entity_id": service.white_peak_entity_id,
-                "red_off_peak_entity_id": service.red_off_peak_entity_id,
-                "red_peak_entity_id": service.red_peak_entity_id,
-                "maximum_age_seconds": service.maximum_age_seconds,
-            },
-            metadata={
-                "managed_by": "teleinformation",
-                "service_id": service.name,
-                "service_name": service.label,
-                "node_id": service.node_id,
-                "source_id": service.source_id,
-                "meter_id": service.meter_id,
-                "apparent_power_entity_id": service.apparent_power_entity_id,
-                "tariff_entity_id": service.tariff_entity_id,
-                "maximum_age_seconds": service.maximum_age_seconds,
-            },
-        )
-        for service in teleinformation_config.services
-        if service.enabled
-    ]
-
-
-def _build_backup_tasks(
-    *, backup_config: BackupConfig, schedule_timezone: ZoneInfo | None = None
-) -> list[Task]:
-    """Build independent HAOS and INFRA-01 backup tasks."""
-    tasks = [
-        Task(
-            id=f"backup.run:{target.id}",
-            name=f"Back up {target.label}",
-            command="backup.run",
-            trigger=CronTrigger(target.schedule, timezone=schedule_timezone),
-            arguments={
-                "target_id": target.id,
-                "device_id": target.id,
-                "node_id": target.id,
-            },
-            metadata={
-                "managed_by": "backup",
-                "target_id": target.id,
-                "device_id": target.id,
-                "schedule": target.schedule,
-            },
-        )
-        for target in backup_config.targets
-        if target.enabled
-    ]
-    if backup_config.infra_01.enabled:
-        tasks.append(
-            Task(
-                id="backup.run:infra-01",
-                name="Back up INFRA-01",
-                command="backup.run",
-                trigger=CronTrigger(
-                    backup_config.infra_01.schedule,
-                    timezone=schedule_timezone,
-                ),
-                arguments={
-                    "target_id": "infra-01",
-                    "device_id": "infra-01",
-                    "node_id": "infra-01",
-                },
-                metadata={
-                    "managed_by": "backup",
-                    "target_id": "infra-01",
-                    "device_id": "infra-01",
-                    "schedule": backup_config.infra_01.schedule,
-                },
-            )
-        )
-    return tasks
-
-
-def _build_log_analysis_tasks(
-    *,
-    logs_config: DistributedLogAnalysisConfig,
-    schedule_timezone: ZoneInfo | None = None,
-) -> list[Task]:
-    """Build the single configurable daily Tsunade log-control task."""
-    if not logs_config.enabled:
-        return []
-    return [
-        Task(
-            id="tsunade.logs.health_check",
-            name="Check Konoha logs with Katsuyu",
-            command="jobs.logs.health_check",
-            trigger=CronTrigger(logs_config.schedule, timezone=schedule_timezone),
-            arguments={
-                "sources": list(logs_config.sources),
-                "window_hours": logs_config.window_hours,
-                "max_bytes_per_source": logs_config.max_bytes_per_source,
-                "timeout_seconds": logs_config.timeout_seconds,
-            },
-            metadata={
-                "managed_by": "tsunade-logs",
-                "schedule": logs_config.schedule,
-            },
-        )
-    ]
-
-
-def _build_wake_dispatch_tasks(
-    *, jobs_config: DistributedJobsConfig, start_at: datetime
-) -> list[Task]:
-    """Build the internal grouped Wake-on-LAN dispatcher task."""
-    if not jobs_config.enabled:
-        return []
-    return [
-        Task(
-            id="tsunade.wake.dispatch",
-            name="Dispatch grouped Katsuyu wake requests",
-            command="jobs.wake.dispatch",
-            trigger=IntervalTrigger(
-                timedelta(seconds=5),
-                start_at=start_at,
-            ),
-            metadata={
-                "managed_by": "tsunade-wake",
-            },
-            priority=10,
-        )
-    ]
-
-
-def _replace_plugin_tasks(
-    scheduler: Scheduler,
-    tasks: list[Task],
-    *,
-    plugin_name: str,
-) -> None:
-    """Atomically replace scheduler tasks managed by one plugin."""
-    for task in scheduler.list_tasks():
-        if (
-            task.command.startswith(f"{plugin_name}.")
-            or task.metadata.get("managed_by") == plugin_name
-        ):
-            scheduler.remove_task(task.id)
-
-    for task in tasks:
-        scheduler.add_task(task)
 
 
 def _resolve_home_assistant_telemetry_config_path(path: Path) -> Path:
@@ -673,6 +125,45 @@ def _build_teleinformation_ingestion_runtime(
     )
 
 
+def _build_vision_client(
+    configuration: Configuration,
+    vision_client: VisionClient | None,
+) -> tuple[VisionClient, DurableVisionClient | None]:
+    """Resolve the Ohana-Vision client, durable in production by default."""
+    if vision_client is not None:
+        return vision_client, None
+
+    if not configuration.vision.enabled:
+        raise ValueError(
+            "Ohana-Vision export must be enabled for the production bootstrap."
+        )
+
+    http_vision_client = HttpVisionClient(
+        observation_url=str(configuration.vision.observation_url),
+        infrastructure_url=str(configuration.vision.infrastructure_url),
+        timeout_seconds=(configuration.vision.timeout_seconds),
+    )
+    outbox_path = configuration.vision.outbox_path
+    if (
+        outbox_path is None
+        and configuration.agent.environment is Environment.PRODUCTION
+    ):
+        outbox_path = DEFAULT_PRODUCTION_OUTBOX_PATH
+
+    if outbox_path is None:
+        return http_vision_client, None
+
+    durable_client = DurableVisionClient(
+        http_vision_client,
+        VisionObservationOutbox(
+            outbox_path,
+            max_entries=configuration.vision.outbox_max_entries,
+        ),
+        retry_seconds=configuration.vision.outbox_retry_seconds,
+    )
+    return durable_client, durable_client
+
+
 def build_production_agent(
     *,
     application_config_path: Path = Path("config/shikamaru.yaml"),
@@ -701,151 +192,77 @@ def build_production_agent(
 ) -> ProductionAgent:
     """Build the complete production Ohana-Agent runtime."""
     configuration = ConfigurationLoader.load(application_config_path)
-    dhcp_service_config = configuration.administration.dhcp
 
     infrastructure_config = InfrastructureLoader().load(infrastructure_config_path)
     InfrastructureValidator().validate(infrastructure_config)
     infrastructure = InfrastructureBuilder().build(infrastructure_config)
-    current_infrastructure = infrastructure
-    current_infrastructure_config = infrastructure_config
     monitoring_registry = MonitoringScheduleRegistry()
     monitoring_registry.replace_from_infrastructure(infrastructure_config)
     infrastructure_runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
 
-    dhcp_plugin_config = DHCPConfigLoader().load(dhcp_config_path)
-    dhcp_config = DHCPConfigurationBuilder().build(
-        infrastructure,
-        dhcp_plugin_config,
-        server_node_id=dhcp_service_config.server_node_id,
-        main_config_path=dhcp_service_config.main_config_path,
-        leases_path=dhcp_service_config.leases_path,
-    )
-
-    dns_plugin_config = DNSConfigLoader().load(dns_config_path)
-    dns_config = DNSConfigurationBuilder().build(
-        infrastructure,
-        dns_plugin_config,
-    )
-
-    if not dns_config.queries:
-        raise ValueError(
-            "The production DNS configuration must declare at least one query."
-        )
-
-    ntp_plugin_config = NTPConfigLoader().load(ntp_config_path)
-    ntp_config = NTPConfigurationBuilder().build(
-        infrastructure,
-        ntp_plugin_config,
-    )
-
-    mqtt_plugin_config = MQTTConfigLoader().load(mqtt_config_path)
-    mqtt_config = MQTTConfigurationBuilder().build(
-        infrastructure,
-        mqtt_plugin_config,
-    )
-
-    network_plugin_config = NetworkConfigLoader().load(network_config_path)
-    network_config = NetworkConfigurationBuilder().build(
-        infrastructure_config,
-        network_plugin_config,
-    )
-
-    zwave_plugin_config = ZWaveConfigLoader().load(zwave_config_path)
-    zwave_config = ZWaveConfigurationBuilder().build(
-        infrastructure,
-        zwave_plugin_config,
-    )
-
-    wireguard_plugin_config = WireGuardConfigLoader().load(wireguard_config_path)
-    wireguard_config = WireGuardConfigurationBuilder().build(
-        infrastructure,
-        wireguard_plugin_config,
-    )
-
-    requested_home_assistant_telemetry_path = (
-        home_assistant_telemetry_config_path
-        or shelly_telemetry_config_path
-        or Path("config/plugins/home-assistant-telemetry.yaml")
-    )
     home_assistant_telemetry_config_path = (
         _resolve_home_assistant_telemetry_config_path(
-            requested_home_assistant_telemetry_path
+            home_assistant_telemetry_config_path
+            or shelly_telemetry_config_path
+            or Path("config/plugins/home-assistant-telemetry.yaml")
         )
     )
-    home_assistant_telemetry_plugin_config = HomeAssistantTelemetryConfigLoader().load(
-        home_assistant_telemetry_config_path
-    )
-    home_assistant_telemetry_config = (
-        HomeAssistantTelemetryConfigurationBuilder().build(
-            infrastructure,
-            home_assistant_telemetry_plugin_config,
-        )
-    )
-
-    teleinformation_plugin_config = TeleinformationConfigLoader().load(
-        teleinformation_config_path
-    )
-    teleinformation_config = TeleinformationConfigurationBuilder().build(
-        infrastructure,
-        teleinformation_plugin_config,
-    )
-    backup_plugin_config = BackupConfigLoader().load(backup_config_path)
-    backup_config = BackupConfigurationBuilder().build(backup_plugin_config)
     resolved_teleinformation_check = teleinformation_check or TeleinformationCheck()
     teleinformation_frame_store = getattr(
         resolved_teleinformation_check,
         "frame_store",
         TeleinformationFrameStore(),
     )
-    teleinformation_ingestion_runtime = _build_teleinformation_ingestion_runtime(
-        configuration=teleinformation_plugin_config,
-        frame_store=teleinformation_frame_store,
-    )
 
     event_bus = EventBus()
-
-    resolved_vision_client = vision_client
-    vision_export_runtime: DurableVisionClient | None = None
-
-    if resolved_vision_client is None:
-        if not configuration.vision.enabled:
-            raise ValueError(
-                "Ohana-Vision export must be enabled for the production bootstrap."
-            )
-
-        http_vision_client = HttpVisionClient(
-            observation_url=str(configuration.vision.observation_url),
-            infrastructure_url=str(configuration.vision.infrastructure_url),
-            timeout_seconds=(configuration.vision.timeout_seconds),
-        )
-        outbox_path = configuration.vision.outbox_path
-        if (
-            outbox_path is None
-            and configuration.agent.environment is Environment.PRODUCTION
-        ):
-            outbox_path = DEFAULT_PRODUCTION_OUTBOX_PATH
-
-        if outbox_path is None:
-            resolved_vision_client = http_vision_client
-        else:
-            vision_export_runtime = DurableVisionClient(
-                http_vision_client,
-                VisionObservationOutbox(
-                    outbox_path,
-                    max_entries=configuration.vision.outbox_max_entries,
-                ),
-                retry_seconds=configuration.vision.outbox_retry_seconds,
-            )
-            resolved_vision_client = vision_export_runtime
-
+    resolved_vision_client, vision_export_runtime = _build_vision_client(
+        configuration, vision_client
+    )
     vision_observation_exporter = VisionObservationExporter(
         client=resolved_vision_client,
         mapper=VisionObservationMapper(),
     )
-    mqtt_home_assistant_publisher = MQTTHomeAssistantPublisher(
-        config=mqtt_config,
-        infrastructure=infrastructure_config,
+    plugins = ProductionPlugins.load(
+        production_plugin_specs(
+            dhcp_service_config=configuration.administration.dhcp,
+            infrastructure_config=infrastructure_config,
+            dhcp_check=dhcp_check,
+            network_check=network_check,
+            zwave_check=zwave_check,
+            wireguard_check=wireguard_check,
+            home_assistant_telemetry_check=(
+                home_assistant_telemetry_check or shelly_telemetry_check
+            ),
+            teleinformation_check=resolved_teleinformation_check,
+            backup_coordinator=backup_coordinator,
+        ),
+        {
+            "dhcp": dhcp_config_path,
+            "dns": dns_config_path,
+            "ntp": ntp_config_path,
+            "mqtt": mqtt_config_path,
+            "network": network_config_path,
+            "zwave": zwave_config_path,
+            "wireguard": wireguard_config_path,
+            "home_assistant_telemetry": home_assistant_telemetry_config_path,
+            "teleinformation": teleinformation_config_path,
+            "backup": backup_config_path,
+        },
+        infrastructure=infrastructure,
+        infrastructure_config=infrastructure_config,
     )
+
+    if not plugins["dns"].config.queries:
+        raise ValueError(
+            "The production DNS configuration must declare at least one query."
+        )
+
+    mqtt_home_assistant_publisher = plugins["mqtt"].plugin.home_assistant_publisher
+    teleinformation_ingestion_runtime = _build_teleinformation_ingestion_runtime(
+        configuration=plugins["teleinformation"].plugin_config,
+        frame_store=teleinformation_frame_store,
+    )
+
     host_health_observation_mapper = HostHealthObservationMapper()
     host_health_monitor = HostHealthMonitor(SystemHostProbe())
     host_health_reporter = HostHealthReporter(
@@ -896,71 +313,7 @@ def build_production_agent(
     plugin_manager = PluginManager(
         context=plugin_context,
     )
-
-    dhcp_plugin = DHCPPlugin(
-        check=dhcp_check or DHCPCheck(),
-        config=dhcp_config,
-    )
-    plugin_manager.register(dhcp_plugin)
-
-    dns_plugin = DNSPlugin(
-        check=DNSCheck(),
-        config=dns_config,
-    )
-    plugin_manager.register(dns_plugin)
-
-    ntp_plugin = NTPPlugin(
-        check=NTPCheck(),
-        config=ntp_config,
-    )
-    plugin_manager.register(ntp_plugin)
-
-    mqtt_plugin = MQTTPlugin(
-        check=MQTTCheck(),
-        config=mqtt_config,
-        home_assistant_publisher=mqtt_home_assistant_publisher,
-    )
-    plugin_manager.register(mqtt_plugin)
-
-    network_plugin = NetworkPlugin(
-        check=network_check or NetworkCheck(),
-        config=network_config,
-    )
-    plugin_manager.register(network_plugin)
-
-    zwave_plugin = ZWavePlugin(
-        check=zwave_check or ZWaveCheck(),
-        config=zwave_config,
-    )
-    plugin_manager.register(zwave_plugin)
-
-    wireguard_plugin = WireGuardPlugin(
-        check=wireguard_check or WireGuardCheck(),
-        config=wireguard_config,
-    )
-    plugin_manager.register(wireguard_plugin)
-
-    home_assistant_telemetry_plugin = HomeAssistantTelemetryPlugin(
-        check=(
-            home_assistant_telemetry_check
-            or shelly_telemetry_check
-            or HomeAssistantTelemetryCheck()
-        ),
-        config=home_assistant_telemetry_config,
-    )
-    plugin_manager.register(home_assistant_telemetry_plugin)
-
-    teleinformation_plugin = TeleinformationPlugin(
-        check=resolved_teleinformation_check,
-        config=teleinformation_config,
-    )
-    plugin_manager.register(teleinformation_plugin)
-
-    backup_plugin = BackupPlugin(
-        config=backup_config,
-        coordinator=backup_coordinator,
-    )
-    plugin_manager.register(backup_plugin)
+    plugins.register(plugin_manager)
 
     plugin_executor = PluginObservationExecutor(
         plugin_manager=plugin_manager,
@@ -972,7 +325,6 @@ def build_production_agent(
 
     resolved_clock = clock or SystemClock()
     administration_service: AdministrationService | None = None
-    job_repository: DistributedJobRepository | None = None
 
     def queue_log_health_job(arguments: dict[str, object], now: datetime) -> object:
         if administration_service is None:
@@ -1000,723 +352,57 @@ def build_production_agent(
         ),
         event_bus=event_bus,
     )
-
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_dhcp_tasks(
-                dhcp_config=dhcp_config,
-                interval_seconds=dhcp_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if dhcp_plugin_config.enabled
-            else []
-        ),
-        plugin_name="dhcp",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_dns_tasks(
-                dns_config=dns_config,
-                interval_seconds=dns_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if dns_plugin_config.enabled
-            else []
-        ),
-        plugin_name="dns",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_ntp_tasks(
-                ntp_config=ntp_config,
-                interval_seconds=ntp_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if ntp_plugin_config.enabled
-            else []
-        ),
-        plugin_name="ntp",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_mqtt_tasks(
-                mqtt_config=mqtt_config,
-                interval_seconds=mqtt_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if mqtt_plugin_config.enabled
-            else []
-        ),
-        plugin_name="mqtt",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_network_tasks(
-                network_config=network_config,
-                interval_seconds=network_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if network_plugin_config.enabled
-            else []
-        ),
-        plugin_name="network",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_zwave_tasks(
-                zwave_config=zwave_config,
-                interval_seconds=zwave_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if zwave_plugin_config.enabled
-            else []
-        ),
-        plugin_name="zwave",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_wireguard_tasks(
-                wireguard_config=wireguard_config,
-                interval_seconds=wireguard_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if wireguard_plugin_config.enabled
-            else []
-        ),
-        plugin_name="wireguard",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_home_assistant_telemetry_tasks(
-                home_assistant_telemetry_config=home_assistant_telemetry_config,
-                interval_seconds=(
-                    home_assistant_telemetry_plugin_config.interval_seconds
-                ),
-                start_at=resolved_clock.now(),
-            )
-            if home_assistant_telemetry_plugin_config.enabled
-            else []
-        ),
-        plugin_name="home_assistant_telemetry",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        (
-            _build_teleinformation_tasks(
-                teleinformation_config=teleinformation_config,
-                interval_seconds=teleinformation_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if teleinformation_plugin_config.enabled
-            else []
-        ),
-        plugin_name="teleinformation",
-    )
-    _replace_plugin_tasks(
-        scheduler,
-        _build_backup_tasks(
-            backup_config=backup_config,
-            schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
-        )
-        if backup_plugin_config.enabled
-        else [],
-        plugin_name="backup",
-    )
+    plugins.schedule(scheduler, resolved_clock.now())
 
     def reconfigure_infrastructure(
         changed_configuration: InfrastructureConfig,
     ) -> None:
-        nonlocal current_infrastructure, current_infrastructure_config
-
         updated_infrastructure = InfrastructureBuilder().build(changed_configuration)
         updated_runtime = InfrastructureRuntime.from_infrastructure(
             updated_infrastructure
         )
-        updated_dhcp_config = DHCPConfigurationBuilder().build(
-            updated_infrastructure,
-            dhcp_plugin_config,
-            server_node_id=dhcp_service_config.server_node_id,
-            main_config_path=dhcp_service_config.main_config_path,
-            leases_path=dhcp_service_config.leases_path,
-        )
-        updated_dns_config = DNSConfigurationBuilder().build(
-            updated_infrastructure,
-            dns_plugin_config,
-        )
-        updated_ntp_config = NTPConfigurationBuilder().build(
-            updated_infrastructure,
-            ntp_plugin_config,
-        )
-        updated_mqtt_config = MQTTConfigurationBuilder().build(
-            updated_infrastructure,
-            mqtt_plugin_config,
-        )
-        updated_network_config = NetworkConfigurationBuilder().build(
-            changed_configuration,
-            network_plugin_config,
-        )
-        updated_zwave_config = ZWaveConfigurationBuilder().build(
-            updated_infrastructure,
-            zwave_plugin_config,
-        )
-        updated_wireguard_config = WireGuardConfigurationBuilder().build(
-            updated_infrastructure,
-            wireguard_plugin_config,
-        )
-        updated_home_assistant_telemetry_config = (
-            HomeAssistantTelemetryConfigurationBuilder().build(
-                updated_infrastructure,
-                home_assistant_telemetry_plugin_config,
-            )
-        )
-        updated_teleinformation_config = TeleinformationConfigurationBuilder().build(
-            updated_infrastructure,
-            teleinformation_plugin_config,
-        )
-        updated_dhcp_tasks = (
-            _build_dhcp_tasks(
-                dhcp_config=updated_dhcp_config,
-                interval_seconds=dhcp_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if dhcp_plugin_config.enabled
-            else []
-        )
-        updated_dns_tasks = (
-            _build_dns_tasks(
-                dns_config=updated_dns_config,
-                interval_seconds=dns_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if dns_plugin_config.enabled
-            else []
-        )
-        updated_ntp_tasks = (
-            _build_ntp_tasks(
-                ntp_config=updated_ntp_config,
-                interval_seconds=ntp_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if ntp_plugin_config.enabled
-            else []
-        )
-        updated_mqtt_tasks = (
-            _build_mqtt_tasks(
-                mqtt_config=updated_mqtt_config,
-                interval_seconds=mqtt_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if mqtt_plugin_config.enabled
-            else []
-        )
-        updated_network_tasks = (
-            _build_network_tasks(
-                network_config=updated_network_config,
-                interval_seconds=network_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if network_plugin_config.enabled
-            else []
-        )
-        updated_zwave_tasks = (
-            _build_zwave_tasks(
-                zwave_config=updated_zwave_config,
-                interval_seconds=zwave_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if zwave_plugin_config.enabled
-            else []
-        )
-        updated_wireguard_tasks = (
-            _build_wireguard_tasks(
-                wireguard_config=updated_wireguard_config,
-                interval_seconds=wireguard_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if wireguard_plugin_config.enabled
-            else []
-        )
-        updated_home_assistant_telemetry_tasks = (
-            _build_home_assistant_telemetry_tasks(
-                home_assistant_telemetry_config=updated_home_assistant_telemetry_config,
-                interval_seconds=home_assistant_telemetry_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if home_assistant_telemetry_plugin_config.enabled
-            else []
-        )
-        updated_teleinformation_tasks = (
-            _build_teleinformation_tasks(
-                teleinformation_config=updated_teleinformation_config,
-                interval_seconds=teleinformation_plugin_config.interval_seconds,
-                start_at=resolved_clock.now(),
-            )
-            if teleinformation_plugin_config.enabled
-            else []
-        )
 
-        observation_engine.health_manager.runtime = updated_runtime
-        dhcp_plugin.reconfigure(updated_dhcp_config)
-        dns_plugin.reconfigure(updated_dns_config)
-        ntp_plugin.reconfigure(updated_ntp_config)
-        mqtt_plugin.reconfigure(
-            updated_mqtt_config,
-            infrastructure=changed_configuration,
-        )
-        network_plugin.reconfigure(updated_network_config)
-        zwave_plugin.reconfigure(updated_zwave_config)
-        wireguard_plugin.reconfigure(updated_wireguard_config)
-        home_assistant_telemetry_plugin.reconfigure(
-            updated_home_assistant_telemetry_config
-        )
-        teleinformation_plugin.reconfigure(updated_teleinformation_config)
-        _replace_plugin_tasks(
-            scheduler,
-            updated_dhcp_tasks,
-            plugin_name="dhcp",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_dns_tasks,
-            plugin_name="dns",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_ntp_tasks,
-            plugin_name="ntp",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_mqtt_tasks,
-            plugin_name="mqtt",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_network_tasks,
-            plugin_name="network",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_zwave_tasks,
-            plugin_name="zwave",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_wireguard_tasks,
-            plugin_name="wireguard",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_home_assistant_telemetry_tasks,
-            plugin_name="home_assistant_telemetry",
-        )
-        _replace_plugin_tasks(
-            scheduler,
-            updated_teleinformation_tasks,
-            plugin_name="teleinformation",
+        def swap_runtime() -> None:
+            observation_engine.health_manager.runtime = updated_runtime
+
+        plugins.reconfigure_infrastructure(
+            updated_infrastructure,
+            changed_configuration,
+            scheduler=scheduler,
+            now=resolved_clock.now(),
+            before_commit=swap_runtime,
         )
         monitoring_registry.replace_from_infrastructure(changed_configuration)
-        current_infrastructure = updated_infrastructure
-        current_infrastructure_config = changed_configuration
 
-    def apply_dhcp_configuration(configuration: DHCPPluginConfig) -> None:
-        nonlocal dhcp_plugin_config
-
-        updated_config = DHCPConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-            server_node_id=dhcp_service_config.server_node_id,
-            main_config_path=dhcp_service_config.main_config_path,
-            leases_path=dhcp_service_config.leases_path,
-        )
-        dhcp_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_dhcp_tasks(
-                    dhcp_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="dhcp",
-        )
-        dhcp_plugin_config = configuration
-
-    def apply_dns_configuration(configuration: DNSPluginConfig) -> None:
-        nonlocal dns_plugin_config
-
-        updated_config = DNSConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        dns_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_dns_tasks(
-                    dns_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="dns",
-        )
-        dns_plugin_config = configuration
-
-    def apply_ntp_configuration(configuration: NTPPluginConfig) -> None:
-        nonlocal ntp_plugin_config
-
-        updated_config = NTPConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        ntp_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_ntp_tasks(
-                    ntp_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="ntp",
-        )
-        ntp_plugin_config = configuration
-
-    def apply_mqtt_configuration(configuration: MQTTPluginConfig) -> None:
-        nonlocal mqtt_plugin_config
-
-        updated_config = MQTTConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        mqtt_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_mqtt_tasks(
-                    mqtt_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="mqtt",
-        )
-        mqtt_plugin_config = configuration
-
-    def apply_network_configuration(configuration: NetworkPluginConfig) -> None:
-        nonlocal network_plugin_config
-
-        updated_config = NetworkConfigurationBuilder().build(
-            current_infrastructure_config,
-            configuration,
-        )
-        network_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_network_tasks(
-                    network_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="network",
-        )
-        network_plugin_config = configuration
-
-    def apply_zwave_configuration(configuration: ZWavePluginConfig) -> None:
-        nonlocal zwave_plugin_config
-
-        updated_config = ZWaveConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        zwave_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_zwave_tasks(
-                    zwave_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="zwave",
-        )
-        zwave_plugin_config = configuration
-
-    def apply_wireguard_configuration(
-        configuration: WireGuardPluginConfig,
+    def replace_teleinformation_ingestion(
+        _: object,
+        plugin_config: TeleinformationPluginConfig,
     ) -> None:
-        nonlocal wireguard_plugin_config
-
-        updated_config = WireGuardConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        wireguard_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_wireguard_tasks(
-                    wireguard_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="wireguard",
-        )
-        wireguard_plugin_config = configuration
-
-    def apply_home_assistant_telemetry_configuration(
-        configuration: HomeAssistantTelemetryPluginConfig,
-    ) -> None:
-        nonlocal home_assistant_telemetry_plugin_config
-
-        updated_config = HomeAssistantTelemetryConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        home_assistant_telemetry_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_home_assistant_telemetry_tasks(
-                    home_assistant_telemetry_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="home_assistant_telemetry",
-        )
-        home_assistant_telemetry_plugin_config = configuration
-
-    def apply_teleinformation_configuration(
-        configuration: TeleinformationPluginConfig,
-    ) -> None:
-        nonlocal teleinformation_plugin_config
-
-        updated_config = TeleinformationConfigurationBuilder().build(
-            current_infrastructure,
-            configuration,
-        )
-        teleinformation_plugin.reconfigure(updated_config)
         agent.replace_teleinformation_ingestion_runtime(
             _build_teleinformation_ingestion_runtime(
-                configuration=configuration,
+                configuration=plugin_config,
                 frame_store=teleinformation_frame_store,
             )
         )
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_teleinformation_tasks(
-                    teleinformation_config=updated_config,
-                    interval_seconds=configuration.interval_seconds,
-                    start_at=resolved_clock.now(),
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="teleinformation",
-        )
-        teleinformation_plugin_config = configuration
 
-    def apply_backup_configuration(configuration: BackupPluginConfig) -> None:
-        nonlocal backup_plugin_config, backup_config
-
-        updated_config = BackupConfigurationBuilder().build(configuration)
-        backup_plugin.reconfigure(updated_config)
-        _replace_plugin_tasks(
-            scheduler,
-            (
-                _build_backup_tasks(
-                    backup_config=updated_config,
-                    schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
-                )
-                if configuration.enabled
-                else []
-            ),
-            plugin_name="backup",
-        )
-        backup_plugin_config = configuration
-        backup_config = updated_config
+    def update_log_source_broker(backup_config: BackupConfig, _: object) -> None:
         if (
             administration_service is not None
             and administration_service.log_source_broker is not None
         ):
-            administration_service.log_source_broker.config = updated_config
+            administration_service.log_source_broker.config = backup_config
 
-    def test_dhcp_plugin() -> ObserverResult:
-        servers = [server for server in dhcp_plugin.config.servers if server.enabled]
+    plugins.on_applied("teleinformation", replace_teleinformation_ingestion)
+    plugins.on_applied("backup", update_log_source_broker)
 
-        if not servers:
-            raise ValueError("The DHCP plugin has no enabled DHCP service.")
-
-        return dhcp_plugin.execute(
-            server=servers[0].address,
-            port=servers[0].port,
-            service_id=servers[0].name,
-        )
-
-    def test_backup_plugin() -> ObserverResult:
-        return backup_plugin.test()
-
-    def test_network_plugin() -> ObserverResult:
-        devices = [device for device in network_plugin.config.devices if device.enabled]
-
-        if not devices:
-            raise ValueError("The network plugin has no addressable device.")
-
-        device = devices[0]
-        return network_plugin.test(
-            address=device.address,
-            device_id=device.name,
-            label=device.label,
-            node_id=device.node_id,
-        )
-
-    def test_dns_plugin() -> ObserverResult:
-        servers = [server for server in dns_plugin.servers if server.enabled]
-
-        if not dns_plugin.config.queries:
-            raise ValueError("The DNS plugin has no configured query.")
-
-        if not servers:
-            raise ValueError("The DNS plugin has no enabled DNS service.")
-
-        return dns_plugin.execute(
-            hostname=dns_plugin.config.queries[0],
-            server=servers[0].address,
-        )
-
-    def test_ntp_plugin() -> ObserverResult:
-        servers = [server for server in ntp_plugin.config.servers if server.enabled]
-
-        if not servers:
-            raise ValueError("The NTP plugin has no enabled NTP service.")
-
-        return ntp_plugin.execute(
-            server=servers[0].address,
-            port=servers[0].port,
-        )
-
-    def test_mqtt_plugin() -> ObserverResult:
-        brokers = [broker for broker in mqtt_plugin.config.brokers if broker.enabled]
-
-        if not brokers:
-            raise ValueError("The MQTT plugin has no enabled MQTT service.")
-
-        return mqtt_plugin.execute(
-            broker=brokers[0].address,
-            port=brokers[0].port,
-            service_id=brokers[0].name,
-        )
-
-    def test_zwave_plugin() -> ObserverResult:
-        services = [
-            service for service in zwave_plugin.config.services if service.enabled
-        ]
-
-        if not services:
-            raise ValueError("The Z-Wave plugin has no enabled Z-Wave service.")
-
-        return zwave_plugin.execute(url=services[0].url)
-
-    def test_wireguard_plugin() -> ObserverResult:
-        services = [
-            service for service in wireguard_plugin.config.services if service.enabled
-        ]
-
-        if not services:
-            raise ValueError("The WireGuard plugin has no enabled WireGuard service.")
-
-        service = services[0]
-        return wireguard_plugin.execute(
-            service_id=service.name,
-            base_url=service.base_url,
-            server_name=service.server_name,
-        )
-
-    def test_home_assistant_telemetry_plugin() -> ObserverResult:
-        services = [
-            service
-            for service in home_assistant_telemetry_plugin.config.services
-            if service.enabled
-        ]
-
-        if not services:
-            raise ValueError(
-                "The Home Assistant telemetry"
-                "plugin has no enabled Home"
-                "Assistant telemetry service."
+    def apply_plugin_configuration(identifier: str, plugin_config: object) -> None:
+        agent.apply_plugin_configuration(
+            lambda: plugins.apply(
+                identifier,
+                plugin_config,
+                scheduler=scheduler,
+                now=resolved_clock.now(),
             )
-
-        service = services[0]
-        return home_assistant_telemetry_plugin.execute(
-            service_id=service.name,
-            service_name=service.label,
-            node_id=service.node_id,
-            primary_entity_id=service.primary_entity_id,
-            secondary_entity_id=service.secondary_entity_id,
-            maximum_age_seconds=service.maximum_age_seconds,
-        )
-
-    def test_teleinformation_plugin() -> ObserverResult:
-        services = [
-            service
-            for service in teleinformation_plugin.config.services
-            if service.enabled
-        ]
-
-        if not services:
-            raise ValueError(
-                "The Téléinformation plugin has no enabled Téléinformation service."
-            )
-
-        service = services[0]
-        return teleinformation_plugin.execute(
-            service_id=service.name,
-            service_name=service.label,
-            node_id=service.node_id,
-            source_id=service.source_id,
-            meter_id=service.meter_id,
-            apparent_power_entity_id=service.apparent_power_entity_id,
-            tariff_entity_id=service.tariff_entity_id,
-            blue_off_peak_entity_id=service.blue_off_peak_entity_id,
-            blue_peak_entity_id=service.blue_peak_entity_id,
-            white_off_peak_entity_id=service.white_off_peak_entity_id,
-            white_peak_entity_id=service.white_peak_entity_id,
-            red_off_peak_entity_id=service.red_off_peak_entity_id,
-            red_peak_entity_id=service.red_peak_entity_id,
-            maximum_age_seconds=service.maximum_age_seconds,
         )
 
     agent = ProductionAgent(
@@ -1749,518 +435,21 @@ def build_production_agent(
     )
 
     if configuration.administration.enabled:
-        administration_config = configuration.administration
-
-        try:
-            administration_token = administration_config.token_file.read_text(
-                encoding="utf-8"
-            ).strip()
-        except OSError as error:
-            raise ValueError(
-                "Unable to read the Ohana administration token from "
-                f"{administration_config.token_file}."
-            ) from error
-
-        dhcp_repository = None
-        network_repository = None
-        worker_token = None
-
-        if administration_config.jobs.enabled:
-            jobs_config = administration_config.jobs
-            try:
-                worker_token = jobs_config.worker_token_file.read_text(
-                    encoding="utf-8"
-                ).strip()
-            except OSError as error:
-                raise ValueError(
-                    "Unable to read the Katsuyu worker token from "
-                    f"{jobs_config.worker_token_file}."
-                ) from error
-            if not worker_token:
-                raise ValueError("The Katsuyu worker token cannot be empty.")
-            job_repository = DistributedJobRepository(
-                jobs_config.database_path,
-                lease_seconds=jobs_config.lease_seconds,
-                waiting_worker_after_seconds=(jobs_config.waiting_worker_after_seconds),
-                retention_days=jobs_config.retention_days,
-                max_active_jobs=jobs_config.max_active_jobs,
-                worker_available_seconds=(
-                    jobs_config.wake_on_lan.available_for_seconds
-                ),
+        administration_service = attach_administration(
+            AdministrationContext(
+                configuration=configuration,
+                application_config_path=application_config_path,
+                infrastructure_config_path=infrastructure_config_path,
+                plugins=plugins,
+                plugin_manager=plugin_manager,
+                scheduler=scheduler,
+                dispatcher=dispatcher,
+                event_bus=event_bus,
+                host_health_monitor=host_health_monitor,
+                clock=resolved_clock,
+                agent=agent,
+                apply_plugin_configuration=apply_plugin_configuration,
             )
-            _replace_plugin_tasks(
-                scheduler,
-                _build_log_analysis_tasks(
-                    logs_config=jobs_config.logs,
-                    schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
-                ),
-                plugin_name="tsunade-logs",
-            )
-            _replace_plugin_tasks(
-                scheduler,
-                _build_wake_dispatch_tasks(
-                    jobs_config=jobs_config,
-                    start_at=resolved_clock.now(),
-                ),
-                plugin_name="tsunade-wake",
-            )
-
-        if administration_config.network.enabled:
-            administration_network_config = administration_config.network
-            network_repository = NetworkManagerRepository(
-                helper_path=administration_network_config.helper_path,
-                sudo_path=administration_network_config.sudo_path,
-                rollback_seconds=administration_network_config.rollback_seconds,
-            )
-
-        if administration_config.dhcp.enabled:
-            administration_dhcp_config = administration_config.dhcp
-            dhcp_repository = DnsmasqDHCPRepository(
-                main_config_path=administration_dhcp_config.main_config_path,
-                reservation_paths={
-                    "infrastructure": (
-                        administration_dhcp_config.infrastructure_reservations_path
-                    ),
-                    "servers": administration_dhcp_config.server_reservations_path,
-                    "network": administration_dhcp_config.network_reservations_path,
-                    "home_automation": (
-                        administration_dhcp_config.home_automation_reservations_path
-                    ),
-                    "critical": administration_dhcp_config.critical_reservations_path,
-                },
-                leases_path=administration_dhcp_config.leases_path,
-                server_node_id=administration_dhcp_config.server_node_id,
-                validation_command=administration_dhcp_config.validation_command,
-                reload_request_path=administration_dhcp_config.reload_request_path,
-            )
-
-        plugin_repository = PluginAdministrationRepository(
-            plugin_manager=plugin_manager,
-            scheduler=scheduler,
-            backup_runner=lambda arguments: dispatcher.execute(
-                "backup.run",
-                arguments,
-            ),
-            bindings=(
-                PluginAdministrationBinding(
-                    identifier="backup",
-                    display_name="Sauvegardes",
-                    capabilities=("backup.run",),
-                    configuration_path=backup_config_path,
-                    configuration_model=BackupPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_backup_configuration(config)
-                    ),
-                    test_plugin=test_backup_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="dhcp",
-                    display_name="DHCP",
-                    capabilities=("dhcp.status",),
-                    configuration_path=dhcp_config_path,
-                    configuration_model=DHCPPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_dhcp_configuration(config)
-                    ),
-                    test_plugin=test_dhcp_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="dns",
-                    display_name="DNS",
-                    capabilities=("dns.resolve",),
-                    configuration_path=dns_config_path,
-                    configuration_model=DNSPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_dns_configuration(config)
-                    ),
-                    test_plugin=test_dns_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="ntp",
-                    display_name="NTP",
-                    capabilities=("ntp.query",),
-                    configuration_path=ntp_config_path,
-                    configuration_model=NTPPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_ntp_configuration(config)
-                    ),
-                    test_plugin=test_ntp_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="mqtt",
-                    display_name="MQTT",
-                    capabilities=("mqtt.roundtrip",),
-                    configuration_path=mqtt_config_path,
-                    configuration_model=MQTTPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_mqtt_configuration(config)
-                    ),
-                    test_plugin=test_mqtt_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="zwave",
-                    display_name="Z-Wave",
-                    capabilities=("zwave.status",),
-                    configuration_path=zwave_config_path,
-                    configuration_model=ZWavePluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_zwave_configuration(config)
-                    ),
-                    test_plugin=test_zwave_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="wireguard",
-                    display_name="WireGuard",
-                    capabilities=("wireguard.status",),
-                    configuration_path=wireguard_config_path,
-                    configuration_model=WireGuardPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_wireguard_configuration(config)
-                    ),
-                    test_plugin=test_wireguard_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="home_assistant_telemetry",
-                    display_name="Télémétrie Home Assistant",
-                    capabilities=("home_assistant.telemetry.freshness",),
-                    configuration_path=home_assistant_telemetry_config_path,
-                    configuration_model=HomeAssistantTelemetryPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_home_assistant_telemetry_configuration(config)
-                    ),
-                    test_plugin=test_home_assistant_telemetry_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="teleinformation",
-                    display_name="Téléinformation",
-                    capabilities=("teleinformation.freshness",),
-                    configuration_path=teleinformation_config_path,
-                    configuration_model=TeleinformationPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_teleinformation_configuration(config)
-                    ),
-                    test_plugin=test_teleinformation_plugin,
-                ),
-                PluginAdministrationBinding(
-                    identifier="network",
-                    display_name="Présence réseau",
-                    capabilities=("network.reachable",),
-                    configuration_path=network_config_path,
-                    configuration_model=NetworkPluginConfig,
-                    apply_configuration=lambda config: agent.apply_plugin_configuration(
-                        lambda: apply_network_configuration(config)
-                    ),
-                    test_plugin=test_network_plugin,
-                ),
-            ),
-        )
-        incident_repository = TsunadeIncidentRepository(
-            administration_config.control_database_path
-        )
-        incident_repository.reconcile_network_devices(
-            {device.name for device in network_config.devices if device.enabled},
-            occurred_at=resolved_clock.now().astimezone(ZoneInfo("Europe/Paris")),
-        )
-        companion_repository = None
-        companion_tls_config = None
-        companion_ca_sha256 = None
-        companion_ca_certificate_pem = None
-        apns_notification_publisher = None
-        if administration_config.companion.enabled:
-            companion_tls_config = administration_config.companion
-            try:
-                companion_ca_certificate_pem, companion_ca_sha256 = certificate_sha256(
-                    companion_tls_config.ca_certificate_file
-                )
-            except (OSError, UnicodeError, ValueError) as error:
-                raise ValueError(
-                    "Unable to read the companion TLS CA certificate from "
-                    f"{companion_tls_config.ca_certificate_file}."
-                ) from error
-            companion_repository = CompanionRepository(
-                administration_config.control_database_path,
-                credential_ttl_days=companion_tls_config.credential_ttl_days,
-            )
-            apns_notification_publisher = APNsNotificationPublisher(
-                config=companion_tls_config.push,
-                companions=companion_repository,
-            )
-        investigation_executor = InvestigationExecutor(
-            plugins=plugin_repository,
-            host_health_reader=lambda: host_health_monitor.collect().to_dict(),
-            jobs=job_repository,
-            infrastructure_reader=InfrastructureConfigurationRepository(
-                infrastructure_config_path
-            ).read,
-            configuration_reader=lambda node: inspect_configuration(
-                plugin_repository, backup_config, node
-            ),
-            http_target_reader=lambda node: configured_http_target(backup_config, node),
-        )
-        expertise_service = TsunadeExpertiseService(
-            incidents=incident_repository,
-            investigations=investigation_executor,
-        )
-
-        worker_ca_certificate_pem = None
-        worker_ca_sha256 = None
-        worker_tls_config = None
-        if (
-            administration_config.jobs.enabled
-            and administration_config.jobs.worker_tls.enabled
-        ):
-            worker_tls_config = administration_config.jobs.worker_tls
-            try:
-                worker_ca_certificate_pem, worker_ca_sha256 = certificate_sha256(
-                    worker_tls_config.ca_certificate_file
-                )
-            except (OSError, UnicodeError, ValueError) as error:
-                raise ValueError(
-                    "Unable to read the Katsuyu TLS CA certificate from "
-                    f"{worker_tls_config.ca_certificate_file}."
-                ) from error
-
-        wake_config = administration_config.jobs.wake_on_lan
-        wake_timeout_seconds = wake_config.wait_timeout_seconds
-
-        def wake_sender(mac_address: str) -> None:
-            WakeOnLanSender(
-                mac_address=mac_address,
-                broadcast_address=str(wake_config.broadcast_address),
-                port=wake_config.port,
-                burst_count=wake_config.packet_burst_count,
-                burst_interval_seconds=wake_config.burst_interval_seconds,
-            ).send()
-
-        def on_wake_enabled_changed(enabled: bool) -> None:
-            ConfigurationLoader.write_wake_on_lan_enabled(
-                application_config_path,
-                enabled,
-            )
-
-        def on_log_analysis_changed(
-            logs_configuration: DistributedLogAnalysisConfig,
-        ) -> None:
-            ConfigurationLoader.write_log_analysis(
-                application_config_path,
-                logs_configuration.model_dump(mode="json"),
-            )
-            _replace_plugin_tasks(
-                scheduler,
-                _build_log_analysis_tasks(
-                    logs_config=logs_configuration,
-                    schedule_timezone=LOCAL_SCHEDULE_TIMEZONE,
-                ),
-                plugin_name="tsunade-logs",
-            )
-
-        administration_service = AdministrationService(
-            infrastructure_repository=(
-                InfrastructureConfigurationRepository(
-                    infrastructure_config_path,
-                )
-            ),
-            dhcp_repository=dhcp_repository,
-            plugin_repository=plugin_repository,
-            network_repository=network_repository,
-            job_repository=job_repository,
-            on_infrastructure_changed=lambda changed_configuration: (
-                agent.apply_infrastructure_configuration(
-                    changed_configuration,
-                    VisionInfrastructureMapper().to_payload(changed_configuration),
-                )
-            ),
-            worker_ca_certificate_pem=worker_ca_certificate_pem,
-            worker_ca_sha256=worker_ca_sha256,
-            wake_timeout_seconds=wake_timeout_seconds,
-            wake_sender=wake_sender,
-            wake_broadcast_address=str(wake_config.broadcast_address),
-            wake_port=wake_config.port,
-            wake_available_for_seconds=wake_config.available_for_seconds,
-            wake_packet_burst_count=wake_config.packet_burst_count,
-            wake_burst_interval_seconds=wake_config.burst_interval_seconds,
-            wake_retry_count=wake_config.retry_count,
-            wake_retry_delay_seconds=wake_config.retry_delay_seconds,
-            wake_batch_window_seconds=wake_config.batch_window_seconds,
-            wake_planned_window_start_hour=wake_config.planned_window_start_hour,
-            wake_planned_window_end_hour=wake_config.planned_window_end_hour,
-            wake_schedule_timezone=wake_config.schedule_timezone,
-            wake_minimum_interval_seconds=wake_config.minimum_interval_seconds,
-            wake_shutdown_after_completion=wake_config.shutdown_after_completion,
-            wake_worker_id=wake_config.worker_id,
-            wake_mac_address=wake_config.mac_address,
-            incident_repository=incident_repository,
-            investigation_executor=investigation_executor,
-            log_source_broker=(
-                LogSourceBroker(backup_config, job_repository)
-                if job_repository is not None
-                else None
-            ),
-            expertise_service=expertise_service,
-            automatic_read_only_investigations=True,
-            log_analysis_enabled=administration_config.jobs.logs.enabled,
-            log_analysis_schedule=administration_config.jobs.logs.schedule,
-            log_sources=administration_config.jobs.logs.sources,
-            log_window_hours=administration_config.jobs.logs.window_hours,
-            log_max_bytes=administration_config.jobs.logs.max_bytes_per_source,
-            log_timeout_seconds=administration_config.jobs.logs.timeout_seconds,
-            on_log_analysis_changed=on_log_analysis_changed,
-            companion_repository=companion_repository,
-            companion_ca_sha256=companion_ca_sha256,
-            companion_ca_certificate_pem=companion_ca_certificate_pem,
-            notification_publisher=(
-                apns_notification_publisher.publish
-                if apns_notification_publisher is not None
-                else None
-            ),
-            wake_enabled=wake_config.enabled,
-            on_wake_enabled_changed=on_wake_enabled_changed,
-        )
-
-        def dispatch_ai_job(payload: dict[str, object]) -> object | None:
-            if job_repository is None or not job_repository.has_worker_capability(
-                "ai.inference"
-            ):
-                return None
-            return administration_service.create_job(payload)
-
-        expertise_service.set_ai_dispatcher(dispatch_ai_job)
-
-        def handle_tsunade_observation(event: ObservationPublished) -> None:
-            incident = incident_repository.process(event.observation)
-            if incident is not None:
-                if (
-                    incident.state == "active"
-                    and incident.severity == "critical"
-                    and incident.occurrence_count == 1
-                ):
-                    if apns_notification_publisher is not None:
-                        apns_notification_publisher.publish(
-                            {
-                                "schema_version": 1,
-                                "notification_id": (
-                                    f"incident-{incident.incident_id}-critical"
-                                ),
-                                "type": "CRITICAL",
-                                "title": "Un incident critique a été détecté",
-                                "message": incident.message,
-                                "incident_id": str(incident.incident_id),
-                                "occurred_at": incident.started_at.isoformat(),
-                            }
-                        )
-                elif incident.state == "resolved":
-                    if apns_notification_publisher is not None:
-                        repair_succeeded = any(
-                            repair.status == "succeeded" for repair in incident.repairs
-                        )
-                        apns_notification_publisher.publish(
-                            {
-                                "schema_version": 1,
-                                "notification_id": (
-                                    f"incident-{incident.incident_id}-resolved"
-                                ),
-                                "type": "RESOLVED",
-                                "title": (
-                                    "La réparation demandée a réussi"
-                                    if repair_succeeded
-                                    else "Konoha est de nouveau sain"
-                                ),
-                                "message": incident.final_result or incident.message,
-                                "incident_id": str(incident.incident_id),
-                                "occurred_at": (
-                                    incident.ended_at or incident.last_observed_at
-                                ).isoformat(),
-                            }
-                        )
-            logs_config = administration_config.jobs.logs
-
-            if incident is None or incident.occurrence_count != 1:
-                return
-
-            if logs_config.enabled and incident.node_id in logs_config.sources:
-                current = datetime.now(UTC)
-                administration_service.create_job(
-                    {
-                        "protocol_version": 1,
-                        "job_id": str(uuid4()),
-                        "type": "logs.health_check",
-                        "created_at": current.isoformat(),
-                        "parameters": {
-                            "sources": [incident.node_id],
-                            "window_started_at": (
-                                current - timedelta(hours=1)
-                            ).isoformat(),
-                            "window_ended_at": current.isoformat(),
-                            "max_bytes_per_source": logs_config.max_bytes_per_source,
-                            "baseline": [],
-                            "incident_id": str(incident.incident_id),
-                        },
-                        "timeout": logs_config.timeout_seconds,
-                    }
-                )
-                return
-
-            expertise_service.start(incident.incident_id)
-
-        event_bus.subscribe(ObservationPublished, handle_tsunade_observation)
-        if job_repository is not None and backup_config.infra_01.use_katsuyu:
-
-            def distributed_backup_factory(
-                current_backup_config: BackupConfig,
-            ) -> DistributedInfraBackupCoordinator:
-                transfer = DistributedInfraBackupTransfer(
-                    current_backup_config,
-                    job_repository,
-                )
-                administration_service.backup_transfer = transfer
-                return DistributedInfraBackupCoordinator(
-                    current_backup_config,
-                    transfer,
-                    create_job=administration_service.create_job,
-                    read_job=administration_service.read_job,
-                )
-
-            administration_service.backup_transfer = (
-                backup_plugin.enable_distributed_infra(
-                    distributed_backup_factory,
-                )
-            )
-        administration_server = AdministrationHTTPServer(
-            service=administration_service,
-            token=administration_token,
-            worker_token=worker_token,
-            host=str(administration_config.host),
-            port=administration_config.port,
-        )
-        administration_servers = [administration_server]
-        if worker_tls_config is not None:
-            worker_server = AdministrationHTTPServer(
-                service=administration_service,
-                token=administration_token,
-                worker_token=None,
-                host=str(worker_tls_config.host),
-                port=worker_tls_config.port,
-                worker_only=True,
-                tls_certificate_file=worker_tls_config.certificate_file,
-                tls_private_key_file=worker_tls_config.private_key_file,
-            )
-            administration_servers.append(worker_server)
-        if companion_tls_config is not None:
-            companion_server = AdministrationHTTPServer(
-                service=administration_service,
-                token=administration_token,
-                worker_token=None,
-                host=str(companion_tls_config.host),
-                port=companion_tls_config.port,
-                companion_only=True,
-                tls_certificate_file=companion_tls_config.certificate_file,
-                tls_private_key_file=companion_tls_config.private_key_file,
-            )
-            administration_servers.append(companion_server)
-        agent.administration_runtime = (
-            administration_servers[0]
-            if len(administration_servers) == 1
-            else AdministrationServerGroup(*administration_servers)
         )
 
     return agent

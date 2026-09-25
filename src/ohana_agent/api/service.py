@@ -65,6 +65,7 @@ from ohana_agent.tsunade.investigations import (
     InvestigationRequest,
     investigation_summary,
 )
+from ohana_agent.tsunade.local_time import paris_now
 from ohana_agent.tsunade.repair_catalog import eligible_repair, repair_spec
 
 LOGGER = logging.getLogger(__name__)
@@ -825,7 +826,7 @@ class AdministrationService:
                     "title": "La réparation a échoué",
                     "message": result.result or "Tsunade n’a pas pu exécuter l’action.",
                     "incident_id": str(repair.incident_id),
-                    "occurred_at": datetime.now(UTC).isoformat(),
+                    "occurred_at": paris_now().isoformat(),
                 }
             )
             return result

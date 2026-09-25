@@ -2,8 +2,15 @@
 
 ## Non publié
 
-## [1.31.0] — 2026-09-25 — Corrélation entre incidents et catalogue de réparations supervisées
-
+- Tsunade n'utilise plus que l'heure de Paris. Les incidents, leurs
+  événements, les réparations, les demandes utilisateur, les investigations et
+  les notifications de réparation sont écrits en Europe/Paris, et l'API les
+  renvoie en Europe/Paris, y compris les enregistrements plus anciens écrits en
+  UTC. Pendant la réparation Mosquitto réelle, un même incident affichait
+  12:51 (ouverture) puis 14:52 (diagnostic). Les tris SQLite comparent
+  désormais les instants (`julianday`) et non le texte : l'activité compagnon
+  plaçait un événement de 12:54 UTC avant un événement de 14:52 heure de
+  Paris, pourtant antérieur. Les jobs distribués Katsuyu gardent leur format.
 - Le résumé d'une investigation Tsunade distingue l'exécution de l'opération
   du résultat de la sonde : `mqtt.status : exécutée, résultat en échec` au lieu
   de `mqtt.status: OK` lorsque l'aller-retour MQTT est refusé (constat de la

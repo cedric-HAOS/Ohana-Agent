@@ -6,7 +6,6 @@ import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo
 
 from ohana_agent.tsunade.evidence_privacy import (
     redact_sensitive_value,
@@ -14,6 +13,7 @@ from ohana_agent.tsunade.evidence_privacy import (
 from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
 )
+from ohana_agent.tsunade.local_time import paris_now
 
 
 class TsunadeLogHealthIncidents:
@@ -46,7 +46,7 @@ class TsunadeLogHealthIncidents:
                 },
             )
             return [incident.incident_id]
-        now = datetime.now(ZoneInfo("Europe/Paris"))
+        now = paris_now()
         affected: list[UUID] = []
         with self._lock, self._connection:
             for source in result.get("sources", []):

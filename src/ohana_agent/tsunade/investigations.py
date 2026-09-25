@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from queue import Empty, Queue
 from threading import Thread
 from time import monotonic
@@ -18,6 +18,7 @@ from ohana_agent.contracts.administration import AdministrationModel
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
 from ohana_agent.tsunade.evidence_privacy import redact_sensitive_value
+from ohana_agent.tsunade.local_time import paris_now
 from ohana_agent.tsunade.read_only import diagnostic_snapshot
 
 LOGGER = logging.getLogger(__name__)
@@ -156,7 +157,7 @@ class InvestigationExecutor:
                 f"{request.operation} timeout cannot exceed {maximum_timeout} seconds"
             )
         investigation_id = uuid4()
-        started_at = datetime.now(UTC)
+        started_at = paris_now()
         started = monotonic()
         LOGGER.info("Investigation %s started: %s", investigation_id, request.operation)
         result_queue: Queue[tuple[dict[str, Any] | None, Exception | None]] = Queue(1)
@@ -190,7 +191,7 @@ class InvestigationExecutor:
         if status == "KO":
             LOGGER.error("Investigation %s failed: %s", investigation_id, error)
         duration = monotonic() - started
-        finished_at = datetime.now(UTC)
+        finished_at = paris_now()
         LOGGER.info("Investigation %s finished with %s", investigation_id, status)
         return InvestigationResult(
             investigation_id=investigation_id,

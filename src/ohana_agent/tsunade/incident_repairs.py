@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -23,6 +23,7 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeRepairAuthorizationRequest,
     ValidationSource,
 )
+from ohana_agent.tsunade.local_time import paris_iso, paris_now
 from ohana_agent.tsunade.repair_catalog import RepairSpec, repair_spec
 
 # Shikamaru must confirm an executed repair within this delay; otherwise the
@@ -40,12 +41,12 @@ class TsunadeRepairs:
         incident = self.get(incident_id)
         if incident.state != "active":
             raise ValueError("Une réparation exige un incident actif")
-        now = datetime.now(UTC)
+        now = paris_now()
         with self._lock, self._connection:
             existing = self._connection.execute(
                 """SELECT * FROM tsunade_repairs WHERE incident_id=?
                 AND status IN ('proposed','verifying')
-                ORDER BY proposed_at DESC LIMIT 1""",
+                ORDER BY julianday(proposed_at) DESC LIMIT 1""",
                 (str(incident.incident_id),),
             ).fetchone()
             if existing is not None:
@@ -112,7 +113,7 @@ class TsunadeRepairs:
         """Record authorization provenance before a concrete executor runs."""
         request = TsunadeRepairAuthorizationRequest.model_validate(payload)
         incident = self.get(incident_id)
-        now = datetime.now(UTC)
+        now = paris_now()
         with self._lock, self._connection:
             self._pending_proposal_locked(request.repair_id, incident.incident_id, now)
             self._connection.execute(
@@ -160,7 +161,7 @@ class TsunadeRepairs:
     ) -> TsunadeRepair:
         """Record an explicit refusal without executing any operation."""
         incident = self.get(incident_id)
-        now = datetime.now(UTC)
+        now = paris_now()
         with self._lock, self._connection:
             self._pending_proposal_locked(repair_id, incident.incident_id, now)
             self._connection.execute(
@@ -196,7 +197,7 @@ class TsunadeRepairs:
 
     def mark_repair_executed(self, repair_id: UUID | str) -> TsunadeRepair:
         """Move an authorized repair to Shikamaru verification."""
-        now = datetime.now(UTC)
+        now = paris_now()
         with self._lock, self._connection:
             row = self._required_repair(repair_id)
             if row["authorized_at"] is None or row["status"] != "authorized":
@@ -221,7 +222,7 @@ class TsunadeRepairs:
     def mark_repair_execution_failed(
         self, repair_id: UUID | str, error: object
     ) -> TsunadeRepair:
-        now = datetime.now(UTC)
+        now = paris_now()
         detail = redact_sensitive_text(str(error))[:1000]
         with self._lock, self._connection:
             row = self._required_repair(repair_id)
@@ -263,10 +264,10 @@ class TsunadeRepairs:
         """Apply repair deadlines, reusing the caller's transaction if any."""
         with self._lock:
             if self._connection.in_transaction:
-                self._expire_repairs_locked(now or datetime.now(UTC))
+                self._expire_repairs_locked(now or paris_now())
             else:
                 with self._connection:
-                    self._expire_repairs_locked(now or datetime.now(UTC))
+                    self._expire_repairs_locked(now or paris_now())
 
     def _expire_repairs_locked(self, now: datetime) -> None:
         """Close repairs that can no longer progress, each with an explicit event."""
@@ -366,7 +367,7 @@ class TsunadeRepairs:
                 )
             ).encode("utf-8")
         ).hexdigest()
-        now = datetime.now(UTC)
+        now = paris_now()
         anomalies = self._bounded_anomalies(incident.context)
         observations = [
             {
@@ -458,7 +459,7 @@ class TsunadeRepairs:
         with self._lock:
             rows = self._connection.execute(
                 """SELECT * FROM tsunade_experiences WHERE equipment_id=?
-                AND capability_id=? ORDER BY last_used_at DESC LIMIT 5""",
+                AND capability_id=? ORDER BY julianday(last_used_at) DESC LIMIT 5""",
                 (incident.equipment_id, incident.capability_id),
             ).fetchall()
         return [self._experience(row) for row in rows]
@@ -472,7 +473,7 @@ class TsunadeRepairs:
     ) -> None:
         row = self._connection.execute(
             """SELECT * FROM tsunade_repairs WHERE incident_id=?
-            AND status='verifying' ORDER BY executed_at DESC LIMIT 1""",
+            AND status='verifying' ORDER BY julianday(executed_at) DESC LIMIT 1""",
             (str(incident.incident_id),),
         ).fetchone()
         if row is None or observation.timestamp <= datetime.fromisoformat(
@@ -488,7 +489,7 @@ class TsunadeRepairs:
         self._connection.execute(
             """UPDATE tsunade_repairs SET status=?,verified_at=?,result=?
             WHERE repair_id=?""",
-            (status, observation.timestamp.isoformat(), result, row["repair_id"]),
+            (status, paris_iso(observation.timestamp), result, row["repair_id"]),
         )
         self._event(
             incident.incident_id,

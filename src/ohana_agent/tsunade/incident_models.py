@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import Field
 
 from ohana_agent.contracts.administration import AdministrationModel
+from ohana_agent.tsunade.local_time import ParisDatetime
 
 IncidentSeverity = Literal["degraded", "critical"]
 IncidentState = Literal["active", "resolved"]
@@ -49,12 +49,12 @@ class TsunadeRepair(AdministrationModel):
     consequences: list[str] = Field(default_factory=list, max_length=8)
     expected_result: str | None = None
     status: RepairStatus
-    proposed_at: datetime
-    authorized_at: datetime | None = None
+    proposed_at: ParisDatetime
+    authorized_at: ParisDatetime | None = None
     authorization_source: ValidationSource | None = None
     authorized_by: str | None = None
-    executed_at: datetime | None = None
-    verified_at: datetime | None = None
+    executed_at: ParisDatetime | None = None
+    verified_at: ParisDatetime | None = None
     result: str | None = None
 
 
@@ -75,7 +75,7 @@ class TsunadeExperience(AdministrationModel):
     occurrence_count: int = Field(ge=1)
     success_count: int = Field(ge=0)
     failure_count: int = Field(ge=0)
-    last_used_at: datetime
+    last_used_at: ParisDatetime
     confidence: float = Field(ge=0, le=1)
 
 
@@ -94,7 +94,7 @@ class TsunadeIncidentEvent(AdministrationModel):
 
     event_id: int
     kind: str = Field(min_length=1, max_length=40)
-    occurred_at: datetime
+    occurred_at: ParisDatetime
     observation_id: UUID | None = None
     status: str | None = None
     summary: str = Field(min_length=1, max_length=1000)
@@ -113,9 +113,9 @@ class TsunadeIncident(AdministrationModel):
     service_id: str
     capability_id: str
     equipment_id: str
-    started_at: datetime
-    last_observed_at: datetime
-    ended_at: datetime | None = None
+    started_at: ParisDatetime
+    last_observed_at: ParisDatetime
+    ended_at: ParisDatetime | None = None
     last_observation_id: UUID
     message: str
     occurrence_count: int = Field(ge=1)
@@ -171,10 +171,10 @@ class TsunadeUserRequest(AdministrationModel):
     choices: list[UserRequestChoice] = Field(min_length=2, max_length=6)
     risk: Literal["low", "medium", "high"] | None = None
     state: UserRequestState
-    created_at: datetime
-    expires_at: datetime
-    deferred_until: datetime | None = None
-    answered_at: datetime | None = None
+    created_at: ParisDatetime
+    expires_at: ParisDatetime
+    deferred_until: ParisDatetime | None = None
+    answered_at: ParisDatetime | None = None
     answer: UserRequestChoice | None = None
     answer_source: Literal["vision", "shizune", "read_only_policy"] | None = None
     answered_by: str | None = None
@@ -199,7 +199,7 @@ class TsunadeCompanionActivity(AdministrationModel):
     """One human-readable timeline entry without technical payloads."""
 
     activity_id: str
-    occurred_at: datetime
+    occurred_at: ParisDatetime
     kind: Literal["incident", "investigation", "decision", "action", "result"]
     title: str
     detail: str | None = None

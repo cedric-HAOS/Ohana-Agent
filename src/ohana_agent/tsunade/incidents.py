@@ -9,7 +9,6 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo
 
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.observation.events import ObservationPublished
@@ -27,6 +26,7 @@ from ohana_agent.tsunade.incident_models import (
 from ohana_agent.tsunade.incident_repairs import TsunadeRepairs
 from ohana_agent.tsunade.incident_schema import TsunadeIncidentSchema
 from ohana_agent.tsunade.incident_user_requests import TsunadeUserRequests
+from ohana_agent.tsunade.local_time import paris_iso, paris_now
 
 
 class TsunadeIncidentRepository(
@@ -135,7 +135,7 @@ class TsunadeIncidentRepository(
                     """UPDATE tsunade_incidents SET ended_at=?,message=?,final_result=?
                     WHERE incident_id=?""",
                     (
-                        occurred_at.isoformat(),
+                        paris_iso(occurred_at),
                         result,
                         result,
                         str(incident.incident_id),
@@ -168,7 +168,7 @@ class TsunadeIncidentRepository(
                 f"""SELECT * FROM tsunade_incidents WHERE {condition}
                 ORDER BY (ended_at IS NULL) DESC,
                 (ended_at IS NULL AND severity='critical') DESC,
-                started_at DESC LIMIT ?""",  # noqa: S608
+                julianday(started_at) DESC LIMIT ?""",  # noqa: S608
                 (limit,),
             ).fetchall()
         return [self._incident(row, include_events=False) for row in rows]
@@ -247,7 +247,7 @@ class TsunadeIncidentRepository(
         safe_payload = redact_sensitive_value(request.payload)
 
         incident = self.get(incident_id)
-        now = datetime.now(ZoneInfo("Europe/Paris"))
+        now = paris_now()
 
         with self._lock, self._connection:
             self._event(
@@ -305,8 +305,8 @@ class TsunadeIncidentRepository(
                 *key,
                 str(observation.metadata.get("device_id") or observation.node),
                 severity,
-                observation.timestamp.isoformat(),
-                observation.timestamp.isoformat(),
+                paris_iso(observation.timestamp),
+                paris_iso(observation.timestamp),
                 str(observation.id),
                 message,
                 recurrence,
@@ -342,7 +342,7 @@ class TsunadeIncidentRepository(
             context_json=? WHERE incident_id=?""",
             (
                 severity,
-                observation.timestamp.isoformat(),
+                paris_iso(observation.timestamp),
                 str(observation.id),
                 message,
                 json.dumps(
@@ -371,8 +371,8 @@ class TsunadeIncidentRepository(
             """UPDATE tsunade_incidents SET ended_at=?,last_observed_at=?,
             last_observation_id=?,message=?,final_result=? WHERE incident_id=?""",
             (
-                observation.timestamp.isoformat(),
-                observation.timestamp.isoformat(),
+                paris_iso(observation.timestamp),
+                paris_iso(observation.timestamp),
                 str(observation.id),
                 message,
                 result,
@@ -415,7 +415,7 @@ class TsunadeIncidentRepository(
             (
                 str(incident_id),
                 kind,
-                occurred_at.isoformat(),
+                paris_iso(occurred_at),
                 str(observation.id) if observation else None,
                 observation.status.value if observation else None,
                 summary,
@@ -452,7 +452,7 @@ class TsunadeIncidentRepository(
                 observation.service,
                 observation.capability,
                 observation.status.value,
-                observation.timestamp.isoformat(),
+                paris_iso(observation.timestamp),
                 str(observation.id),
             ),
         )
@@ -476,7 +476,7 @@ class TsunadeIncidentRepository(
         events: list[TsunadeIncidentEvent] = []
         repair_rows = self._connection.execute(
             """SELECT * FROM tsunade_repairs WHERE incident_id=?
-            ORDER BY proposed_at DESC LIMIT 20""",
+            ORDER BY julianday(proposed_at) DESC LIMIT 20""",
             (row["incident_id"],),
         ).fetchall()
         repairs = [self._repair(repair) for repair in repair_rows]
@@ -491,7 +491,7 @@ class TsunadeIncidentRepository(
                 TsunadeIncidentEvent(
                     event_id=int(event["event_id"]),
                     kind=event["kind"],
-                    occurred_at=datetime.fromisoformat(event["occurred_at"]),
+                    occurred_at=event["occurred_at"],
                     observation_id=event["observation_id"],
                     status=event["status"],
                     summary=redact_sensitive_text(str(event["summary"])),
@@ -587,7 +587,7 @@ class TsunadeIncidentRepository(
                         "upstream_incident_id",
                     }
                 },
-                "occurred_at": decision_row["occurred_at"],
+                "occurred_at": paris_iso(decision_row["occurred_at"]),
             }
             if decision_row
             else None

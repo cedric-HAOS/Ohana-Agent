@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeUserRequestCollection,
     TsunadeUserRequestResponse,
 )
+from ohana_agent.tsunade.local_time import paris_now
 
 
 class TsunadeUserRequests:
@@ -31,13 +32,13 @@ class TsunadeUserRequests:
         """Return bounded, lazily expired requests without incident internals."""
         if not 1 <= limit <= 200:
             raise ValueError("request limit must be between 1 and 200")
-        now = datetime.now(UTC)
+        now = paris_now()
         condition = "state='pending'" if state == "pending" else "1=1"
         with self._lock, self._connection:
             self._expire_user_requests_locked(now)
             rows = self._connection.execute(
                 f"""SELECT * FROM tsunade_user_requests WHERE {condition}
-                ORDER BY (state='pending') DESC,created_at DESC LIMIT ?""",  # noqa: S608
+                ORDER BY (state='pending') DESC,julianday(created_at) DESC LIMIT ?""",  # noqa: S608
                 (limit,),
             ).fetchall()
         return TsunadeUserRequestCollection(
@@ -47,7 +48,7 @@ class TsunadeUserRequests:
     def get_user_request(self, request_id: UUID | str) -> TsunadeUserRequest:
         """Read one request after applying expiry rules."""
         with self._lock, self._connection:
-            self._expire_user_requests_locked(datetime.now(UTC))
+            self._expire_user_requests_locked(paris_now())
             return self._user_request(self._required_user_request(request_id))
 
     def user_request_action_reference(self, request_id: UUID | str) -> str | None:
@@ -65,7 +66,7 @@ class TsunadeUserRequests:
         response = TsunadeUserRequestResponse.model_validate(payload)
         if response.choice != "LATER":
             raise ValueError("Cette réponse ne constitue pas un report")
-        now = datetime.now(UTC)
+        now = paris_now()
         with self._lock, self._connection:
             self._expire_user_requests_locked(now)
             row = self._required_pending_user_request(request_id)
@@ -102,7 +103,7 @@ class TsunadeUserRequests:
         response = TsunadeUserRequestResponse.model_validate(payload)
         if response.choice == "LATER":
             return self.defer_user_request(request_id, payload)
-        now = datetime.now(UTC)
+        now = paris_now()
         with self._lock, self._connection:
             self._expire_user_requests_locked(now)
             row = self._required_pending_user_request(request_id)
@@ -145,7 +146,7 @@ class TsunadeUserRequests:
                 WHERE kind IN (
                     'opened','investigation','decision','action','result','resolved'
                 )
-                ORDER BY occurred_at DESC,event_id DESC LIMIT ?""",
+                ORDER BY julianday(occurred_at) DESC,event_id DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
         activities: list[TsunadeCompanionActivity] = []

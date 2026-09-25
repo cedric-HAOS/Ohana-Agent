@@ -7,7 +7,9 @@ from typing import Any
 from ohana_agent.tsunade.diagnostic_basis import incident_basis_fingerprint
 from ohana_agent.tsunade.diagnostic_wording import ai_conclusion
 from ohana_agent.tsunade.evidence_privacy import redact_sensitive_text
-from ohana_agent.tsunade.incidents import TsunadeIncident
+from ohana_agent.tsunade.incident_models import (
+    TsunadeIncident,
+)
 
 
 def followup_covers_observation(incident: TsunadeIncident) -> bool:

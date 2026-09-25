@@ -8,7 +8,9 @@ from uuid import uuid4
 import pytest
 
 from ohana_agent.observation import Observation, ObservationStatus
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 
 
 def _observation(

@@ -3,8 +3,12 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.expertise import (
+    TsunadeExpertiseService,
+)
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 from tests.test_tsunade_followups import NoProbes, ai_result
 
 

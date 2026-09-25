@@ -14,9 +14,13 @@ from ohana_agent.api.http import AdministrationHTTPServer
 from ohana_agent.api.service import AdministrationService
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.repository import DistributedJobRepository
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
+from ohana_agent.tsunade.expertise import (
+    TsunadeExpertiseService,
+)
 from ohana_agent.tsunade.incident_summary import incident_assessment
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 
 
 class NoProbes:

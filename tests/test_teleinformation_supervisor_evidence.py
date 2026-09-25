@@ -11,8 +11,12 @@ import pytest
 from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.configuration_inspection import inspect_configuration
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.expertise import (
+    TsunadeExpertiseService,
+)
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 from ohana_agent.tsunade.investigations import InvestigationExecutor
 
 

@@ -8,9 +8,13 @@ from uuid import UUID, uuid4
 import pytest
 
 from ohana_agent.observation import Observation, ObservationStatus
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
+from ohana_agent.tsunade.expertise import (
+    TsunadeExpertiseService,
+)
 from ohana_agent.tsunade.incident_summary import incident_assessment
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 from ohana_agent.tsunade.investigations import InvestigationResult
 
 

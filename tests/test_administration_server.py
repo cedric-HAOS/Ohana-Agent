@@ -16,8 +16,12 @@ from ohana_agent.host.dhcp import DnsmasqDHCPRepository
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.observation import Observation, ObservationStatus
-from ohana_agent.tsunade.expertise import TsunadeExpertiseConflictError
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.expertise_catalog import (
+    TsunadeExpertiseConflictError,
+)
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 
 INFRASTRUCTURE_YAML = """\
 infrastructure:

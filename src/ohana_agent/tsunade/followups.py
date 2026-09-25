@@ -12,8 +12,12 @@ from zoneinfo import ZoneInfo
 
 from ohana_agent.contracts.administration import LogsInvestigateParameters
 from ohana_agent.jobs.repository import DistributedJobRepository
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.expertise import (
+    TsunadeExpertiseService,
+)
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
 

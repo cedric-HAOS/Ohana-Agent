@@ -16,9 +16,13 @@ from ohana_agent.companions.repository import CompanionRepository
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.observation import Observation, ObservationStatus
-from ohana_agent.tsunade.expertise import TsunadeExpertiseService
+from ohana_agent.tsunade.expertise import (
+    TsunadeExpertiseService,
+)
 from ohana_agent.tsunade.incident_summary import incident_assessment
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 from tests.test_shizune_companion import _companion_request, _pair
 
 

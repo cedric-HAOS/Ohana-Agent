@@ -33,25 +33,29 @@ from ohana_agent.host.network import (
     NetworkManagerRepository,
 )
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
-from ohana_agent.jobs.log_sources import LogSourceBroker
-from ohana_agent.jobs.repository import (
+from ohana_agent.jobs.job_types import (
     AUTOMATIC_WAKE_JOB_TYPES,
     LOCAL_TIMEZONE,
     DistributedJobConflictError,
-    DistributedJobRepository,
 )
+from ohana_agent.jobs.log_sources import LogSourceBroker
+from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
 from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.expertise import (
-    TsunadeExpertiseConflictError,
     TsunadeExpertiseService,
+)
+from ohana_agent.tsunade.expertise_catalog import (
+    TsunadeExpertiseConflictError,
 )
 from ohana_agent.tsunade.followups import TsunadeFollowupService
 from ohana_agent.tsunade.incident_summary import (
     followup_covers_observation,
     incident_assessment,
 )
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 from ohana_agent.tsunade.investigations import (
     InvestigationExecutor,
     InvestigationRequest,

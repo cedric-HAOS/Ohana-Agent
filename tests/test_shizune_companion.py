@@ -19,7 +19,9 @@ from ohana_agent.configuration.administration import APNsConfig
 from ohana_agent.host.dhcp import DnsmasqDHCPRepository
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.observation import Observation, ObservationStatus
-from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+from ohana_agent.tsunade.incidents import (
+    TsunadeIncidentRepository,
+)
 
 
 def test_companion_diagnosis_is_authenticated_bounded_and_operator_requested(tmp_path):

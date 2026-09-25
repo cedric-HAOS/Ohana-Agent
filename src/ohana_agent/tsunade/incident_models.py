@@ -56,6 +56,8 @@ class TsunadeRepair(AdministrationModel):
     authorization_source: ValidationSource | None = None
     authorized_by: str | None = None
     executed_at: ParisDatetime | None = None
+    # Shikamaru must confirm the result before this time (adaptive delay).
+    verification_deadline: ParisDatetime | None = None
     verified_at: ParisDatetime | None = None
     result: str | None = None
 

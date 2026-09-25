@@ -123,5 +123,14 @@ class TsunadeIncidentSchema:
             ON tsunade_experiences(equipment_id, capability_id, last_used_at);
             """
         )
+        repair_columns = {
+            row[1]
+            for row in self._connection.execute("PRAGMA table_info(tsunade_repairs)")
+        }
+        if "verification_deadline" not in repair_columns:
+            # Additive migration: older rows keep the fixed verification delay.
+            self._connection.execute(
+                "ALTER TABLE tsunade_repairs ADD COLUMN verification_deadline TEXT"
+            )
         self.initialize_followups()
         self._connection.commit()

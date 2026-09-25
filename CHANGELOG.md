@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Délais de vérification adaptatifs : à l'exécution d'une réparation,
+  l'échéance de confirmation par Shikamaru vaut trois intervalles entre les deux
+  dernières observations de l'incident, entre 5 et 30 minutes (15 minutes si
+  la cadence est inconnue). Elle est enregistrée (`verification_deadline`,
+  colonne ajoutée sans perte aux bases existantes) et exposée par l'API. Une
+  réparation MQTT observée toutes les 2 minutes est ainsi jugée en 6 minutes
+  au lieu de 15.
 - Journal d'accès HTTP : les requêtes réussies ne sont plus journalisées qu'en
   `DEBUG` ; les refus (4xx) restent en `INFO` et les erreurs (5xx) passent en
   `WARNING`, sans chaîne de requête. Depuis aiohttp (1.30.0), chaque trame

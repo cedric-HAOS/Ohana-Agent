@@ -26,9 +26,14 @@ from ohana_agent.tsunade.incident_models import (
 from ohana_agent.tsunade.local_time import paris_iso, paris_now
 from ohana_agent.tsunade.repair_catalog import RepairSpec, repair_spec
 
-# Shikamaru must confirm an executed repair within this delay; otherwise the
+# Shikamaru must confirm an executed repair before its deadline; otherwise the
 # repair ends ``unverified`` instead of waiting indefinitely in ``verifying``.
+# The deadline follows the capability's observed cadence: three observation
+# intervals, bounded, or the default when the cadence is unknown.
 REPAIR_VERIFICATION_SECONDS = 900
+REPAIR_VERIFICATION_MIN_SECONDS = 300
+REPAIR_VERIFICATION_MAX_SECONDS = 1800
+REPAIR_VERIFICATION_INTERVALS = 3
 
 
 class TsunadeRepairs:
@@ -202,10 +207,15 @@ class TsunadeRepairs:
             row = self._required_repair(repair_id)
             if row["authorized_at"] is None or row["status"] != "authorized":
                 raise ValueError("La réparation n’est pas autorisée")
+            delay = self._verification_seconds_locked(row["incident_id"])
             self._connection.execute(
-                """UPDATE tsunade_repairs SET status='verifying',executed_at=?
-                WHERE repair_id=?""",
-                (now.isoformat(), str(repair_id)),
+                """UPDATE tsunade_repairs SET status='verifying',executed_at=?,
+                verification_deadline=? WHERE repair_id=?""",
+                (
+                    now.isoformat(),
+                    (now + timedelta(seconds=delay)).isoformat(),
+                    str(repair_id),
+                ),
             )
             self._event(
                 UUID(row["incident_id"]),
@@ -215,9 +225,37 @@ class TsunadeRepairs:
                     "Réparation exécutée ; Shikamaru doit maintenant "
                     "vérifier la capacité."
                 ),
-                payload={"repair_id": str(repair_id), "status": "verifying"},
+                payload={
+                    "repair_id": str(repair_id),
+                    "status": "verifying",
+                    "verification_seconds": delay,
+                },
             )
         return self.get_repair(repair_id)
+
+    def _verification_seconds_locked(self, incident_id: str) -> int:
+        """Three observation intervals of this incident, bounded."""
+        rows = self._connection.execute(
+            """SELECT occurred_at FROM tsunade_incident_events
+            WHERE incident_id=? AND observation_id IS NOT NULL
+            ORDER BY julianday(occurred_at) DESC LIMIT 2""",
+            (incident_id,),
+        ).fetchall()
+        if len(rows) < 2:
+            return REPAIR_VERIFICATION_SECONDS
+        latest, previous = (datetime.fromisoformat(row[0]) for row in rows)
+        interval = (latest - previous).total_seconds()
+        if interval <= 0:
+            return REPAIR_VERIFICATION_SECONDS
+        return int(
+            min(
+                max(
+                    REPAIR_VERIFICATION_INTERVALS * interval,
+                    REPAIR_VERIFICATION_MIN_SECONDS,
+                ),
+                REPAIR_VERIFICATION_MAX_SECONDS,
+            )
+        )
 
     def mark_repair_execution_failed(
         self, repair_id: UUID | str, error: object
@@ -294,21 +332,34 @@ class TsunadeRepairs:
                 "aucune action n’a été exécutée."
             )
             self._close_repair_locked(row, "expired", now, result, kind="decision")
-        deadline = now - timedelta(seconds=REPAIR_VERIFICATION_SECONDS)
+        # Repairs executed before deadlines were stored keep the fixed delay.
+        legacy_deadline = now - timedelta(seconds=REPAIR_VERIFICATION_SECONDS)
         overdue = self._connection.execute(
-            """SELECT repair_id,incident_id FROM tsunade_repairs
-            WHERE status='verifying' AND julianday(executed_at)<=julianday(?)""",
-            (deadline.isoformat(),),
+            """SELECT repair_id,incident_id,executed_at,verification_deadline
+            FROM tsunade_repairs WHERE status='verifying' AND (
+                (verification_deadline IS NOT NULL
+                 AND julianday(verification_deadline)<=julianday(?))
+                OR (verification_deadline IS NULL
+                 AND julianday(executed_at)<=julianday(?))
+            )""",
+            (now.isoformat(), legacy_deadline.isoformat()),
         ).fetchall()
         for row in overdue:
+            delay = (
+                datetime.fromisoformat(row["verification_deadline"])
+                - datetime.fromisoformat(row["executed_at"])
+                if row["verification_deadline"]
+                else timedelta(seconds=REPAIR_VERIFICATION_SECONDS)
+            )
+            minutes = max(round(delay.total_seconds() / 60), 1)
             self._close_repair_locked(
                 row,
                 "unverified",
                 now,
                 (
                     "Aucune observation Shikamaru n’a confirmé le résultat dans "
-                    f"les {REPAIR_VERIFICATION_SECONDS // 60} minutes suivant "
-                    "l’exécution. La réparation n’est pas répétée automatiquement."
+                    f"les {minutes} minutes suivant l’exécution. La réparation "
+                    "n’est pas répétée automatiquement."
                 ),
                 kind="result",
             )
@@ -541,6 +592,12 @@ class TsunadeRepairs:
             operation=row["operation"],
             target=row["target"],
             action=spec.action if spec else None,
+            verification_deadline=(
+                datetime.fromisoformat(row["verification_deadline"])
+                if "verification_deadline" in row.keys()
+                and row["verification_deadline"]
+                else None
+            ),
             risk=row["risk"],
             consequences=list(spec.consequences) if spec else [],
             expected_result=spec.expected_result if spec else None,

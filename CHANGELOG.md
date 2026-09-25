@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Non publié
+
+- Les titres de commit sont vérifiés en CI (Conventional Commits).
+
 ## [1.29.19] — 2026-09-22 — Déclenchement Tsunade pour les incidents sans source de journaux
 
 - Le câblage de production entre les observations Shikamaru et l'expertise

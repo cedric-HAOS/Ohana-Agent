@@ -55,3 +55,7 @@ jobs:
 
       - name: pytest
         run: python -m pytest -q -ra
+
+  commits:
+    name: Messages de commit
+    uses: cedric-HAOS/Ohana-Platform/.github/workflows/commit-messages.yml@main

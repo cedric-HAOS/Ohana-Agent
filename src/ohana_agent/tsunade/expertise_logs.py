@@ -20,9 +20,61 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
 )
 
+# Words too generic to tie a log line to one service ("Home Assistant" hosts
+# every integration, so it would keep every HA-01 anomaly).
+GENERIC_SERVICE_TERMS = frozenset(
+    {"home", "assistant", "broker", "server", "service", "direct", "http", "https"}
+)
+
 
 class TsunadeLogExpertise:
     """Tsunade review of Katsuyu log health findings."""
+
+    def _service_log_terms(self, incident: TsunadeIncident) -> set[str]:
+        """Return the words that tie a node's log line to this incident's service."""
+        terms = {incident.service_id, incident.capability_id.split(".", 1)[0]}
+        reader = getattr(self.investigations, "infrastructure_reader", None)
+        try:
+            services = reader().services if reader is not None else []
+        except Exception:  # The architecture only narrows evidence; keep going.
+            services = []
+        service = next(
+            (item for item in services if item.id == incident.service_id), None
+        )
+        if service is not None:
+            terms.add(service.type)
+            terms.update((service.implementation or "").replace("-", " ").split())
+            terms.update(
+                value
+                for value in service.metadata.values()
+                if isinstance(value, str) and "." in value and " " not in value
+            )
+        return {
+            term.casefold()
+            for term in terms
+            if len(term) >= 4 and term.casefold() not in GENERIC_SERVICE_TERMS
+        }
+
+    def _service_log_evidence(
+        self, incident: TsunadeIncident, log_result: dict[str, Any]
+    ) -> tuple[dict[str, Any], int]:
+        """Keep only the node's log anomalies that mention the incident's service."""
+        findings = log_result.get("findings")
+        if not isinstance(findings, list):
+            return log_result, 0
+        terms = self._service_log_terms(incident)
+
+        def related(finding: object) -> bool:
+            if not isinstance(finding, dict):
+                return False
+            text = " ".join(
+                str(finding.get(key) or "")
+                for key in ("signature", "summary", "category")
+            ).casefold()
+            return any(term in text for term in terms)
+
+        kept = [finding for finding in findings if related(finding)]
+        return {**log_result, "findings": kept}, len(findings) - len(kept)
 
     def review_log_health(
         self, incident_id: UUID | str, job_id: UUID | str, result: dict[str, Any]

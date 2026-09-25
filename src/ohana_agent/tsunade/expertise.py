@@ -115,6 +115,13 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                 raise TsunadeExpertiseConflictError(
                     "Katsuyu AI is already queued for this incident"
                 )
+            unrelated_log_findings = 0
+            if log_result is not None and incident.capability_id != "logs.health":
+                # A node's log review covers every integration it hosts; only
+                # the anomalies naming this service are evidence for it.
+                log_result, unrelated_log_findings = self._service_log_evidence(
+                    incident, log_result
+                )
             procedure = self._known_procedure(incident)
             experiences = self.incidents.matching_experiences(incident)
             # A completed log collection is already bounded evidence. Reviewing it
@@ -125,6 +132,15 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                 else self._run_investigations(incident, procedure)
             )
             facts = self._facts(incident, investigation_results, log_result)
+            if unrelated_log_findings:
+                facts = [
+                    *facts,
+                    (
+                        f"{unrelated_log_findings} anomalie(s) de journaux de "
+                        f"{incident.node_id.upper()} sans rapport avec "
+                        f"{incident.service_id} écartée(s)"
+                    ),
+                ][:32]
             failures = [
                 result for result in investigation_results if probe_failed(result)
             ]

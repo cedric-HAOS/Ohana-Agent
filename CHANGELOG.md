@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Le diagnostic d'un service ne reprend plus toutes les anomalies des journaux
+  de son nœud : seules celles qui citent le service (identifiant, type,
+  implémentation, entités Home Assistant déclarées) restent des faits et des
+  preuves transmises à Katsuyu, et un fait indique combien ont été écartées.
+  Pendant la panne #3, le diagnostic MQTT listait des anomalies kasa et du
+  template de l'onduleur de HA-01.
+
 - Coût des expertises sur les incidents `logs.health` longs : une anomalie de
   journaux déjà examinée par Katsuyu est reconnue par sa signature, sa gravité
   et sa catégorie, et non plus par son nombre d'occurrences et sa dernière

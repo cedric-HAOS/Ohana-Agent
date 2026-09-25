@@ -57,9 +57,23 @@ class KnownProcedure:
     operations: tuple[str, ...]
     diagnosis: str
     proposals: tuple[str, ...]
+    # Record the Supervisor add-on state of the node with a confirmed failure:
+    # an add-on repair targets the add-on this inspection lists.
+    supervisor_inspection: bool = False
 
 
 KNOWN_PROCEDURES = (
+    # "zwave.status" only: a dead device (zwave.node.alive) is no driver fault.
+    KnownProcedure(
+        ("zwave.status",),
+        ("zwave.status", "network.ping"),
+        "Le pilote Z-Wave JS configuré échoue à une vérification déterministe.",
+        (
+            "Vérifier l’add-on Z-Wave JS et la présence du contrôleur USB "
+            "avant d’intervenir.",
+        ),
+        supervisor_inspection=True,
+    ),
     # Before "dns": a dnsmasq message would otherwise select the DNS procedure.
     KnownProcedure(
         ("dhcp",),
@@ -72,11 +86,12 @@ KNOWN_PROCEDURES = (
     KnownProcedure(
         # "ntp." (the ntp.query capability): a bare "ntp" is inside "mountpoint".
         ("ntp.", "chrony"),
-        ("ntp.status",),
+        # chrony.status separates a stopped chrony from failing upstreams.
+        ("ntp.status", "chrony.status"),
         "Le serveur de temps configuré ne répond pas à une requête NTP déterministe.",
         (
             "Vérifier que chrony est actif sur INFRA-01 et que ses sources "
-            "amont répondent ; aucune réparation automatique n’est cataloguée.",
+            "amont répondent.",
         ),
     ),
     KnownProcedure(

@@ -651,7 +651,8 @@ class TsunadeRepairs:
                 event.summary
                 for event in reversed(incident.events)
                 if event.kind == "diagnostic"
-                and event.payload.get("epistemic_status") == "confirmed_by_probe"
+                and event.payload.get("epistemic_status")
+                in {"confirmed_by_probe", "confirmed_by_supervisor"}
             ),
             None,
         )

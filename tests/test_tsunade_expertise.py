@@ -694,7 +694,8 @@ def test_teleinformation_stopped_addon_is_confirmed_before_ai(
 
     assert outcome.status == "DETERMINISTIC"
     assert outcome.ai_job_id is None
-    assert outcome.decision == "investigate"
+    # The stopped add-on is the repairable cause: Tsunade asks for a decision.
+    assert outcome.decision == "action_required"
     assert outcome.decision_source == "deterministic"
 
     # Supervisor must have been inspected on the incident's actual node.
@@ -762,8 +763,8 @@ def test_identical_teleinformation_observation_keeps_diagnosis_current(
 
         # The passage of time alone is not new diagnostic evidence.
         assert after["decision_current"] is True
-        assert after["state"] == "investigate"
-        assert after["label"] == "À approfondir"
+        assert after["state"] == "action_required"
+        assert after["label"] == "Intervention à étudier"
 
         # A material change in the monitored contract MUST invalidate
         # the previous diagnostic basis.

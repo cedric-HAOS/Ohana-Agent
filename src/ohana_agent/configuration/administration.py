@@ -35,6 +35,13 @@ class DHCPAdministrationConfig(Config):
     reload_request_path: Path = Path("/run/ohana-agent/dhcp-reload.request")
 
 
+class NTPAdministrationConfig(Config):
+    """Restricted helper restarting the local chrony, installed by Installer."""
+
+    restart_request_path: Path = Path("/run/ohana-agent/chrony-restart.request")
+    restart_path_unit: Path = Path("/etc/systemd/system/ohana-chrony-restart.path")
+
+
 class NetworkAdministrationConfig(Config):
     """Restricted helper used to administer the Agent host network."""
 
@@ -186,6 +193,7 @@ class AdministrationConfig(Config):
     token_file: Path = Path("/etc/ohana-agent/management.token")
     database_path: Path | None = None
     dhcp: DHCPAdministrationConfig = Field(default_factory=DHCPAdministrationConfig)
+    ntp: NTPAdministrationConfig = Field(default_factory=NTPAdministrationConfig)
     network: NetworkAdministrationConfig = Field(
         default_factory=NetworkAdministrationConfig
     )

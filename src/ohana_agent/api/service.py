@@ -131,9 +131,14 @@ class AdministrationService:
         ) = None,
         wake_enabled: bool = False,
         on_wake_enabled_changed: Callable[[bool], None] | None = None,
+        agent_node_id: str | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
+        # Repairs acting on the Agent host only apply to services declared there.
+        self.agent_node_id = agent_node_id or (
+            dhcp_repository.server_node_id if dhcp_repository is not None else None
+        )
         # One concrete executor per catalogue repair; nothing else can run.
         self.repair_executors = dict(repair_executors or {})
         if dhcp_repository is not None:
@@ -783,7 +788,11 @@ class AdministrationService:
         if automatic and incident.repairs:
             # After a refusal, expiry or failure only a human asks again.
             return None
-        spec = eligible_repair(incident, self.infrastructure_repository.read())
+        spec = eligible_repair(
+            incident,
+            self.infrastructure_repository.read(),
+            agent_node_id=self.agent_node_id,
+        )
         if request.operation not in (None, spec.operation):
             raise ValueError("Cette opération ne correspond pas à la réparation connue")
         if spec.key not in self.repair_executors:

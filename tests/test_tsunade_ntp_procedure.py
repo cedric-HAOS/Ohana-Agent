@@ -65,7 +65,8 @@ def test_stopped_chrony_is_confirmed_without_katsuyu(tmp_path: Path) -> None:
 
         outcome = service.diagnose(incident.incident_id)
 
-        assert probes.operations == ["ntp.status"]
+        # chrony.status tells a stopped chrony from failing upstream sources.
+        assert probes.operations == ["ntp.status", "chrony.status"]
         assert outcome.status == "DETERMINISTIC"
         assert outcome.decision == "action_required"
         assert "requête NTP" in outcome.diagnosis

@@ -31,6 +31,7 @@ from ohana_agent.configuration.administration import (
 from ohana_agent.configuration.configuration import Configuration
 from ohana_agent.configuration.loader import ConfigurationLoader
 from ohana_agent.core.events import EventBus
+from ohana_agent.host.chrony import ChronyRestartRequester, chrony_status
 from ohana_agent.host.dhcp import DnsmasqDHCPRepository
 from ohana_agent.host.network import NetworkManagerRepository
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
@@ -220,10 +221,22 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         ),
         repair_executors={
             # The Supervisor access is the one already used for inspection.
-            "mosquitto.restart": lambda incident, target: restart_addon(
-                context.plugins["backup"].config, incident.node_id, target
-            ),
+            **{
+                key: lambda incident, target: restart_addon(
+                    context.plugins["backup"].config, incident.node_id, target
+                )
+                for key in (
+                    "mosquitto.restart",
+                    "teleinfo2mqtt.restart",
+                    "zwave_js.restart",
+                )
+            },
+            "chrony.restart": lambda _incident, _target: ChronyRestartRequester(
+                request_path=administration_config.ntp.restart_request_path,
+                path_unit=administration_config.ntp.restart_path_unit,
+            ).request_restart(),
         },
+        agent_node_id=administration_config.dhcp.server_node_id,
     )
     expertise_service.set_ai_dispatcher(
         _AIJobDispatcher(job_repository, administration_service)
@@ -422,6 +435,7 @@ def _build_investigation_executor(
         http_target_reader=lambda node: configured_http_target(
             plugins["backup"].config, node
         ),
+        chrony_status_reader=chrony_status,
     )
 
 

@@ -62,6 +62,7 @@ class InvestigationExecutor:
         infrastructure_reader: Callable[[], InfrastructureConfig] | None = None,
         configuration_reader: Callable[[str], dict[str, Any]] | None = None,
         http_target_reader: Callable[[str], tuple[str, str] | None] | None = None,
+        chrony_status_reader: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.plugins = plugins
         self.host_health_reader = host_health_reader
@@ -69,6 +70,7 @@ class InvestigationExecutor:
         self.infrastructure_reader = infrastructure_reader
         self.configuration_reader = configuration_reader
         self.http_target_reader = http_target_reader
+        self.chrony_status_reader = chrony_status_reader
         self._operations: dict[str, tuple[str, int, Callable[[], dict[str, Any]]]] = {
             "network.ping": (
                 "Test configured network presence",
@@ -94,6 +96,16 @@ class InvestigationExecutor:
                 "Test configured local dnsmasq DHCP service",
                 15,
                 lambda: self._test("dhcp"),
+            ),
+            "zwave.status": (
+                "Test configured Z-Wave JS driver",
+                20,
+                lambda: self._test("zwave"),
+            ),
+            "chrony.status": (
+                "Read whether the local chrony unit is active",
+                5,
+                self._chrony_status,
             ),
             "backup.status": ("Read backup runtime status", 5, self._backup_status),
             "memory.status": (
@@ -211,6 +223,11 @@ class InvestigationExecutor:
 
     def _test(self, plugin_id: str) -> dict[str, Any]:
         return self.plugins.test(plugin_id).model_dump(mode="json")
+
+    def _chrony_status(self) -> dict[str, Any]:
+        if self.chrony_status_reader is None:
+            raise LookupError("chrony status is not available on this Agent")
+        return self.chrony_status_reader()
 
     def _backup_status(self) -> dict[str, Any]:
         state = self.plugins.read("backup")

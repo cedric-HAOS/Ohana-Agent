@@ -2,6 +2,29 @@
 
 ## Non publié
 
+- Catalogue de réparations enrichi, même mécanisme que Mosquitto (proposition
+  par Tsunade, autorisation humaine, vérification par Shikamaru, jamais de
+  nouvelle proposition automatique après refus ou échec) :
+  - `teleinfo2mqtt.restart` : service `teleinformation`, add-on arrêté ou en
+    erreur selon le Supervisor du nœud (diagnostic `confirmed_by_supervisor`).
+    La décision Téléinformation passe de `investigate` à `action_required`.
+    Un add-on démarré avec des trames absentes ne déclenche rien ;
+  - `zwave_js.restart` : service `zwave` implémenté par Z-Wave JS, sonde
+    `zwave.status` en échec (nouvelle opération d'investigation et procédure
+    connue, avant la procédure MQTT). Tsunade inspecte alors les add-ons du
+    Supervisor du nœud ; risque moyen (réinitialisation du contrôleur) ;
+  - la cible d'un add-on est celle que le Supervisor a listée lors de la
+    dernière inspection (`6fc079ce_teleinfo2mqtt_ohana`,
+    `a0d7b954_zwavejs2mqtt` sur Konoha) : sans inspection disponible, aucune
+    proposition. Une expérience peut être mémorisée après un diagnostic
+    confirmé par le Supervisor.
+- Réparation `chrony.restart` : la procédure NTP ajoute la sonde locale
+  `chrony.status` (`systemctl is-active chrony.service`, sans privilège). Seul
+  un chrony inactif, déclaré sur l'hôte de l'Agent, est redémarré ; des
+  sources amont en échec ne déclenchent rien. L'Agent écrit
+  `/run/ohana-agent/chrony-restart.request`, surveillé par l'assistant
+  `ohana-chrony-restart.path` qu'installe Ohana-Installer ; sans cet assistant,
+  l'exécution échoue explicitement (section `administration.ntp`).
 - Délais de vérification adaptatifs : à l'exécution d'une réparation,
   l'échéance de confirmation par Shikamaru vaut trois intervalles entre les deux
   dernières observations de l'incident, entre 5 et 30 minutes (15 minutes si

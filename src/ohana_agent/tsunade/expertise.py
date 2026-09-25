@@ -145,6 +145,21 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                 result for result in investigation_results if probe_failed(result)
             ]
             if procedure is not None and failures:
+                if procedure.supervisor_inspection:
+                    facts = [
+                        *facts,
+                        *self._supervisor_addon_facts(
+                            incident,
+                            self._inspect_supervisor(
+                                incident,
+                                source="supervisor.addons",
+                                summary=(
+                                    "Tsunade a inspecté les add-ons du Supervisor "
+                                    f"de {incident.node_id.upper()}."
+                                ),
+                            )[0],
+                        ),
+                    ][:32]
                 outcome = TsunadeExpertiseOutcome(
                     incident_id=incident.incident_id,
                     status="DETERMINISTIC",
@@ -194,54 +209,10 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                 incident.capability_id == "teleinformation.freshness"
                 and incident.context.get("mode") == "direct_http"
             ):
-                try:
-                    diagnostics = self.investigations.read_only_snapshot(
-                        incident.node_id
-                    )
-                except Exception as error:
-                    LOGGER.warning(
-                        "Read-only inspection failed for incident %s: %s",
-                        incident.incident_id,
-                        type(error).__name__,
-                    )
-                    diagnostics = {
-                        "status": "unavailable",
-                        "error": type(error).__name__,
-                    }
-
-                snapshot = diagnostics if isinstance(diagnostics, dict) else {}
-                supervisor_evidence = json.loads(
-                    self._bounded_json(
-                        {
-                            "node": incident.node_id,
-                            "observed_at": snapshot.get("observed_at"),
-                            "recorded_at": datetime.now(
-                                ZoneInfo("Europe/Paris")
-                            ).isoformat(),
-                            "basis_observed_at": incident.last_observed_at.isoformat(),
-                            "status": snapshot.get("status"),
-                            "error": snapshot.get("error"),
-                            "reason": snapshot.get("reason"),
-                            "configuration_inspection": snapshot.get(
-                                "configuration_inspection",
-                                {
-                                    "status": "unavailable",
-                                    "reason": "Inspection absente",
-                                },
-                            ),
-                        }
-                    )
-                )
-                self.incidents.append_record(
-                    incident.incident_id,
-                    {
-                        "kind": "investigation",
-                        "summary": "Tsunade a inspecté le Supervisor Téléinformation.",
-                        "payload": {
-                            "source": "supervisor.teleinformation",
-                            **supervisor_evidence,
-                        },
-                    },
+                diagnostics, supervisor_evidence = self._inspect_supervisor(
+                    incident,
+                    source="supervisor.teleinformation",
+                    summary="Tsunade a inspecté le Supervisor Téléinformation.",
                 )
 
                 addon_state, addon_id = _teleinformation_addon_state(
@@ -258,7 +229,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                         state_description = "dans un état d’erreur"
 
                     decision = TsunadeDecisionResult(
-                        decision="investigate",
+                        decision="action_required",
                         source="deterministic",
                         conclusion=(
                             f"Le Supervisor de {incident.node_id.upper()} "
@@ -274,8 +245,9 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                         ),
                         confidence=1.0,
                         recommended_action=(
-                            f"Vérifier pourquoi l’add-on {addon_name} "
-                            "n’est pas opérationnel avant toute remise en service."
+                            f"Redémarrer l’add-on {addon_name} par le Supervisor "
+                            "après autorisation ; examiner ses journaux s’il "
+                            "retombe en erreur."
                         ),
                         reevaluate_after="next_observation",
                     )
@@ -310,6 +282,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                         diagnostic_level="CONFIRMED",
                         basis_observed_at=incident.last_observed_at.isoformat(),
                     )
+                    self._propose_known_repair(incident.incident_id)
 
                     return outcome
 
@@ -454,6 +427,77 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         finally:
             with self._lock:
                 self._inflight.discard(key)
+
+    def _inspect_supervisor(
+        self,
+        incident: TsunadeIncident,
+        *,
+        source: str,
+        summary: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Record the node's read-only Supervisor inspection as evidence."""
+        try:
+            diagnostics = self.investigations.read_only_snapshot(incident.node_id)
+        except Exception as error:
+            LOGGER.warning(
+                "Read-only inspection failed for incident %s: %s",
+                incident.incident_id,
+                type(error).__name__,
+            )
+            diagnostics = {
+                "status": "unavailable",
+                "error": type(error).__name__,
+            }
+
+        snapshot = diagnostics if isinstance(diagnostics, dict) else {}
+        evidence = json.loads(
+            self._bounded_json(
+                {
+                    "node": incident.node_id,
+                    "observed_at": snapshot.get("observed_at"),
+                    "recorded_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(),
+                    "basis_observed_at": incident.last_observed_at.isoformat(),
+                    "status": snapshot.get("status"),
+                    "error": snapshot.get("error"),
+                    "reason": snapshot.get("reason"),
+                    "configuration_inspection": snapshot.get(
+                        "configuration_inspection",
+                        {
+                            "status": "unavailable",
+                            "reason": "Inspection absente",
+                        },
+                    ),
+                }
+            )
+        )
+        self.incidents.append_record(
+            incident.incident_id,
+            {
+                "kind": "investigation",
+                "summary": summary,
+                "payload": {"source": source, **evidence},
+            },
+        )
+        return snapshot, evidence
+
+    @staticmethod
+    def _supervisor_addon_facts(
+        incident: TsunadeIncident, diagnostics: dict[str, Any]
+    ) -> list[str]:
+        inspection = diagnostics.get("configuration_inspection")
+        remote = inspection.get("remote") if isinstance(inspection, dict) else None
+        addons = remote.get("addons") if isinstance(remote, dict) else None
+        if not isinstance(addons, list) or not addons:
+            return [
+                f"Supervisor de {incident.node_id.upper()} : aucun add-on "
+                "correspondant observé."
+            ]
+        return [
+            f"Supervisor : l’add-on {addon.get('addon')} est dans l’état "
+            f"« {addon.get('state') or 'inconnu'} » sur {incident.node_id.upper()}."
+            for addon in addons[:2]
+            if isinstance(addon, dict)
+        ]
 
     def _run_investigations(
         self,
@@ -710,6 +754,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
     def _operation_timeout(operation: str) -> int:
         return {
             "mqtt.status": 20,
+            "zwave.status": 20,
             "network.ping": 15,
             "dns.query": 15,
             "dhcp.status": 15,

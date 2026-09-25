@@ -45,6 +45,8 @@ administration:
   host: 127.0.0.1
   port: 8765
   token_file: /etc/ohana-agent/management.token
+  # Tsunade incidents and companion credentials; defaults to jobs.database_path.
+  # database_path: /var/lib/ohana-agent/control.db
   companion:
     enabled: true
     host: 0.0.0.0

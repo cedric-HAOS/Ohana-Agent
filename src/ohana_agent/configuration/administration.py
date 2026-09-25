@@ -184,9 +184,19 @@ class AdministrationConfig(Config):
     host: IPvAnyAddress = IPvAnyAddress("127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)
     token_file: Path = Path("/etc/ohana-agent/management.token")
+    database_path: Path | None = None
     dhcp: DHCPAdministrationConfig = Field(default_factory=DHCPAdministrationConfig)
     network: NetworkAdministrationConfig = Field(
         default_factory=NetworkAdministrationConfig
     )
     jobs: DistributedJobsConfig = Field(default_factory=DistributedJobsConfig)
     companion: CompanionTLSConfig = Field(default_factory=CompanionTLSConfig)
+
+    @property
+    def control_database_path(self) -> Path:
+        """Database holding Tsunade incidents and companion credentials.
+
+        Historically these tables shared the distributed jobs database; keep
+        that file as the fallback so existing installations keep their data.
+        """
+        return self.database_path or self.jobs.database_path

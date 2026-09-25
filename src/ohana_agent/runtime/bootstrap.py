@@ -1955,7 +1955,7 @@ def build_production_agent(
             ),
         )
         incident_repository = TsunadeIncidentRepository(
-            administration_config.jobs.database_path
+            administration_config.control_database_path
         )
         incident_repository.reconcile_network_devices(
             {device.name for device in network_config.devices if device.enabled},
@@ -1978,7 +1978,7 @@ def build_production_agent(
                     f"{companion_tls_config.ca_certificate_file}."
                 ) from error
             companion_repository = CompanionRepository(
-                administration_config.jobs.database_path,
+                administration_config.control_database_path,
                 credential_ttl_days=companion_tls_config.credential_ttl_days,
             )
             apns_notification_publisher = APNsNotificationPublisher(

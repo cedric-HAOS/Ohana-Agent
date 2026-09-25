@@ -19,6 +19,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from ohana_agent.configuration.administration import AdministrationConfig
 from ohana_agent.configuration.enums import Environment, LogLevel
 from ohana_agent.configuration.loader import ConfigurationLoader
 
@@ -139,3 +140,24 @@ def test_configuration_loader_rejects_non_mapping_yaml(
 
     with pytest.raises(ValidationError):
         ConfigurationLoader.load(config_path)
+
+
+def test_control_database_defaults_to_jobs_database() -> None:
+    """Keep incidents in the historical jobs database unless configured."""
+    configuration = AdministrationConfig.model_validate(
+        {"jobs": {"database_path": "/srv/ohana/jobs.db"}}
+    )
+
+    assert configuration.control_database_path == Path("/srv/ohana/jobs.db")
+
+
+def test_control_database_can_be_configured_separately() -> None:
+    """Allow incidents and companions outside the jobs database."""
+    configuration = AdministrationConfig.model_validate(
+        {"database_path": "/srv/ohana/control.db"}
+    )
+
+    assert configuration.control_database_path == Path("/srv/ohana/control.db")
+    assert configuration.jobs.database_path == Path(
+        "/var/lib/ohana-agent/distributed-jobs.db"
+    )

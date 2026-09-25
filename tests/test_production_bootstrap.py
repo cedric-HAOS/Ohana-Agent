@@ -785,8 +785,7 @@ vision:
 administration:
   enabled: true
   token_file: {token_path.as_posix()}
-  jobs:
-    database_path: {(tmp_path / "distributed-jobs.db").as_posix()}
+  database_path: {(tmp_path / "control.db").as_posix()}
   dhcp:
     enabled: false
 """,
@@ -940,8 +939,7 @@ vision:
 administration:
   enabled: true
   token_file: {token_path.as_posix()}
-  jobs:
-    database_path: {(tmp_path / "distributed-jobs.db").as_posix()}
+  database_path: {(tmp_path / "control.db").as_posix()}
   dhcp:
     enabled: false
 """,

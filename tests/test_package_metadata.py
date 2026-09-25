@@ -71,7 +71,7 @@ def test_package_declares_development_dependencies() -> None:
     assert project["optional-dependencies"]["development"] == [
         "build",
         "pytest",
-        "ruff",
+        "ruff~=0.16.0",
         "setuptools>=77",
         "wheel",
     ]

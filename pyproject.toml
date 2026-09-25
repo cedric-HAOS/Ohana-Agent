@@ -65,7 +65,7 @@ ohana-agent-network-helper = "ohana_agent.host.network_helper:main"
 development = [
     "build",
     "pytest",
-    "ruff",
+    "ruff~=0.16.0",
     "setuptools>=77",
     "wheel",
 ]

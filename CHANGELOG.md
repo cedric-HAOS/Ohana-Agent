@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Le résumé d'une investigation Tsunade distingue l'exécution de l'opération
+  du résultat de la sonde : `mqtt.status : exécutée, résultat en échec` au lieu
+  de `mqtt.status: OK` lorsque l'aller-retour MQTT est refusé (constat de la
+  panne contrôlée #3). Les faits du diagnostic, les événements d'incident et
+  les investigations lancées par l'API utilisent le même libellé. Le champ
+  `status` (`OK`/`KO`/`TIMEOUT`) du résultat structuré est inchangé.
+
 ## [1.30.0] — 2026-09-25 — Registre de plugins, serveur aiohttp et découpage des gros modules
 
 - Les titres de commit sont vérifiés en CI (Conventional Commits).

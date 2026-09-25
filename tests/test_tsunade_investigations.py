@@ -1,12 +1,19 @@
 """Tests for the finite Tsunade investigation catalogue."""
 
+from datetime import UTC, datetime
 from threading import Event
 from time import monotonic
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
-from ohana_agent.tsunade.investigations import InvestigationExecutor
+from ohana_agent.tsunade.investigations import (
+    InvestigationExecutor,
+    InvestigationResult,
+    investigation_summary,
+    probe_failed,
+)
 
 
 class FakePlugins:
@@ -105,6 +112,41 @@ def test_timeout_returns_without_waiting_for_the_bounded_probe() -> None:
     )
     assert result.status == "TIMEOUT"
     assert monotonic() - started < 1.5
+
+
+def _result(status: str, result: dict | None = None) -> InvestigationResult:
+    now = datetime.now(UTC)
+    return InvestigationResult(
+        investigation_id=uuid4(),
+        operation="mqtt.status",
+        status=status,
+        started_at=now,
+        finished_at=now,
+        duration_seconds=0,
+        result=result or {},
+    )
+
+
+def test_summary_separates_execution_from_probe_outcome() -> None:
+    # Controlled failure #3: the MQTT check ran but the broker refused the
+    # round trip. The summary must not read as a healthy "mqtt.status: OK".
+    refused = _result(
+        "OK", {"success": False, "message": "[Errno 111] Connection refused"}
+    )
+    assert probe_failed(refused)
+    assert investigation_summary(refused) == (
+        "mqtt.status : exécutée, résultat en échec"
+    )
+    assert investigation_summary(_result("OK", {"success": True})) == (
+        "mqtt.status : exécutée, résultat sain"
+    )
+    assert investigation_summary(_result("KO")) == (
+        "mqtt.status : exécution en échec, aucun résultat de sonde"
+    )
+    assert investigation_summary(_result("TIMEOUT")) == (
+        "mqtt.status : délai dépassé, aucun résultat de sonde"
+    )
+    assert not probe_failed(_result("KO", {"success": False}))
 
 
 def test_backup_status_exposes_latest_distributed_failure() -> None:

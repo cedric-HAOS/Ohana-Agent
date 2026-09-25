@@ -237,3 +237,46 @@ class InvestigationExecutor:
             ),
         }[section]
         return {field: snapshot.get(field) for field in fields}
+
+
+def probe_failed(result: InvestigationResult) -> bool:
+    """Return whether a completed investigation measured a failing target."""
+    # Execution failure supplies no measurement of the target. A completed
+    # plugin check can still report success=False and confirm a failed probe.
+    if result.status != "OK":
+        return False
+    data = result.result
+    if data.get("success") is False:
+        return True
+    status = str(data.get("status", "")).casefold()
+    if status in {"ko", "error", "failed", "unhealthy", "degraded", "offline"}:
+        return True
+    if result.operation == "memory.status":
+        return (
+            float(data.get("memory_percent") or 0) >= 90
+            or float(data.get("swap_percent") or 0) >= 75
+        )
+    if result.operation == "cpu.status":
+        return (
+            float(data.get("cpu_percent") or 0) >= 95
+            or float(data.get("temperature_c") or 0) >= 80
+        )
+    if result.operation == "disk.usage":
+        return float(data.get("disk_percent") or 0) >= 90
+    if result.operation == "service.status":
+        return bool(
+            data.get("failed_systemd_units") or data.get("inactive_systemd_units")
+        )
+    return False
+
+
+def investigation_summary(result: InvestigationResult) -> str:
+    """Describe both the execution and, when measured, the probe outcome."""
+    # "OK" only means the operation ran; a failed MQTT round trip is still OK.
+    if result.status == "TIMEOUT":
+        return f"{result.operation} : délai dépassé, aucun résultat de sonde"
+    if result.status == "KO":
+        return f"{result.operation} : exécution en échec, aucun résultat de sonde"
+    if probe_failed(result):
+        return f"{result.operation} : exécutée, résultat en échec"
+    return f"{result.operation} : exécutée, résultat sain"

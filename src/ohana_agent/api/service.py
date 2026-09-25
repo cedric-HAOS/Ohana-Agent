@@ -59,6 +59,7 @@ from ohana_agent.tsunade.incidents import (
 from ohana_agent.tsunade.investigations import (
     InvestigationExecutor,
     InvestigationRequest,
+    investigation_summary,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -1001,7 +1002,7 @@ class AdministrationService:
                 request.incident_id,
                 {
                     "kind": "investigation",
-                    "summary": f"{result.operation}: {result.status}",
+                    "summary": investigation_summary(result),
                     "payload": result.model_dump(mode="json"),
                 },
             )

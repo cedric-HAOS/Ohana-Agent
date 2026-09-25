@@ -35,6 +35,8 @@ from ohana_agent.tsunade.incidents import (
 from ohana_agent.tsunade.investigations import (
     InvestigationExecutor,
     InvestigationResult,
+    investigation_summary,
+    probe_failed,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -116,9 +118,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             )
             facts = self._facts(incident, investigation_results, log_result)
             failures = [
-                result
-                for result in investigation_results
-                if self._concrete_failure(result.operation, result)
+                result for result in investigation_results if probe_failed(result)
             ]
             if procedure is not None and failures:
                 outcome = TsunadeExpertiseOutcome(
@@ -436,7 +436,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                 incident.incident_id,
                 {
                     "kind": "investigation",
-                    "summary": f"{result.operation}: {result.status}",
+                    "summary": investigation_summary(result),
                     "payload": result.model_dump(mode="json"),
                 },
             )
@@ -572,36 +572,6 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         ]
 
     @staticmethod
-    def _concrete_failure(operation: str, result: InvestigationResult) -> bool:
-        # Execution failure supplies no measurement of the target. A completed
-        # plugin check can still report success=False and confirm a failed probe.
-        if result.status != "OK":
-            return False
-        data = result.result
-        if data.get("success") is False:
-            return True
-        status = str(data.get("status", "")).casefold()
-        if status in {"ko", "error", "failed", "unhealthy", "degraded", "offline"}:
-            return True
-        if operation == "memory.status":
-            return (
-                float(data.get("memory_percent") or 0) >= 90
-                or float(data.get("swap_percent") or 0) >= 75
-            )
-        if operation == "cpu.status":
-            return (
-                float(data.get("cpu_percent") or 0) >= 95
-                or float(data.get("temperature_c") or 0) >= 80
-            )
-        if operation == "disk.usage":
-            return float(data.get("disk_percent") or 0) >= 90
-        if operation == "service.status":
-            return bool(
-                data.get("failed_systemd_units") or data.get("inactive_systemd_units")
-            )
-        return False
-
-    @staticmethod
     def _facts(
         incident: TsunadeIncident,
         results: list[InvestigationResult],
@@ -612,7 +582,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             f"Nombre d’occurrences : {incident.occurrence_count}",
             f"Nombre de récurrences : {incident.recurrence_count}",
         ]
-        facts.extend(f"{result.operation}: {result.status}" for result in results)
+        facts.extend(investigation_summary(result) for result in results)
         findings = TsunadeExpertiseService._compact_logs(log_result or incident.context)
         facts.extend(
             f"{finding.get('source', incident.node_id)}: "

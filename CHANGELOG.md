@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.32.0] — 2026-09-25 — Durcissement de la Phase 1 : heures de Paris, expertises de journaux et procédure NTP
+
 - Audit étendu des secrets sur INFRA-01 (25 septembre, lecture seule, valeurs
   jamais affichées) : aucun jeton, mot de passe ou identifiant d'URL dans les
   incidents et jobs, sauf deux résultats `logs.health_check` du 27 août qui

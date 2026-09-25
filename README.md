@@ -154,6 +154,25 @@ metadata:
   availability_group: dns
 ```
 
+Un service peut déclarer les services dont il dépend avec `depends_on`
+(identifiants de services, huit au plus). Lorsqu'un incident s'ouvre sur ce
+service alors qu'un service amont déclaré a déjà un incident actif, Tsunade
+rattache le symptôme à cet incident amont avec une décision déterministe
+`watch` (`correlated_with_upstream`, niveau `PROBABLE`) au lieu de demander une
+expertise Katsuyu. Si le symptôme persiste après la résolution de l'incident
+amont, l'observation suivante relance l'expertise. Sans déclaration explicite,
+aucune corrélation n'est faite.
+
+```yaml
+- id: sun-01-telemetry
+  name: Micro-onduleur
+  type: home_assistant_telemetry
+  node: sun-01
+  metadata:
+    primary_entity_id: sensor.micro_inverter_roof_power
+    depends_on: [mqtt]
+```
+
 Agent publie également un appareil MQTT Discovery séparé, **Ohana Host**. Il
 expose l'état synthétique de la machine hôte, CPU, charge par cœur, mémoire,
 swap, disque racine, température disponible, uptime hôte et uptime Agent. Les

@@ -580,6 +580,7 @@ class TsunadeIncidentRepository(
                         "basis_fingerprint",
                         "verdict",
                         "ai_job_id",
+                        "upstream_incident_id",
                     }
                 },
                 "occurred_at": decision_row["occurred_at"],

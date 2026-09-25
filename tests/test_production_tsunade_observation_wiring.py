@@ -180,6 +180,7 @@ def test_first_incident_without_log_source_starts_tsunade_expertise_once(
         severity="degraded",
         occurrence_count=2,
         node_id="camera-01",
+        latest_decision=None,
     )
 
     handler, expertise_started, created_jobs, service = (

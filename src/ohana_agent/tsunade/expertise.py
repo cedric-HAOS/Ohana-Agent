@@ -25,6 +25,10 @@ from ohana_agent.tsunade.expertise_catalog import (
     _teleinformation_addon_state,
 )
 from ohana_agent.tsunade.expertise_logs import TsunadeLogExpertise
+from ohana_agent.tsunade.incident_correlation import (
+    active_upstream_incident,
+    declared_dependencies,
+)
 from ohana_agent.tsunade.incident_models import (
     TsunadeExperience,
     TsunadeIncident,
@@ -288,6 +292,15 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
 
                     return outcome
 
+            # A declared upstream service with its own active incident explains
+            # the symptom well enough to avoid an AI expertise (failure #3:
+            # sun-01 telemetry lost while the MQTT broker was down).
+            upstream = None if operator_requested else self._active_upstream(incident)
+            if upstream is not None:
+                return self._record_upstream_correlation(
+                    incident, upstream, facts, procedure
+                )
+
             parameters = self._ai_parameters(
                 incident,
                 procedure,
@@ -442,6 +455,103 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             )
         return results
 
+    def _active_upstream(self, incident: TsunadeIncident) -> TsunadeIncident | None:
+        reader = getattr(self.investigations, "infrastructure_reader", None)
+        if reader is None:
+            return None
+        try:
+            dependencies = declared_dependencies(reader(), incident.service_id)
+            if not dependencies:
+                return None
+            return active_upstream_incident(
+                incident,
+                dependencies,
+                self.incidents.list(state="active", limit=500),
+            )
+        except Exception as error:
+            # Correlation only saves an expertise; its failure must not block one.
+            LOGGER.warning(
+                "Upstream correlation unavailable for incident %s: %s",
+                incident.incident_id,
+                type(error).__name__,
+            )
+            return None
+
+    def _record_upstream_correlation(
+        self,
+        incident: TsunadeIncident,
+        upstream: TsunadeIncident,
+        facts: list[str],
+        procedure: KnownProcedure | None,
+    ) -> TsunadeExpertiseOutcome:
+        upstream_label = f"{upstream.service_id} ({upstream.node_id.upper()})"
+        started_at = upstream.started_at.astimezone(ZoneInfo("Europe/Paris"))
+        decision = TsunadeDecisionResult(
+            decision="watch",
+            source="deterministic",
+            conclusion=(
+                f"Symptôme rattaché à l’incident amont actif sur {upstream_label}. "
+                f"L’architecture déclare que {incident.service_id} dépend de "
+                f"{upstream.service_id}."
+            ),
+            reason=(
+                f"L’incident {upstream.capability_id} de {upstream_label} est actif "
+                f"depuis {started_at:%H:%M:%S} ({upstream.message}). "
+                "Aucune expertise Katsuyu n’est demandée tant qu’il reste actif ; "
+                "la corrélation ne prouve pas à elle seule la cause."
+            ),
+            confidence=0.8,
+            recommended_action=(
+                f"Traiter l’incident amont sur {upstream_label}. Si ce symptôme "
+                "persiste après sa résolution, Tsunade le réévalue à la "
+                "prochaine observation."
+            ),
+            reevaluate_after="upstream_resolution",
+        )
+        correlated_facts = [
+            *facts,
+            (
+                f"Incident amont actif : {upstream.service_id} / "
+                f"{upstream.capability_id} sur {upstream.node_id.upper()}"
+            ),
+        ][:32]
+        self._record_decision(
+            incident.incident_id,
+            decision,
+            facts=correlated_facts,
+            cycle_status="deterministic_decision",
+            epistemic_status="correlated_with_upstream",
+            diagnostic_level="PROBABLE",
+            basis_observed_at=incident.last_observed_at.isoformat(),
+            extra={"upstream_incident_id": str(upstream.incident_id)},
+        )
+        self.incidents.append_record(
+            upstream.incident_id,
+            {
+                "kind": "investigation",
+                "summary": (
+                    "Symptôme aval rattaché : "
+                    f"{incident.service_id} / {incident.capability_id} "
+                    f"sur {incident.node_id.upper()}."
+                ),
+                "payload": {
+                    "source": "tsunade.correlation",
+                    "downstream_incident_id": str(incident.incident_id),
+                },
+            },
+        )
+        return TsunadeExpertiseOutcome(
+            incident_id=incident.incident_id,
+            status="DETERMINISTIC",
+            known_procedure=procedure is not None,
+            diagnosis=decision.conclusion,
+            facts=correlated_facts,
+            proposals=[decision.recommended_action],
+            decision=decision.decision,
+            decision_source=decision.source,
+            confidence=decision.confidence,
+        )
+
     def _record_decision(
         self,
         incident_id: UUID | str,
@@ -452,6 +562,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         epistemic_status: str | None = None,
         diagnostic_level: str | None = None,
         basis_observed_at: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         incident = self.incidents.get(incident_id)
 
@@ -478,6 +589,9 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
 
         if basis_observed_at is not None:
             payload["basis_observed_at"] = basis_observed_at
+
+        if extra:
+            payload.update(extra)
 
         basis_fingerprint = incident_basis_fingerprint(incident)
 

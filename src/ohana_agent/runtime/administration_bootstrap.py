@@ -59,6 +59,7 @@ from ohana_agent.tsunade.configuration_inspection import (
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
 )
+from ohana_agent.tsunade.incident_correlation import correlated_upstream_id
 from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
@@ -570,6 +571,10 @@ class TsunadeObservationHandler:
             self._notifications.publish(notification)
 
         if incident.occurrence_count != 1:
+            if self._upstream_resolved(incident):
+                # The symptom outlived the upstream incident it was attached to:
+                # that is new evidence, so the escalation it was spared resumes.
+                self._expertise.start(incident.incident_id)
             return
 
         logs_config = self._logs_config
@@ -580,6 +585,17 @@ class TsunadeObservationHandler:
             return
 
         self._expertise.start(incident.incident_id)
+
+    def _upstream_resolved(self, incident: Any) -> bool:
+        if incident.state != "active":
+            return False
+        upstream_id = correlated_upstream_id(incident)
+        if upstream_id is None:
+            return False
+        try:
+            return self._incidents.get(upstream_id).state != "active"
+        except LookupError:
+            return True
 
 
 def _incident_log_health_job(

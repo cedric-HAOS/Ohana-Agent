@@ -9,6 +9,17 @@
   les investigations lancées par l'API utilisent le même libellé. Le champ
   `status` (`OK`/`KO`/`TIMEOUT`) du résultat structuré est inchangé.
 
+- Corrélation entre incidents : un service peut déclarer ses dépendances dans
+  `metadata.depends_on`. Avant toute escalade Katsuyu, Tsunade rattache un
+  nouvel incident à l'incident actif d'un service amont déclaré : décision
+  déterministe `watch`, `epistemic_status=correlated_with_upstream`,
+  `diagnostic_level=PROBABLE`, `upstream_incident_id` dans la dernière
+  décision, et événement « Symptôme aval rattaché » sur l'incident amont. La
+  perte de télémétrie `sun-01` pendant la panne de Mosquitto (panne contrôlée
+  #3) n'aurait ainsi pas déclenché d'`ai.inference`. Une demande explicite de
+  l'opérateur n'est pas absorbée par la corrélation. Si le symptôme survit à la
+  résolution de l'incident amont, l'observation suivante relance l'expertise.
+
 ## [1.30.0] — 2026-09-25 — Registre de plugins, serveur aiohttp et découpage des gros modules
 
 - Les titres de commit sont vérifiés en CI (Conventional Commits).

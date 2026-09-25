@@ -11,6 +11,13 @@
   désormais les instants (`julianday`) et non le texte : l'activité compagnon
   plaçait un événement de 12:54 UTC avant un événement de 14:52 heure de
   Paris, pourtant antérieur. Les jobs distribués Katsuyu gardent leur format.
+- « Contrôle des journaux par Katsuyu : KO » devient « Contrôle des journaux
+  par Katsuyu terminé : 3 anomalie(s) regroupée(s) » (ou « aucune anomalie »,
+  « collecte incomplète »). Le `KO` de Katsuyu signale des anomalies trouvées,
+  pas un contrôle en échec ; le job était `SUCCEEDED`.
+
+## [1.31.0] — 2026-09-25 — Corrélation entre incidents et catalogue de réparations supervisées
+
 - Le résumé d'une investigation Tsunade distingue l'exécution de l'opération
   du résultat de la sonde : `mqtt.status : exécutée, résultat en échec` au lieu
   de `mqtt.status: OK` lorsque l'aller-retour MQTT est refusé (constat de la

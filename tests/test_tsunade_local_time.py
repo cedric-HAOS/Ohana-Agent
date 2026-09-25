@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.tsunade.incident_log_health import log_check_summary
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 
 PARIS_SUMMER = timedelta(hours=2)
@@ -83,3 +84,20 @@ def test_legacy_mixed_offsets_are_returned_in_paris_and_sorted_by_instant(
         assert activity[0].occurred_at.isoformat() == "2026-09-25T14:54:11+02:00"
     finally:
         repository.close()
+
+
+def test_log_check_summary_reports_findings_not_ko() -> None:
+    source = {"source": "ha-01", "status": "KO", "truncated": False}
+    assert log_check_summary(
+        {"status": "KO", "sources": [{**source, "findings": [{}, {}, {}]}]}
+    ) == ("Contrôle des journaux par Katsuyu terminé : 3 anomalie(s) regroupée(s)")
+    assert (
+        log_check_summary(
+            {"status": "OK", "sources": [{**source, "status": "OK", "findings": []}]}
+        )
+        == "Contrôle des journaux par Katsuyu terminé : aucune anomalie"
+    )
+    assert log_check_summary(
+        {"status": "OK", "sources": [{**source, "truncated": True, "findings": []}]}
+    ).endswith("aucune anomalie, collecte incomplète")
+    assert "KO" not in log_check_summary({})

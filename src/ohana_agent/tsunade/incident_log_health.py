@@ -16,6 +16,28 @@ from ohana_agent.tsunade.incident_models import (
 from ohana_agent.tsunade.local_time import paris_now
 
 
+def log_check_summary(result: dict[str, Any]) -> str:
+    """Describe what Katsuyu found; its "KO" means anomalies, not a failed job."""
+    sources = [
+        source for source in result.get("sources", []) if isinstance(source, dict)
+    ]
+    findings = sum(
+        len(source.get("findings") or [])
+        for source in sources
+        if isinstance(source.get("findings") or [], list)
+    )
+    incomplete = any(source.get("truncated") is True for source in sources)
+    if findings:
+        outcome = f"{findings} anomalie(s) regroupée(s)"
+    elif result.get("status") == "OK":
+        outcome = "aucune anomalie"
+    else:
+        outcome = "résultat sans synthèse exploitable"
+    if incomplete:
+        outcome += ", collecte incomplète"
+    return f"Contrôle des journaux par Katsuyu terminé : {outcome}"
+
+
 class TsunadeLogHealthIncidents:
     """Incidents opened and resolved from Katsuyu log health reviews."""
 
@@ -38,10 +60,7 @@ class TsunadeLogHealthIncidents:
                 incident_id,
                 {
                     "kind": "investigation",
-                    "summary": (
-                        "Contrôle des journaux par Katsuyu : "
-                        f"{result.get('status', 'KO')}"
-                    ),
+                    "summary": log_check_summary(result),
                     "payload": {**result, "job_id": str(job_id)},
                 },
             )

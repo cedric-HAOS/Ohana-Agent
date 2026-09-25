@@ -85,6 +85,11 @@ class InvestigationExecutor:
                 20,
                 lambda: self._test("mqtt"),
             ),
+            "ntp.status": (
+                "Test configured NTP time query",
+                15,
+                lambda: self._test("ntp"),
+            ),
             "dhcp.status": (
                 "Test configured local dnsmasq DHCP service",
                 15,

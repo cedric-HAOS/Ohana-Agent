@@ -713,6 +713,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             "network.ping": 15,
             "dns.query": 15,
             "dhcp.status": 15,
+            "ntp.status": 15,
         }.get(operation, 5)
 
     @staticmethod

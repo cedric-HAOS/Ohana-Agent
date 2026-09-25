@@ -67,6 +67,18 @@ KNOWN_PROCEDURES = (
         "Le service DHCP local échoue à une vérification déterministe.",
         ("Vérifier l’état de dnsmasq et son pool d’adresses avant d’intervenir.",),
     ),
+    # Controlled failure planning, 25 September: stopping chrony escalated to
+    # Katsuyu for lack of any known procedure.
+    KnownProcedure(
+        # "ntp." (the ntp.query capability): a bare "ntp" is inside "mountpoint".
+        ("ntp.", "chrony"),
+        ("ntp.status",),
+        "Le serveur de temps configuré ne répond pas à une requête NTP déterministe.",
+        (
+            "Vérifier que chrony est actif sur INFRA-01 et que ses sources "
+            "amont répondent ; aucune réparation automatique n’est cataloguée.",
+        ),
+    ),
     KnownProcedure(
         ("dns",),
         ("dns.query", "network.ping"),

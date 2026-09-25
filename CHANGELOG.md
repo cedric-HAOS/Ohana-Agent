@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Procédure déterministe NTP : nouvelle sonde `ntp.status` (requête NTP
+  configurée) et procédure connue pour les incidents `ntp.query` et le service
+  `chrony`. Un chrony arrêté est confirmé par la sonde sans expertise Katsuyu ;
+  aucune réparation automatique n'est cataloguée. La procédure ne se déclenche
+  pas sur « mountpoint », qui contient « ntp ».
+
 - Le diagnostic d'un service ne reprend plus toutes les anomalies des journaux
   de son nœud : seules celles qui citent le service (identifiant, type,
   implémentation, entités Home Assistant déclarées) restent des faits et des

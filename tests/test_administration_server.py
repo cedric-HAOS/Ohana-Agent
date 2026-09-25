@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError
@@ -678,3 +679,24 @@ def test_administration_server_exposes_host_network_routes(tmp_path: Path) -> No
     assert change["transaction_id"] == "b" * 32
     assert confirmed["active"] is True
     assert rolled_back["active"] is True
+
+
+def test_access_log_keeps_successful_requests_out_of_the_journal(
+    administration_server: AdministrationHTTPServer,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Since aiohttp every request was logged at INFO: about 3,800 lines per
+    # hour on INFRA-01, which truncated the daily Katsuyu log review.
+    caplog.set_level(logging.INFO, logger="ohana_agent.api.http")
+    request_json(administration_server, "/v1/capabilities?token=query-secret")
+    with pytest.raises(HTTPError):
+        request_json(administration_server, "/v1/capabilities", token="wrong")
+
+    access = [
+        record for record in caplog.records if record.name == "ohana_agent.api.http"
+    ]
+    messages = [record.getMessage() for record in access]
+    assert len(access) == 1
+    assert access[0].levelno == logging.INFO
+    assert '"GET /v1/capabilities" 401' in messages[0]
+    assert "query-secret" not in caplog.text

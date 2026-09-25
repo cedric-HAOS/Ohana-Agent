@@ -13,9 +13,42 @@ from threading import Thread
 from typing import Any
 
 from aiohttp import web
+from aiohttp.abc import AbstractAccessLogger
 
 LOGGER = logging.getLogger(__name__)
-ACCESS_LOG_FORMAT = '%a "%r" %s %b'
+
+
+class QuietAccessLogger(AbstractAccessLogger):
+    """Log refused and failed requests, keep successful ones at DEBUG.
+
+    With aiohttp every request was logged at INFO: Téléinformation frames,
+    Katsuyu polling and Vision reads wrote about 3,800 lines per hour to the
+    INFRA-01 journal, which truncated the daily Katsuyu log review.
+    """
+
+    def log(self, request, response, time: float) -> None:
+        status = response.status
+        level = (
+            logging.WARNING
+            if status >= 500
+            else logging.INFO
+            if status >= 400
+            else logging.DEBUG
+        )
+        if not self.logger.isEnabledFor(level):
+            return
+        # The path only: query strings may carry identifiers or tokens.
+        self.logger.log(
+            level,
+            '%s "%s %s" %s %.3fs',
+            request.remote,
+            request.method,
+            request.path,
+            status,
+            time,
+        )
+
+
 _WRITE_BUFFER_BYTES = 256 * 1024
 _SHUTDOWN_TIMEOUT_SECONDS = 3.0
 
@@ -137,7 +170,7 @@ class ThreadedHTTPListener:
                 application,
                 handle_signals=False,
                 access_log=self._logger,
-                access_log_format=ACCESS_LOG_FORMAT,
+                access_log_class=QuietAccessLogger,
                 shutdown_timeout=_SHUTDOWN_TIMEOUT_SECONDS,
             )
             loop.run_until_complete(runner.setup())

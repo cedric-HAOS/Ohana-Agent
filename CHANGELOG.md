@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Journal d'accès HTTP : les requêtes réussies ne sont plus journalisées qu'en
+  `DEBUG` ; les refus (4xx) restent en `INFO` et les erreurs (5xx) passent en
+  `WARNING`, sans chaîne de requête. Depuis aiohttp (1.30.0), chaque trame
+  Téléinformation, chaque appel du worker Katsuyu et chaque lecture de Vision
+  écrivait une ligne : environ 3 800 lignes par heure dans le journal
+  d'INFRA-01, ce qui tronquait le contrôle quotidien des journaux par Katsuyu.
 - La santé de l'hôte de l'Agent (`host.health` : unités `ohana-*` inactives ou en
   échec, disque, mémoire, CPU, redémarrages de l'Agent) est aussi transmise à
   Tsunade par un événement dédié, `HostHealthObserved`. Un

@@ -9,6 +9,7 @@ import pytest
 
 from ohana_agent.api.service import AdministrationService
 from ohana_agent.host.chrony import ChronyRestartRequester, chrony_status
+from ohana_agent.host.helper_outcome import HelperOutcome
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.expertise import TsunadeExpertiseService
@@ -410,7 +411,16 @@ def test_stopped_chrony_is_proposed_and_restarted_through_the_helper(
 def test_chrony_restart_request_needs_the_installed_helper(tmp_path: Path) -> None:
     request = tmp_path / "run" / "chrony-restart.request"
     unit = tmp_path / "ohana-chrony-restart.path"
-    requester = ChronyRestartRequester(request_path=request, path_unit=unit)
+    requester = ChronyRestartRequester(
+        request_path=request,
+        path_unit=unit,
+        # No systemd here: the helper outcome is covered by its own tests.
+        outcome=HelperOutcome(
+            "ohana-chrony-restart.service",
+            "chrony.service",
+            systemctl_path=tmp_path / "no-systemctl",
+        ),
+    )
 
     with pytest.raises(RuntimeError, match="n’est pas installé"):
         requester.request_restart()

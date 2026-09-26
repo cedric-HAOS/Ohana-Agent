@@ -2,6 +2,14 @@
 
 ## Non publié
 
+- Cause d'un échec d'assistant : après avoir déposé la demande de
+  redémarrage de chrony ou de dnsmasq, l'Agent attend au plus 15 secondes la
+  fin de l'assistant (`ohana-chrony-restart.service`,
+  `ohana-dhcp-reload.service`) et lit son résultat avec `systemctl show`, sans
+  privilège. Un échec fait échouer la réparation avec sa cause, par exemple
+  « chrony.service est masqué » ; seul Shikamaru le constatait jusqu'ici. Un
+  assistant encore en cours laisse la vérification à Shikamaru.
+
 - Redémarrage d'un add-on par le Supervisor : l'Agent demande à Home
   Assistant d'attendre la réponse du Supervisor (`timeout: null`) au lieu de
   ses 10 secondes par défaut. Z-Wave JS UI met environ une minute à

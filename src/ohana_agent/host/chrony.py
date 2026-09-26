@@ -16,6 +16,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+from ohana_agent.host.helper_outcome import HelperOutcome
+
 CHRONY_UNIT = "chrony.service"
 SYSTEMCTL_PATH = Path("/usr/bin/systemctl")
 
@@ -49,16 +51,31 @@ def chrony_status(
 class ChronyRestartRequester:
     """Trigger the installed restricted chrony helper."""
 
-    def __init__(self, *, request_path: Path, path_unit: Path) -> None:
+    def __init__(
+        self,
+        *,
+        request_path: Path,
+        path_unit: Path,
+        outcome: HelperOutcome | None = None,
+    ) -> None:
         self.request_path = request_path
         self.path_unit = path_unit
+        self.outcome = outcome or HelperOutcome(
+            "ohana-chrony-restart.service", CHRONY_UNIT
+        )
 
     def request_restart(self) -> None:
+        """Request the restart, then report the helper's failure and its cause."""
         if not self.path_unit.is_file():
             raise RuntimeError(
                 "Le mécanisme privilégié de redémarrage de chrony n’est pas "
                 "installé ; relancer Ohana-Installer sur cet hôte"
             )
+        baseline = self.outcome.baseline()
+        self._write_request()
+        self.outcome.wait(baseline)
+
+    def _write_request(self) -> None:
         content = json.dumps(
             {"schema_version": 1, "requested_at_ns": time.time_ns()},
             separators=(",", ":"),

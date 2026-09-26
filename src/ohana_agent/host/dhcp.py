@@ -19,6 +19,7 @@ from ohana_agent.contracts.administration import (
     DHCPReservationCategory,
     DHCPSettings,
 )
+from ohana_agent.host.helper_outcome import HelperOutcome
 
 DEFAULT_SETTINGS = DHCPSettings(
     interface="eth0",
@@ -57,6 +58,7 @@ class DnsmasqDHCPRepository:
         server_node_id: str = "infra-01",
         validation_command: tuple[str, ...] | None = None,
         reload_request_path: Path | None = None,
+        restart_outcome: HelperOutcome | None = None,
     ) -> None:
         self.main_config_path = main_config_path
         self.reservation_paths = dict(reservation_paths)
@@ -64,6 +66,9 @@ class DnsmasqDHCPRepository:
         self.server_node_id = server_node_id
         self.validation_command = validation_command
         self.reload_request_path = reload_request_path
+        self.restart_outcome = restart_outcome or HelperOutcome(
+            "ohana-dhcp-reload.service", "dnsmasq.service"
+        )
 
     def read(self) -> DHCPAdministrationState:
         """Return editable configuration and current leases."""
@@ -174,7 +179,9 @@ class DnsmasqDHCPRepository:
             raise DHCPConfigurationError(
                 "Le mécanisme privilégié de redémarrage dnsmasq n’est pas installé"
             )
+        baseline = self.restart_outcome.baseline()
         self._request_reload([])
+        self.restart_outcome.wait(baseline)
 
     def read_settings(self) -> DHCPSettings:
         """Read the supported dnsmasq settings without reservations."""

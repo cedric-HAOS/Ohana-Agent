@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.35.1] — 2026-09-26 — Lecture concurrente des incidents
+
 - Correction « Tsunade est indisponible : Unexpected administration failure »
   dans Vision : la liste et le détail des incidents construisaient chaque
   incident après avoir relâché le verrou de la base Tsunade. Une lecture de

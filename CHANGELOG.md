@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Assistant de réparation non installé : l'Agent n'attend plus 15 secondes
+  son résultat (`LoadState=not-found`). Sur un runner Linux de la CI,
+  `systemctl` existe sans assistant Ohana, et deux tests HTTP expiraient
+  depuis 1.36.0.
+
 ## [1.36.1] — 2026-09-26 — Échéances des jobs et assistants de réparation
 
 - Santé d'INFRA-01 : les assistants de réparation

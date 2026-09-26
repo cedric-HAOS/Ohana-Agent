@@ -106,6 +106,16 @@ def test_without_systemctl_nothing_is_awaited(tmp_path) -> None:
     outcome.wait(None)
 
 
+def test_uninstalled_helper_is_not_awaited(tmp_path) -> None:
+    # A Linux CI runner has systemctl but no Ohana helper: the DHCP reload
+    # waited 15 s and the HTTP tests timed out.
+    systemd = FakeSystemd([{"LoadState": "not-found"}], {})
+    outcome = _outcome(tmp_path, systemd)
+
+    assert outcome.baseline() is None
+    assert systemd.calls == 1
+
+
 def test_chrony_repair_fails_with_the_helper_cause(tmp_path) -> None:
     path_unit = tmp_path / "ohana-chrony-restart.path"
     path_unit.write_text("[Path]\n", encoding="utf-8")

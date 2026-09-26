@@ -69,10 +69,13 @@ class HelperOutcome:
         if not self.systemctl_path.is_file():
             return None
         try:
-            value = self._show(self.service, "ExecMainExitTimestampMonotonic").get(
-                "ExecMainExitTimestampMonotonic", "0"
+            state = self._show(
+                self.service, "LoadState", "ExecMainExitTimestampMonotonic"
             )
-            return int(value or 0)
+            # An uninstalled helper never runs: waiting would only add 15 s.
+            if state.get("LoadState") == "not-found":
+                return None
+            return int(state.get("ExecMainExitTimestampMonotonic") or 0)
         except (OSError, ValueError, subprocess.SubprocessError):
             return None
 

@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.36.0] — 2026-09-26 — Causes d'échec et cascade DNS
+
 - Cascade d'une panne DNS : un incident dont le message révèle un échec de
   résolution de nom (« Name or service not known », « No address associated
   with hostname »…) est rattaché, sans déclaration `depends_on`, à l'incident

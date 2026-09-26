@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -12,6 +13,8 @@ import aiohttp
 
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.secrets import resolve_backup_secret
+
+LOGGER = logging.getLogger(__name__)
 
 
 def safe_endpoint(value: object) -> dict:
@@ -149,7 +152,15 @@ class SupervisorUnavailableError(RuntimeError):
     """Raised when no authenticated Supervisor access is configured."""
 
 
-SupervisorCall = Callable[[str, str], Awaitable[dict[str, Any]]]
+SupervisorCall = Callable[..., Awaitable[dict[str, Any]]]
+
+# Home Assistant's ``supervisor/api`` command gives up after 10 seconds unless
+# the message carries its own ``timeout`` (``None`` waits for the Supervisor).
+_HA_DEFAULT_TIMEOUT = object()
+
+# Vision waits 60 seconds for an authorization to return: the Agent stops
+# waiting for the Supervisor before that and lets Shikamaru verify the result.
+ADDON_RESTART_WAIT_SECONDS = 45.0
 
 
 @asynccontextmanager
@@ -180,17 +191,20 @@ async def supervisor_api(
                 raise ValueError("Supervisor authentication rejected")
             index = 0
 
-            async def call(endpoint: str, method: str) -> dict[str, Any]:
+            async def call(
+                endpoint: str, method: str, *, timeout: object = _HA_DEFAULT_TIMEOUT
+            ) -> dict[str, Any]:
                 nonlocal index
                 index += 1
-                await ws.send_json(
-                    {
-                        "id": index,
-                        "type": "supervisor/api",
-                        "endpoint": endpoint,
-                        "method": method,
-                    }
-                )
+                message: dict[str, Any] = {
+                    "id": index,
+                    "type": "supervisor/api",
+                    "endpoint": endpoint,
+                    "method": method,
+                }
+                if timeout is not _HA_DEFAULT_TIMEOUT:
+                    message["timeout"] = timeout
+                await ws.send_json(message)
                 reply = await ws.receive_json()
                 return reply if isinstance(reply, dict) else {}
 
@@ -202,23 +216,50 @@ def _valid_slug(slug: str) -> bool:
 
 
 def restart_addon(config: BackupConfig, node_id: str, slug: str) -> None:
-    """Ask the Supervisor to restart one add-on; raise on any refusal."""
+    """Ask the Supervisor to restart one add-on; raise on any refusal.
+
+    Some add-ons (Z-Wave JS UI) take about a minute to restart. Home Assistant
+    is asked to wait for the Supervisor instead of its 10-second default, which
+    reported a successful restart as a failure. If the Agent's own wait ends
+    once the request was sent, the restart is left in progress: Shikamaru's
+    verification decides, instead of declaring an execution failure.
+    """
     if not _valid_slug(slug):
         raise ValueError("Identifiant d’add-on invalide")
+    sent = False
 
-    async def run() -> None:
-        async with asyncio.timeout(60):
-            async with supervisor_api(config, node_id, timeout_seconds=60) as call:
-                reply = await call(f"/addons/{slug}/restart", "post")
-        if not reply.get("success"):
-            error = reply.get("error")
-            detail = error.get("message") if isinstance(error, dict) else None
-            raise RuntimeError(
-                f"Le Supervisor a refusé le redémarrage de {slug}"
-                + (f" : {str(detail)[:200]}" if detail else "")
-            )
+    async def run() -> dict[str, Any]:
+        nonlocal sent
+        async with asyncio.timeout(ADDON_RESTART_WAIT_SECONDS):
+            async with supervisor_api(
+                config, node_id, timeout_seconds=ADDON_RESTART_WAIT_SECONDS
+            ) as call:
+                sent = True
+                return await call(f"/addons/{slug}/restart", "post", timeout=None)
 
-    asyncio.run(run())
+    try:
+        reply = asyncio.run(run())
+    except TimeoutError:
+        if not sent:
+            raise
+        LOGGER.warning(
+            "Supervisor restart of %s still running after %.0f s; "
+            "Shikamaru verifies the result",
+            slug,
+            ADDON_RESTART_WAIT_SECONDS,
+        )
+        return
+    if not reply.get("success"):
+        error = reply.get("error")
+        detail = (
+            error.get("message") or error.get("code")
+            if isinstance(error, dict)
+            else None
+        )
+        raise RuntimeError(
+            f"Le Supervisor a refusé le redémarrage de {slug}"
+            + (f" : {str(detail)[:200]}" if detail else " (réponse sans détail)")
+        )
 
 
 async def _remote(config: BackupConfig, node_id: str) -> dict:

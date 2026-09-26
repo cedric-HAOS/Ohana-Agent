@@ -2,6 +2,16 @@
 
 ## Non publié
 
+- Redémarrage d'un add-on par le Supervisor : l'Agent demande à Home
+  Assistant d'attendre la réponse du Supervisor (`timeout: null`) au lieu de
+  ses 10 secondes par défaut. Z-Wave JS UI met environ une minute à
+  redémarrer : sur Konoha, le 26 septembre, la réparation était déclarée
+  « refusée » 10 secondes après l'autorisation alors que l'add-on revenait
+  normalement. L'Agent attend au plus 45 secondes (Vision attend 60 secondes
+  la réponse d'une autorisation) ; au-delà, la demande étant envoyée, la
+  réparation passe en vérification et Shikamaru tranche. Un vrai refus reste
+  un échec et cite désormais le message ou, à défaut, le code du Supervisor.
+
 ## [1.35.1] — 2026-09-26 — Lecture concurrente des incidents
 
 - Correction « Tsunade est indisponible : Unexpected administration failure »

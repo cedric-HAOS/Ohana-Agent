@@ -1,5 +1,6 @@
 """Phase 2: catalogue repairs, their preconditions and the Mosquitto repair."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -254,13 +255,17 @@ def test_tsunade_proposes_the_repair_after_a_confirmed_diagnosis(
 def test_restart_addon_posts_to_the_supervisor_and_reports_refusal(
     monkeypatch,
 ) -> None:
-    calls: list[tuple[str, str]] = []
-    replies = [{"success": True}, {"success": False, "error": {"message": "busy"}}]
+    calls: list[tuple[str, str, object]] = []
+    replies = [
+        {"success": True},
+        {"success": False, "error": {"message": "busy"}},
+        {"success": False, "error": {"code": "unknown_error", "message": ""}},
+    ]
 
     @asynccontextmanager
     async def fake_api(config, node_id, *, timeout_seconds=8):
-        async def call(endpoint, method):
-            calls.append((endpoint, method))
+        async def call(endpoint, method, **options):
+            calls.append((endpoint, method, options.get("timeout", "default")))
             return replies.pop(0)
 
         yield call
@@ -269,9 +274,83 @@ def test_restart_addon_posts_to_the_supervisor_and_reports_refusal(
     configuration_inspection.restart_addon(object(), "ha-01", "core_mosquitto")
     with pytest.raises(RuntimeError, match="busy"):
         configuration_inspection.restart_addon(object(), "ha-01", "core_mosquitto")
-    assert calls == [("/addons/core_mosquitto/restart", "post")] * 2
+    with pytest.raises(RuntimeError, match="unknown_error"):
+        configuration_inspection.restart_addon(object(), "ha-01", "core_mosquitto")
+    # Home Assistant is always told to wait for the Supervisor itself.
+    assert calls == [("/addons/core_mosquitto/restart", "post", None)] * 3
     with pytest.raises(ValueError, match="invalide"):
         configuration_inspection.restart_addon(object(), "ha-01", "../core")
+
+
+def _home_assistant_api(restart_seconds: float, calls: list):
+    """Answer like Home Assistant: give up at 10 s unless told otherwise."""
+
+    @asynccontextmanager
+    async def fake_api(config, node_id, *, timeout_seconds=8):
+        async def call(endpoint, method, **options):
+            timeout = options.get("timeout", 10)
+            calls.append(timeout)
+            if timeout is not None and timeout < restart_seconds:
+                # The Supervisor keeps restarting; HA reports a bare error.
+                return {"success": False, "error": {"code": "unknown_error"}}
+            await asyncio.sleep(min(restart_seconds, 0.01))
+            return {"success": True}
+
+        yield call
+
+    return fake_api
+
+
+def test_slow_addon_restart_is_not_reported_as_a_refusal(monkeypatch) -> None:
+    # Z-Wave JS UI took about a minute on Konoha: 1.35.1 sent no timeout and
+    # declared a failure 10 s after the authorization, the add-on came back.
+    calls: list = []
+    monkeypatch.setattr(
+        configuration_inspection, "supervisor_api", _home_assistant_api(60, calls)
+    )
+
+    configuration_inspection.restart_addon(
+        object(), "zwave-01", "a0d7b954_zwavejs2mqtt"
+    )
+
+    assert calls == [None]
+
+
+def test_restart_still_running_after_the_wait_is_left_to_shikamaru(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(configuration_inspection, "ADDON_RESTART_WAIT_SECONDS", 0.05)
+
+    @asynccontextmanager
+    async def slow_api(config, node_id, *, timeout_seconds=8):
+        async def call(endpoint, method, **options):
+            await asyncio.sleep(1)
+            return {"success": True}
+
+        yield call
+
+    monkeypatch.setattr(configuration_inspection, "supervisor_api", slow_api)
+
+    # Returns normally: the repair goes to verification, not to failure.
+    configuration_inspection.restart_addon(
+        object(), "zwave-01", "a0d7b954_zwavejs2mqtt"
+    )
+
+
+def test_unreachable_supervisor_still_fails_the_execution(monkeypatch) -> None:
+    monkeypatch.setattr(configuration_inspection, "ADDON_RESTART_WAIT_SECONDS", 0.05)
+
+    @asynccontextmanager
+    async def unreachable_api(config, node_id, *, timeout_seconds=8):
+        await asyncio.sleep(1)
+        yield None
+
+    monkeypatch.setattr(configuration_inspection, "supervisor_api", unreachable_api)
+
+    with pytest.raises(TimeoutError):
+        configuration_inspection.restart_addon(
+            object(), "zwave-01", "a0d7b954_zwavejs2mqtt"
+        )
 
 
 def test_vision_deferral_keeps_the_proposal_pending_without_executing(

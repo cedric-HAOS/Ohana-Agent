@@ -62,6 +62,56 @@ def probe_endpoint(host: str, port: int | None, scheme: str | None) -> dict:
     return result
 
 
+def _service_target(
+    service, raw: str
+) -> tuple[str, str, int | None, str | None] | None:
+    """Probe target of one service, or None when its address is unusable."""
+    try:
+        parsed = urlsplit(raw if "://" in raw else "//" + raw)
+        if parsed.username or parsed.password or not parsed.hostname:
+            return None
+        port = service.port or parsed.port
+    except ValueError:
+        return None
+    scheme = (
+        parsed.scheme
+        if parsed.scheme in {"http", "https"}
+        and (service.port is None or service.port == parsed.port)
+        else None
+    )
+    if port is None and scheme:
+        port = 443 if scheme == "https" else 80
+    if scheme is None and port in {80, 443, 8123}:
+        scheme = "https" if port == 443 else "http"
+    return (service.id, parsed.hostname, port, scheme)
+
+
+def _configured_target(
+    configured_http_target: tuple[str, str] | None,
+) -> tuple[str, str, int, str] | None:
+    """HTTP target declared by configuration, without embedded credentials."""
+    if configured_http_target is None:
+        return None
+    target_id, raw = configured_http_target
+    try:
+        parsed = urlsplit(raw)
+        if (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and not parsed.username
+            and not parsed.password
+        ):
+            return (
+                target_id,
+                parsed.hostname,
+                parsed.port or (443 if parsed.scheme == "https" else 80),
+                parsed.scheme,
+            )
+    except ValueError:
+        pass
+    return None
+
+
 def diagnostic_snapshot(
     infrastructure: InfrastructureConfig,
     node_id: str,
@@ -78,49 +128,14 @@ def diagnostic_snapshot(
         node = nodes.get(service.node)
         if not service.enabled or node is None:
             continue
-        raw = node.endpoint.address
-        try:
-            parsed = urlsplit(raw if "://" in raw else "//" + raw)
-            if parsed.username or parsed.password or not parsed.hostname:
-                continue
-            port = service.port or parsed.port
-        except ValueError:
-            continue
-        scheme = (
-            parsed.scheme
-            if parsed.scheme in {"http", "https"}
-            and (service.port is None or service.port == parsed.port)
-            else None
-        )
-        if port is None and scheme:
-            port = 443 if scheme == "https" else 80
-        if scheme is None and port in {80, 443, 8123}:
-            scheme = "https" if port == 443 else "http"
-        target = (service.id, parsed.hostname, port, scheme)
-        if not any(t[1:] == target[1:] for t in targets):
+        target = _service_target(service, node.endpoint.address)
+        if target is not None and not any(t[1:] == target[1:] for t in targets):
             targets.append(target)
     configured_target_id = None
-    if configured_http_target is not None:
-        target_id, raw = configured_http_target
-        try:
-            parsed = urlsplit(raw)
-            if (
-                parsed.scheme in {"http", "https"}
-                and parsed.hostname
-                and not parsed.username
-                and not parsed.password
-            ):
-                target = (
-                    target_id,
-                    parsed.hostname,
-                    parsed.port or (443 if parsed.scheme == "https" else 80),
-                    parsed.scheme,
-                )
-                if not any(t[1:] == target[1:] for t in targets):
-                    targets.append(target)
-                    configured_target_id = target_id
-        except ValueError:
-            pass
+    target = _configured_target(configured_http_target)
+    if target is not None and not any(t[1:] == target[1:] for t in targets):
+        targets.append(target)
+        configured_target_id = target[0]
     # Keep the incident's node first, then HTTP coverage before the probe cap.
     # Truncating during discovery made late HTTP services silently unreachable.
     requested_services = {s.id for s in services if s.node == node_id}

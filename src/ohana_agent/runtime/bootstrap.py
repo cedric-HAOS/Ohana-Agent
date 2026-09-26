@@ -348,6 +348,7 @@ def build_production_agent(
     def dispatch_due_wake_requests(now: datetime) -> None:
         if administration_service is None:
             raise RuntimeError("Tsunade administration is unavailable")
+        administration_service.settle_expired_jobs(now=now)
         administration_service.dispatch_due_wake_requests(now=now)
 
     scheduler = Scheduler(

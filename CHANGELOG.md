@@ -2,6 +2,14 @@
 
 ## Non publié
 
+- Jobs jamais démarrés déclarés `TIMEOUT` à l'heure : l'expiration n'était
+  calculée que lorsqu'un worker interrogeait la file ou qu'une page lisait
+  les incidents. Worker endormi et Vision fermé, un `logs.health_check` créé
+  à 08:47 avec un délai de 15 minutes n'était déclaré `TIMEOUT` qu'à 13:02
+  (8 cas depuis le 20 septembre). La tâche interne de réveil, toutes les
+  5 secondes, règle désormais les échéances au plus toutes les 30 secondes,
+  sans attendre si un cycle worker est en cours.
+
 ## [1.36.0] — 2026-09-26 — Causes d'échec et cascade DNS
 
 - Cascade d'une panne DNS : un incident dont le message révèle un échec de

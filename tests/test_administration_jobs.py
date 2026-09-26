@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1126,6 +1127,88 @@ def test_waiting_timeout_and_cancellation_are_terminal(
     timed_out = repository.get(timeout_id)
     assert timed_out.status == DistributedJobStatus.TIMEOUT
     assert timed_out.finished_at == clock.now
+
+
+def test_scheduler_settles_deadlines_while_nobody_reads_the_queue(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    database = tmp_path / "jobs.db"
+    repository = DistributedJobRepository(database, clock=clock)
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+    )
+
+    def stored_status() -> str:
+        with sqlite3.connect(database) as connection:
+            return connection.execute(
+                "SELECT status FROM distributed_jobs WHERE job_id=?", (JOB_ID,)
+            ).fetchone()[0]
+
+    try:
+        repository.create(job_payload(clock, timeout=60))
+        service.settle_expired_jobs(now=clock.now)
+        clock.advance(61)
+        service.settle_expired_jobs(now=clock.now)
+        assert stored_status() == "TIMEOUT"
+    finally:
+        repository.close()
+
+
+def test_job_settlement_is_throttled_and_yields_to_a_worker_cycle(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    database = tmp_path / "jobs.db"
+    repository = DistributedJobRepository(database, clock=clock)
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+    )
+
+    def stored_status() -> str:
+        with sqlite3.connect(database) as connection:
+            return connection.execute(
+                "SELECT status FROM distributed_jobs WHERE job_id=?", (JOB_ID,)
+            ).fetchone()[0]
+
+    try:
+        repository.create(job_payload(clock, timeout=20))
+        service.settle_expired_jobs(now=clock.now)
+        clock.advance(21)
+        service.settle_expired_jobs(now=clock.now)
+        assert stored_status() != "TIMEOUT"
+
+        clock.advance(10)
+        held = threading.Event()
+        release = threading.Event()
+
+        def worker_cycle() -> None:
+            with service._worker_cycle_lock:
+                held.set()
+                release.wait(5)
+
+        thread = threading.Thread(target=worker_cycle)
+        thread.start()
+        held.wait(5)
+        service.settle_expired_jobs(now=clock.now)
+        release.set()
+        thread.join(5)
+        assert stored_status() != "TIMEOUT"
+
+        service.settle_expired_jobs(now=clock.now)
+        assert stored_status() == "TIMEOUT"
+    finally:
+        repository.close()
 
 
 def test_active_queue_is_bounded(tmp_path: Path, clock: MutableClock) -> None:

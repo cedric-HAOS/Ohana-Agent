@@ -70,6 +70,8 @@ from ohana_agent.tsunade.local_time import paris_now
 from ohana_agent.tsunade.repair_catalog import eligible_repair, repair_spec
 
 LOGGER = logging.getLogger(__name__)
+# A sleeping worker never polls: deadlines are also settled on this cadence.
+JOB_SETTLEMENT_INTERVAL = timedelta(seconds=30)
 
 
 class AdministrationService:
@@ -187,6 +189,7 @@ class AdministrationService:
         self.wake_worker_id = wake_worker_id
         self.wake_mac_address = wake_mac_address
         self._last_planned_wake_date = None
+        self._last_job_settlement: datetime | None = None
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
         self.investigation_executor = investigation_executor
@@ -1159,6 +1162,25 @@ class AdministrationService:
             timeout_seconds + seconds_until_wake + self.wake_timeout_seconds
         )
         return extended
+
+    def settle_expired_jobs(self, now: datetime | None = None) -> None:
+        """Record elapsed deadlines while no worker or page reads the queue."""
+        if self.job_repository is None:
+            return
+        current = now or self.job_repository.now()
+        if (
+            self._last_job_settlement is not None
+            and current - self._last_job_settlement < JOB_SETTLEMENT_INTERVAL
+        ):
+            return
+        # A busy worker cycle settles the queue itself; never stall the scheduler.
+        if not self._worker_cycle_lock.acquire(blocking=False):
+            return
+        try:
+            self._last_job_settlement = current
+            self._refresh_failed_jobs()
+        finally:
+            self._worker_cycle_lock.release()
 
     def dispatch_due_wake_requests(self, now: datetime | None = None) -> None:
         """Wake one worker at the local daily Katsuyu batch boundary."""

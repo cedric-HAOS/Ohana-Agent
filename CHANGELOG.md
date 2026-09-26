@@ -2,6 +2,18 @@
 
 ## Non publié
 
+- Vérification immédiate des réparations : après l'exécution d'une réparation
+  supervisée, l'Agent demande deux observations supplémentaires du service
+  réparé, 20 secondes puis 75 secondes plus tard, par ses tâches planifiées
+  habituelles (même plugin, même chemin Shikamaru → Tsunade). Une réparation
+  n'attend plus le cycle suivant : en production, le NTP est observé toutes
+  les heures et le DHCP toutes les 30 minutes, si bien qu'un redémarrage de
+  chrony réussi finissait `unverified` (validation réelle du 26 septembre).
+  L'intervalle de la tâche repart ensuite de cette dernière exécution.
+- Délai de stabilisation : une observation dégradée dans les 60 secondes qui
+  suivent l'exécution ne fait plus échouer la réparation, le service pouvant
+  encore démarrer ; une observation saine la confirme dès qu'elle arrive.
+
 ## [1.34.0] — 2026-09-25 — Catalogue de réparations enrichi
 
 - Catalogue de réparations enrichi, même mécanisme que Mosquitto (proposition

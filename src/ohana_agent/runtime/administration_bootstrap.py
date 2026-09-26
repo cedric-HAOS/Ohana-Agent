@@ -63,6 +63,10 @@ from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
 )
 from ohana_agent.tsunade.incident_correlation import correlated_upstream_id
+from ohana_agent.tsunade.incident_repairs import (
+    REPAIR_VERIFICATION_PROBES,
+    observes_repaired_service,
+)
 from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
@@ -236,6 +240,10 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
                 path_unit=administration_config.ntp.restart_path_unit,
             ).request_restart(),
         },
+        repair_verification_requester=lambda incident: context.scheduler.request_runs(
+            lambda task: observes_repaired_service(incident, task.metadata),
+            REPAIR_VERIFICATION_PROBES,
+        ),
         agent_node_id=administration_config.dhcp.server_node_id,
     )
     expertise_service.set_ai_dispatcher(

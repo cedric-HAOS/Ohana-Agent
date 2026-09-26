@@ -34,6 +34,31 @@ REPAIR_VERIFICATION_SECONDS = 900
 REPAIR_VERIFICATION_MIN_SECONDS = 300
 REPAIR_VERIFICATION_MAX_SECONDS = 1800
 REPAIR_VERIFICATION_INTERVALS = 3
+# A restarted service may still be starting: a degraded observation this soon
+# after the execution does not fail the repair; a healthy one confirms it.
+REPAIR_SETTLE_SECONDS = 60
+# Observations requested right after an execution, so Shikamaru verifies the
+# repair without waiting for the next scheduled check. The later one falls
+# after the settle delay and can conclude either way.
+REPAIR_VERIFICATION_PROBES = (
+    timedelta(seconds=20),
+    timedelta(seconds=REPAIR_SETTLE_SECONDS + 15),
+)
+
+
+def observes_repaired_service(
+    incident: TsunadeIncident, task_metadata: dict[str, object]
+) -> bool:
+    """Whether a scheduled task observes the service an incident is about.
+
+    Observations name their service after the task's ``service_id``; the node
+    is compared only when the task declares one, as not every service does.
+    """
+    node_id = task_metadata.get("node_id")
+    return task_metadata.get("service_id") == incident.service_id and node_id in (
+        None,
+        incident.node_id,
+    )
 
 
 class TsunadeRepairs:
@@ -537,8 +562,13 @@ class TsunadeRepairs:
             AND status='verifying' ORDER BY julianday(executed_at) DESC LIMIT 1""",
             (str(incident.incident_id),),
         ).fetchone()
-        if row is None or observation.timestamp <= datetime.fromisoformat(
-            row["executed_at"]
+        if row is None:
+            return
+        executed_at = datetime.fromisoformat(row["executed_at"])
+        if observation.timestamp <= executed_at:
+            return
+        if not succeeded and observation.timestamp < executed_at + timedelta(
+            seconds=REPAIR_SETTLE_SECONDS
         ):
             return
         status = "succeeded" if succeeded else "failed"

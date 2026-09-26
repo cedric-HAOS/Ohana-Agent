@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Protocol
 
 from ohana_agent.scheduler.clock import Clock, SystemClock
@@ -75,6 +77,19 @@ class Scheduler:
     def list_tasks(self) -> list[Task]:
         """Return all registered tasks ordered by priority."""
         return self.registry.list()
+
+    def request_runs(
+        self, matches: Callable[[Task], bool], delays: tuple[timedelta, ...]
+    ) -> list[str]:
+        """Request extra runs of every enabled task selected by ``matches``."""
+        now = self.clock.now()
+        matched = [
+            task for task in self.registry.list() if task.enabled and matches(task)
+        ]
+        for task in matched:
+            for delay in delays:
+                task.request_run(now + delay)
+        return [task.id for task in matched]
 
     def due_tasks(self) -> list[Task]:
         """Return enabled tasks due at the scheduler current datetime."""

@@ -129,6 +129,9 @@ class AdministrationService:
         repair_executors: (
             dict[str, Callable[[TsunadeIncident, str], None]] | None
         ) = None,
+        repair_verification_requester: (
+            Callable[[TsunadeIncident], None] | None
+        ) = None,
         wake_enabled: bool = False,
         on_wake_enabled_changed: Callable[[bool], None] | None = None,
         agent_node_id: str | None = None,
@@ -146,6 +149,8 @@ class AdministrationService:
                 "dnsmasq.restart",
                 lambda _incident, _target: dhcp_repository.request_supervised_restart(),
             )
+        # Asks for prompt observations of the repaired capability.
+        self.repair_verification_requester = repair_verification_requester
         self.plugin_repository = plugin_repository
         self.network_repository = network_repository
         self.job_repository = job_repository
@@ -840,7 +845,16 @@ class AdministrationService:
                 }
             )
             return result
-        return self.incident_repository.mark_repair_executed(repair.repair_id)
+        executed = self.incident_repository.mark_repair_executed(repair.repair_id)
+        if self.repair_verification_requester is not None:
+            try:
+                self.repair_verification_requester(
+                    self.incident_repository.get(incident_id)
+                )
+            except Exception:  # noqa: BLE001
+                # The scheduled observation and the deadline still apply.
+                LOGGER.exception("Unable to request the repair verification")
+        return executed
 
     def refuse_incident_repair(
         self, incident_id: str, payload: dict[str, Any]

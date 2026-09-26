@@ -15,6 +15,8 @@
   (8 cas depuis le 20 septembre). La tâche interne de réveil, toutes les
   5 secondes, règle désormais les échéances au plus toutes les 30 secondes,
   sans attendre si un cycle worker est en cours.
+- Complexité réduite sans changement de comportement : aller-retour MQTT
+  (31 → 16) et instantané de diagnostic en lecture seule (28 → 21).
 
 ## [1.36.0] — 2026-09-26 — Causes d'échec et cascade DNS
 

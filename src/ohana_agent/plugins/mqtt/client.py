@@ -43,37 +43,16 @@ class MQTTRoundTripClient:
         tls_insecure: bool = False,
     ) -> MQTTResult:
         """Perform one complete connect, subscribe, publish and receive test."""
-        normalized_broker = broker.strip()
-
-        if not normalized_broker:
-            raise ValueError("broker must not be empty.")
-
-        if isinstance(port, bool) or not 1 <= port <= 65_535:
-            raise ValueError("port must be between 1 and 65535.")
-
-        if timeout <= 0:
-            raise ValueError("timeout must be greater than zero.")
-
-        if keepalive_seconds <= 0:
-            raise ValueError("keepalive_seconds must be greater than zero.")
-
-        if isinstance(qos, bool) or qos not in {0, 1, 2}:
-            raise ValueError("qos must be 0, 1 or 2.")
-
+        normalized_broker = self._validated_broker(
+            broker, port, timeout, keepalive_seconds, qos
+        )
         token = self._token_factory()
         normalized_service_id = self._normalize_segment(service_id, "mqtt")
         normalized_client_prefix = self._normalize_segment(
             client_id_prefix,
             "ohana-agent",
         )
-        normalized_topic_prefix = topic_prefix.strip().strip("/")
-
-        if not normalized_topic_prefix:
-            raise ValueError("topic_prefix must not be empty.")
-
-        if any(character in normalized_topic_prefix for character in {"+", "#"}):
-            raise ValueError("topic_prefix must not contain MQTT wildcards.")
-
+        normalized_topic_prefix = self._validated_topic_prefix(topic_prefix)
         topic = f"{normalized_topic_prefix}/{normalized_service_id}/{token}"
         client_id = f"{normalized_client_prefix}-{normalized_service_id}-{token[:8]}"
         payload = token.encode("utf-8")
@@ -184,12 +163,12 @@ class MQTTRoundTripClient:
             client.loop_start()
             loop_started = True
 
-            if not connected_event.wait(timeout):
-                raise TimeoutError("Timed out while connecting to the MQTT broker.")
-
-            if state["error"] is not None:
-                raise RuntimeError(str(state["error"]))
-
+            self._await(
+                connected_event,
+                timeout,
+                state,
+                "Timed out while connecting to the MQTT broker.",
+            )
             subscribe_result, _message_id = client.subscribe(topic, qos=qos)
 
             if not self._successful_code(subscribe_result):
@@ -197,12 +176,12 @@ class MQTTRoundTripClient:
                     f"MQTT subscribe request failed with code {subscribe_result}."
                 )
 
-            if not subscribed_event.wait(timeout):
-                raise TimeoutError("Timed out while subscribing to the MQTT topic.")
-
-            if state["error"] is not None:
-                raise RuntimeError(str(state["error"]))
-
+            self._await(
+                subscribed_event,
+                timeout,
+                state,
+                "Timed out while subscribing to the MQTT topic.",
+            )
             with state_lock:
                 state["published_at"] = self._monotonic_clock()
 
@@ -221,53 +200,91 @@ class MQTTRoundTripClient:
                     "Timed out while waiting for the MQTT round-trip message."
                 )
 
-            return MQTTResult(
-                broker=normalized_broker,
-                port=port,
-                success=True,
-                topic=topic,
-                qos=qos,
-                client_id=client_id,
-                connected=bool(state["connected"]),
-                subscribed=bool(state["subscribed"]),
-                published=bool(state["published"]),
-                received=bool(state["received"]),
-                round_trip_ms=state["round_trip_ms"],
-                tls_enabled=tls_enabled,
-            )
-        except Exception as error:
-            return MQTTResult(
-                broker=normalized_broker,
-                port=port,
-                success=False,
-                topic=topic,
-                qos=qos,
-                client_id=client_id,
-                connected=bool(state["connected"]),
-                subscribed=bool(state["subscribed"]),
-                published=bool(state["published"]),
-                received=bool(state["received"]),
-                round_trip_ms=state["round_trip_ms"],
-                tls_enabled=tls_enabled,
-                error=str(error),
-            )
+            error: str | None = None
+        except Exception as failure:
+            error = str(failure)
         finally:
             if client is not None:
-                try:
-                    client.unsubscribe(topic)
-                except Exception:
-                    pass
+                self._close(client, topic, loop_started)
 
-                try:
-                    client.disconnect()
-                except Exception:
-                    pass
+        return MQTTResult(
+            broker=normalized_broker,
+            port=port,
+            success=error is None,
+            topic=topic,
+            qos=qos,
+            client_id=client_id,
+            connected=bool(state["connected"]),
+            subscribed=bool(state["subscribed"]),
+            published=bool(state["published"]),
+            received=bool(state["received"]),
+            round_trip_ms=state["round_trip_ms"],
+            tls_enabled=tls_enabled,
+            error=error,
+        )
 
-                if loop_started:
-                    try:
-                        client.loop_stop()
-                    except Exception:
-                        pass
+    @staticmethod
+    def _validated_broker(
+        broker: str, port: int, timeout: float, keepalive_seconds: int, qos: int
+    ) -> str:
+        normalized_broker = broker.strip()
+
+        if not normalized_broker:
+            raise ValueError("broker must not be empty.")
+
+        if isinstance(port, bool) or not 1 <= port <= 65_535:
+            raise ValueError("port must be between 1 and 65535.")
+
+        if timeout <= 0:
+            raise ValueError("timeout must be greater than zero.")
+
+        if keepalive_seconds <= 0:
+            raise ValueError("keepalive_seconds must be greater than zero.")
+
+        if isinstance(qos, bool) or qos not in {0, 1, 2}:
+            raise ValueError("qos must be 0, 1 or 2.")
+
+        return normalized_broker
+
+    @staticmethod
+    def _validated_topic_prefix(topic_prefix: str) -> str:
+        normalized_topic_prefix = topic_prefix.strip().strip("/")
+
+        if not normalized_topic_prefix:
+            raise ValueError("topic_prefix must not be empty.")
+
+        if any(character in normalized_topic_prefix for character in {"+", "#"}):
+            raise ValueError("topic_prefix must not contain MQTT wildcards.")
+
+        return normalized_topic_prefix
+
+    @staticmethod
+    def _await(
+        event: Event, timeout: float, state: dict[str, Any], timeout_message: str
+    ) -> None:
+        if not event.wait(timeout):
+            raise TimeoutError(timeout_message)
+
+        if state["error"] is not None:
+            raise RuntimeError(str(state["error"]))
+
+    @staticmethod
+    def _close(client: Any, topic: str, loop_started: bool) -> None:
+        try:
+            client.unsubscribe(topic)
+        except Exception:
+            pass
+
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+
+        if loop_started:
+            try:
+                client.loop_stop()
+            except Exception:
+                pass
 
     @staticmethod
     def _create_paho_client(client_id: str) -> Any:

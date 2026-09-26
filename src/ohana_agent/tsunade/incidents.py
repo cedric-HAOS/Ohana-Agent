@@ -171,7 +171,10 @@ class TsunadeIncidentRepository(
                 julianday(started_at) DESC LIMIT ?""",  # noqa: S608
                 (limit,),
             ).fetchall()
-        return [self._incident(row, include_events=False) for row in rows]
+            # Building an incident queries the shared connection again: doing
+            # it after releasing the lock let concurrent Vision polls and
+            # observations interleave on it (sqlite3.InterfaceError).
+            return [self._incident(row, include_events=False) for row in rows]
 
     def statistics(self) -> dict[str, int | float | None]:
         """Return compact history counters without loading incident rows."""
@@ -231,9 +234,9 @@ class TsunadeIncidentRepository(
                 "SELECT * FROM tsunade_incidents WHERE incident_id = ?",
                 (str(incident_id),),
             ).fetchone()
-        if row is None:
-            raise LookupError(f"Unknown incident: {incident_id}")
-        return self._incident(row, include_events=True)
+            if row is None:
+                raise LookupError(f"Unknown incident: {incident_id}")
+            return self._incident(row, include_events=True)
 
     def append_record(
         self,

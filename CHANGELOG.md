@@ -2,6 +2,14 @@
 
 ## Non publié
 
+- Correction « Tsunade est indisponible : Unexpected administration failure »
+  dans Vision : la liste et le détail des incidents construisaient chaque
+  incident après avoir relâché le verrou de la base Tsunade. Une lecture de
+  Vision concurrente d'une autre lecture ou du traitement d'une observation
+  partageait alors la connexion SQLite (`sqlite3.InterfaceError: bad parameter
+  or other API misuse`, `json.loads(None)`), d'où des erreurs 500 relayées en
+  502 par Vision. Toute la construction se fait désormais sous le verrou.
+
 ## [1.35.0] — 2026-09-26 — Vérification immédiate des réparations
 
 - Vérification immédiate des réparations : après l'exécution d'une réparation

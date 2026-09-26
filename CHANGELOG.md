@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.35.0] — 2026-09-26 — Vérification immédiate des réparations
+
 - Vérification immédiate des réparations : après l'exécution d'une réparation
   supervisée, l'Agent demande deux observations supplémentaires du service
   réparé, 20 secondes puis 75 secondes plus tard, par ses tâches planifiées

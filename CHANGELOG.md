@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.36.1] — 2026-09-26 — Échéances des jobs et assistants de réparation
+
 - Santé d'INFRA-01 : les assistants de réparation
   (`ohana-chrony-restart.service`, `ohana-dhcp-reload.service`) ne comptent
   plus parmi les unités en échec. Leur échec est déjà porté par la réparation,

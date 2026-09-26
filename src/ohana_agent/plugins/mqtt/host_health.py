@@ -20,6 +20,13 @@ from ohana_agent.observation import Observation, ObservationStatus
 
 LOGGER = logging.getLogger(__name__)
 
+# Repair helpers report their failure through the repair itself; a failed
+# oneshot stays "failed" until its next run, so after chrony was unmasked on
+# 26 September it kept a separate systemd_units_failed incident open.
+_REPAIR_HELPER_UNITS = frozenset(
+    {"ohana-chrony-restart.service", "ohana-dhcp-reload.service"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class HostMetrics:
@@ -323,7 +330,9 @@ class SystemHostProbe:
                 {
                     fields[0]
                     for line in result.stdout.splitlines()
-                    if (fields := line.split()) and fields[0].startswith("ohana-")
+                    if (fields := line.split())
+                    and fields[0].startswith("ohana-")
+                    and fields[0] not in _REPAIR_HELPER_UNITS
                 }
             )
         )

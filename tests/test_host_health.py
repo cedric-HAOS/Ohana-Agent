@@ -93,6 +93,7 @@ def test_system_host_probe_reads_systemd_health(tmp_path: Path) -> None:
                 0,
                 stdout=(
                     "ohana-vision.service loaded failed failed Ohana Vision\n"
+                    "ohana-chrony-restart.service loaded failed failed Restart\n"
                     "unrelated.service loaded failed failed Unrelated\n"
                 ),
                 stderr="",

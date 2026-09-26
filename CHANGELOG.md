@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Santé d'INFRA-01 : les assistants de réparation
+  (`ohana-chrony-restart.service`, `ohana-dhcp-reload.service`) ne comptent
+  plus parmi les unités en échec. Leur échec est déjà porté par la réparation,
+  et l'unité `oneshot` reste `failed` jusqu'à sa prochaine exécution : le
+  26 septembre, après l'essai chrony masqué, l'incident `systemd_units_failed`
+  restait ouvert alors que chrony était relancé.
 - Jobs jamais démarrés déclarés `TIMEOUT` à l'heure : l'expiration n'était
   calculée que lorsqu'un worker interrogeait la file ou qu'une page lisait
   les incidents. Worker endormi et Vision fermé, un `logs.health_check` créé

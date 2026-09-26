@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -62,7 +63,11 @@ from ohana_agent.tsunade.configuration_inspection import (
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
 )
-from ohana_agent.tsunade.incident_correlation import correlated_upstream_id
+from ohana_agent.tsunade.incident_correlation import (
+    NAME_RESOLUTION_SERVICE_TYPES,
+    correlated_upstream_id,
+    is_name_resolution_failure,
+)
 from ohana_agent.tsunade.incident_repairs import (
     REPAIR_VERIFICATION_PROBES,
     observes_repaired_service,
@@ -71,6 +76,8 @@ from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
 from ohana_agent.tsunade.investigations import InvestigationExecutor
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +267,14 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         administration=administration_service,
         logs_config=administration_config.jobs.logs,
         notifications=companions.notifications if companions else None,
+        # A failed name lookup points at the resolver: observe DNS and the
+        # local dnsmasq now rather than at their next cycle (DHCP: 30 min).
+        on_name_lookup_failure=lambda: context.scheduler.request_runs(
+            lambda task: (
+                task.metadata.get("managed_by") in NAME_RESOLUTION_SERVICE_TYPES
+            ),
+            (timedelta(0),),
+        ),
     )
     context.event_bus.subscribe(ObservationPublished, tsunade_handler)
     context.event_bus.subscribe(HostHealthObserved, tsunade_handler)
@@ -588,12 +603,14 @@ class TsunadeObservationHandler:
         administration: AdministrationService,
         logs_config: DistributedLogAnalysisConfig,
         notifications: APNsNotificationPublisher | None,
+        on_name_lookup_failure: Callable[[], object] | None = None,
     ) -> None:
         self._incidents = incidents
         self._expertise = expertise
         self._administration = administration
         self._logs_config = logs_config
         self._notifications = notifications
+        self._on_name_lookup_failure = on_name_lookup_failure
 
     def __call__(self, event: ObservationPublished) -> None:
         incident = self._incidents.process(event.observation)
@@ -607,6 +624,16 @@ class TsunadeObservationHandler:
         if incident.state != "active":
             # A resolution is not a first occurrence, even after one observation.
             return
+
+        if (
+            incident.occurrence_count == 1
+            and self._on_name_lookup_failure is not None
+            and is_name_resolution_failure(getattr(incident, "message", None))
+        ):
+            try:
+                self._on_name_lookup_failure()
+            except Exception:  # noqa: BLE001 - the next cycle still observes.
+                LOGGER.exception("Unable to request DNS and DHCP observations")
 
         if incident.occurrence_count != 1:
             if self._upstream_resolved(incident):

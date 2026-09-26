@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 from threading import Lock, Thread
@@ -28,6 +29,8 @@ from ohana_agent.tsunade.expertise_logs import TsunadeLogExpertise
 from ohana_agent.tsunade.incident_correlation import (
     active_upstream_incident,
     declared_dependencies,
+    is_name_resolution_failure,
+    name_resolution_providers,
 )
 from ohana_agent.tsunade.incident_models import (
     TsunadeExperience,
@@ -44,6 +47,7 @@ from ohana_agent.tsunade.investigations import (
 )
 
 LOGGER = logging.getLogger(__name__)
+UPSTREAM_WAIT_SECONDS = 10.0
 
 
 class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
@@ -60,6 +64,9 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         self.investigations = investigations
         self.ai_dispatcher = ai_dispatcher
         self.repair_proposer: Callable[[UUID], object] | None = None
+        # How long a name lookup failure waits for its DNS/dnsmasq incident.
+        self.upstream_wait_seconds = UPSTREAM_WAIT_SECONDS
+        self._sleep: Callable[[float], None] = time.sleep
         self._lock = Lock()
         self._inflight: set[str] = set()
 
@@ -144,6 +151,24 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             failures = [
                 result for result in investigation_results if probe_failed(result)
             ]
+            name_lookup_failed = is_name_resolution_failure(incident.message)
+            if name_lookup_failed and not operator_requested:
+                # Restarting the service that could not resolve a name would
+                # not help: the resolver is upstream. Its incident may open a
+                # few seconds later (DHCP and DNS checks are requested now).
+                upstream = self._await_upstream(incident)
+                if upstream is not None:
+                    return self._record_upstream_correlation(
+                        incident, upstream, facts, procedure
+                    )
+                facts = [
+                    *facts,
+                    (
+                        "Échec de résolution de nom : aucune réparation du service "
+                        f"{incident.service_id} n’est proposée, la cause est en amont "
+                        "(DNS ou dnsmasq)."
+                    ),
+                ][:32]
             if procedure is not None and failures:
                 if procedure.supervisor_inspection:
                     facts = [
@@ -175,7 +200,8 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
                     confidence=1.0,
                 )
                 self._record_deterministic(outcome, failures)
-                self._propose_known_repair(incident.incident_id)
+                if not name_lookup_failed:
+                    self._propose_known_repair(incident.incident_id)
                 return outcome
 
             if incident.capability_id == "logs.health":
@@ -537,12 +563,27 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
         except Exception:
             LOGGER.exception("Supervised repair proposal failed for %s", incident_id)
 
+    def _await_upstream(self, incident: TsunadeIncident) -> TsunadeIncident | None:
+        """Give an upstream DNS or dnsmasq incident a few seconds to open."""
+        deadline = time.monotonic() + self.upstream_wait_seconds
+        while True:
+            upstream = self._active_upstream(incident)
+            if upstream is not None or time.monotonic() >= deadline:
+                return upstream
+            self._sleep(1.0)
+
     def _active_upstream(self, incident: TsunadeIncident) -> TsunadeIncident | None:
         reader = getattr(self.investigations, "infrastructure_reader", None)
         if reader is None:
             return None
         try:
-            dependencies = declared_dependencies(reader(), incident.service_id)
+            infrastructure = reader()
+            dependencies = declared_dependencies(infrastructure, incident.service_id)
+            if is_name_resolution_failure(incident.message):
+                dependencies = (
+                    *dependencies,
+                    *name_resolution_providers(infrastructure, incident.service_id),
+                )
             if not dependencies:
                 return None
             return active_upstream_incident(
@@ -568,13 +609,21 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
     ) -> TsunadeExpertiseOutcome:
         upstream_label = f"{upstream.service_id} ({upstream.node_id.upper()})"
         started_at = upstream.started_at.astimezone(ZoneInfo("Europe/Paris"))
+        link = (
+            f"{incident.service_id} ne parvient pas à résoudre un nom d’hôte et "
+            f"{upstream.service_id} assure la résolution des noms."
+            if is_name_resolution_failure(incident.message)
+            else (
+                f"L’architecture déclare que {incident.service_id} dépend de "
+                f"{upstream.service_id}."
+            )
+        )
         decision = TsunadeDecisionResult(
             decision="watch",
             source="deterministic",
             conclusion=(
                 f"Symptôme rattaché à l’incident amont actif sur {upstream_label}. "
-                f"L’architecture déclare que {incident.service_id} dépend de "
-                f"{upstream.service_id}."
+                f"{link}"
             ),
             reason=(
                 f"L’incident {upstream.capability_id} de {upstream_label} est actif "

@@ -2,6 +2,19 @@
 
 ## Non publié
 
+- Cascade d'une panne DNS : un incident dont le message révèle un échec de
+  résolution de nom (« Name or service not known », « No address associated
+  with hostname »…) est rattaché, sans déclaration `depends_on`, à l'incident
+  actif d'un service DNS ou DHCP (dnsmasq), avec la décision `watch` et sans
+  expertise Katsuyu. Tsunade attend jusqu'à 10 secondes que cet incident amont
+  s'ouvre : dès le premier échec de résolution, l'Agent demande une
+  observation immédiate des tâches DNS et DHCP, au lieu d'attendre le cycle
+  DHCP de 30 minutes. Sans amont, aucune réparation du service touché n'est
+  proposée : redémarrer Z-Wave JS ou Mosquitto ne rétablit pas un résolveur.
+  Le 26 septembre, l'arrêt de dnsmasq avait ouvert des incidents DNS, Z-Wave
+  JS, MQTT et télémétrie sans lien, et dnsmasq n'était identifié qu'au cycle
+  DHCP suivant.
+
 - Cause d'un échec d'assistant : après avoir déposé la demande de
   redémarrage de chrony ou de dnsmasq, l'Agent attend au plus 15 secondes la
   fin de l'assistant (`ohana-chrony-restart.service`,

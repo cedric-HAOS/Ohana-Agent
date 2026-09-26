@@ -2,12 +2,46 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 
 from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.tsunade.incident_models import TsunadeIncident
 
 MAXIMUM_DEPENDENCIES = 8
+
+# Messages of a failed host name lookup (``socket.gaierror`` and friends). On
+# Konoha, stopping dnsmasq turned DNS, Z-Wave JS, MQTT and telemetry checks
+# into "Name or service not known" within a minute.
+_NAME_RESOLUTION_FAILURES = re.compile(
+    r"name or service not known|no address associated with hostname"
+    r"|temporary failure in name resolution|nodename nor servname"
+    r"|getaddrinfo failed|could not resolve host|\[errno -[235]\]",
+    re.IGNORECASE,
+)
+NAME_RESOLUTION_SERVICE_TYPES = frozenset({"dns", "dhcp"})
+
+
+def is_name_resolution_failure(message: str | None) -> bool:
+    """Whether an observation failed because a host name did not resolve."""
+    return bool(message) and bool(_NAME_RESOLUTION_FAILURES.search(message))
+
+
+def name_resolution_providers(
+    infrastructure: InfrastructureConfig, service_id: str
+) -> tuple[str, ...]:
+    """Services whose failure explains a name lookup failure elsewhere.
+
+    A lookup failure is not a failure of the service that reported it: the
+    resolver (DNS) or the local dnsmasq that serves the LAN names is upstream,
+    without any ``depends_on`` declaration.
+    """
+    return tuple(
+        service.id
+        for service in infrastructure.services
+        if service.id != service_id
+        and str(service.type).lower() in NAME_RESOLUTION_SERVICE_TYPES
+    )[:MAXIMUM_DEPENDENCIES]
 
 
 def declared_dependencies(

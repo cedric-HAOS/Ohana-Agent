@@ -217,3 +217,48 @@ def test_dhcp_repository_rolls_back_rejected_configuration(
 
     assert (tmp_path / "00-ohana.conf").read_text(encoding="utf-8") == original_main
     assert not reload_request.exists()
+
+
+def test_dhcp_configuration_serves_the_server_name_from_its_interface(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+
+    repository.write(make_configuration())
+
+    content = (tmp_path / "00-ohana.conf").read_text(encoding="utf-8")
+    # /etc/hosts maps infra-01 to 127.0.1.1: it must never reach the LAN.
+    assert "no-hosts" in content.splitlines()
+    assert "interface-name=infra-01.ohana.lan,eth0/4" in content.splitlines()
+
+
+def test_dhcp_repository_upgrades_a_configuration_from_an_older_agent(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    repository.write(make_configuration())
+    main = tmp_path / "00-ohana.conf"
+    legacy = main.read_text(encoding="utf-8").replace("no-hosts\n", "")
+    main.write_text(legacy, encoding="utf-8", newline="\n")
+    reservations = (tmp_path / "20-serveurs.conf").read_text(encoding="utf-8")
+
+    assert repository.upgrade_main_configuration() is True
+    assert "no-hosts" in main.read_text(encoding="utf-8").splitlines()
+    assert repository.upgrade_main_configuration() is False
+    assert (tmp_path / "20-serveurs.conf").read_text(encoding="utf-8") == (reservations)
+
+
+def test_dhcp_repository_keeps_the_old_configuration_when_dnsmasq_rejects_it(
+    tmp_path: Path,
+) -> None:
+    repository = make_repository(tmp_path)
+    repository.write(make_configuration())
+    main = tmp_path / "00-ohana.conf"
+    legacy = main.read_text(encoding="utf-8").replace("no-hosts\n", "")
+    main.write_text(legacy, encoding="utf-8", newline="\n")
+    repository.validation_command = (sys.executable, "-c", "raise SystemExit(1)")
+
+    with pytest.raises(DHCPConfigurationError):
+        repository.upgrade_main_configuration()
+
+    assert main.read_text(encoding="utf-8") == legacy

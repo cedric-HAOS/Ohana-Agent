@@ -33,7 +33,7 @@ from ohana_agent.configuration.configuration import Configuration
 from ohana_agent.configuration.loader import ConfigurationLoader
 from ohana_agent.core.events import EventBus
 from ohana_agent.host.chrony import ChronyRestartRequester, chrony_status
-from ohana_agent.host.dhcp import DnsmasqDHCPRepository
+from ohana_agent.host.dhcp import DHCPConfigurationError, DnsmasqDHCPRepository
 from ohana_agent.host.network import NetworkManagerRepository
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.log_sources import LogSourceBroker
@@ -370,7 +370,7 @@ def _build_dhcp_repository(
     if not config.enabled:
         return None
 
-    return DnsmasqDHCPRepository(
+    repository = DnsmasqDHCPRepository(
         main_config_path=config.main_config_path,
         reservation_paths={
             "infrastructure": config.infrastructure_reservations_path,
@@ -384,6 +384,12 @@ def _build_dhcp_repository(
         validation_command=config.validation_command,
         reload_request_path=config.reload_request_path,
     )
+    try:
+        if repository.upgrade_main_configuration():
+            LOGGER.info("dnsmasq configuration upgraded to the current format.")
+    except (OSError, DHCPConfigurationError) as error:
+        LOGGER.warning("Unable to upgrade the dnsmasq configuration: %s", error)
+    return repository
 
 
 def _build_incident_repository(

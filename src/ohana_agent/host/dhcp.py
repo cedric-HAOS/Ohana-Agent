@@ -102,7 +102,9 @@ class DnsmasqDHCPRepository:
         """Validate and persist a complete DHCP configuration."""
         stale_lease_macs = self._stale_lease_macs(configuration)
         rendered_files = {
-            self.main_config_path: self._render_main(configuration.settings),
+            self.main_config_path: self._render_main(
+                configuration.settings, self.server_node_id
+            ),
         }
 
         for category, path in self.reservation_paths.items():
@@ -136,6 +138,23 @@ class DnsmasqDHCPRepository:
             raise
 
         return self.read()
+
+    def upgrade_main_configuration(self) -> bool:
+        """Rewrite a main file rendered by an older Agent; True when rewritten."""
+        if not self.main_config_path.is_file():
+            return False
+        current = self.main_config_path.read_text(encoding="utf-8")
+        rendered = self._render_main(self.read_settings(), self.server_node_id)
+        if current == rendered:
+            return False
+        self._atomic_write(self.main_config_path, rendered)
+        try:
+            self._validate_dnsmasq()
+            self._request_reload([])
+        except (OSError, DHCPConfigurationError):
+            self._atomic_write(self.main_config_path, current)
+            raise
+        return True
 
     def read_leases(self) -> list[DHCPLease]:
         """Parse dnsmasq's lease database when it is available."""
@@ -333,7 +352,7 @@ class DnsmasqDHCPRepository:
         return reservations
 
     @staticmethod
-    def _render_main(settings: DHCPSettings) -> str:
+    def _render_main(settings: DHCPSettings, server_node_id: str) -> str:
         dns_servers = ",".join(str(server) for server in settings.dns_servers)
         ntp_servers = ",".join(str(server) for server in settings.ntp_servers)
 
@@ -365,6 +384,14 @@ class DnsmasqDHCPRepository:
                 f"domain={settings.domain}",
                 f"local=/{settings.domain}/",
                 "expand-hosts",
+                "",
+                # cloud-init maps the host name to 127.0.1.1 in /etc/hosts:
+                # served to the LAN, clients reached their own loopback.
+                "no-hosts",
+                (
+                    f"interface-name={server_node_id}.{settings.domain},"
+                    f"{settings.interface}/4"
+                ),
                 "",
             ]
         )

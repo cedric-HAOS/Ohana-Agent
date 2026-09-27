@@ -303,6 +303,7 @@ class AdministrationService:
                     "incidents.experiences.confirm",
                     "incidents.experiences.read",
                     "incidents.experiences.state",
+                    "incidents.manual_resolution.declare",
                 ]
             )
             if self.dhcp_repository is not None:
@@ -923,6 +924,25 @@ class AdministrationService:
         if self.incident_repository is None:
             raise LookupError("La mémoire des diagnostics est indisponible")
         return self.incident_repository.confirm_experience(incident_id, payload)
+
+    def declare_manual_resolution(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Record a manual action and ask Shikamaru to verify it right away."""
+        if self.incident_repository is None:
+            raise LookupError("La mémoire des diagnostics est indisponible")
+        action = self.incident_repository.declare_manual_resolution(
+            incident_id, payload
+        )
+        if self.repair_verification_requester is not None:
+            try:
+                self.repair_verification_requester(
+                    self.incident_repository.get(incident_id)
+                )
+            except Exception:  # noqa: BLE001
+                # The scheduled observation and the deadline still apply.
+                LOGGER.exception("Unable to request the manual action verification")
+        return action
 
     def list_experiences(self) -> object:
         """List known repairs with their attempts, outcomes and state."""

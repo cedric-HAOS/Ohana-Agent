@@ -148,6 +148,21 @@ class TsunadeIncidentSchema:
             );
             CREATE INDEX IF NOT EXISTS tsunade_experiences_capability
             ON tsunade_experiences(equipment_id, capability_id, last_used_at);
+            CREATE TABLE IF NOT EXISTS tsunade_manual_actions (
+                action_id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL,
+                description TEXT NOT NULL,
+                declared_at TEXT NOT NULL,
+                declared_by TEXT,
+                source TEXT NOT NULL,
+                status TEXT NOT NULL,
+                verification_deadline TEXT NOT NULL,
+                verified_at TEXT,
+                result TEXT,
+                observation_id TEXT
+            );
+            CREATE INDEX IF NOT EXISTS tsunade_manual_actions_incident
+            ON tsunade_manual_actions(incident_id, declared_at);
             CREATE TABLE IF NOT EXISTS tsunade_accepted_log_signatures (
                 source TEXT NOT NULL,
                 signature TEXT NOT NULL,

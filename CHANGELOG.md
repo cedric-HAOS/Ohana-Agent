@@ -2,6 +2,23 @@
 
 ## Non publié
 
+- Résolution manuelle (Phase 3) : sur un incident actif, l'utilisateur
+  déclare ce qu'il a fait à la main (`POST
+  /v1/incidents/{id}/manual-resolution`, description de 3 à 500 caractères).
+  Ohana n'exécute rien. Tsunade demande aussitôt les sondes de vérification.
+  L'action est confirmée si Shikamaru observe ensuite un retour sain. Elle
+  n'est pas confirmée si la capacité reste dégradée au-delà de 60 s, ou si
+  aucune observation n'arrive avant l'échéance. Une action confirmée devient
+  une candidate. Tsunade demande alors « Cette action semble avoir participé
+  à la résolution. Souhaitez-vous la conserver comme piste de réparation
+  connue ? » et précise que la proximité dans le temps ne prouve pas à elle
+  seule la cause. Rien n'est appris sans cet accord.
+- Piste manuelle connue : l'expérience conservée est une note
+  (`{"kind": "manual", "description": …}`), même quand elle ressemble à une
+  commande. Elle est citée lors d'un incident semblable comme « à appliquer
+  vous-même (Ohana ne l'exécute jamais) ». Elle n'est jamais rattachée à une
+  proposition du catalogue, et jamais comptée lors d'une exécution. La même
+  action confirmée à nouveau enrichit son historique.
 - Proposition fondée sur une réparation connue (Phase 3) : quand le
   catalogue retient une réparation, Tsunade la rattache à la réparation
   connue active qui a le même symptôme (même capacité en échec sur le même

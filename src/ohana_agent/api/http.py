@@ -593,6 +593,10 @@ def _administration_routes(
                 _call_with_body(service.set_experience_state),
             ),
             _route(
+                "/v1/incidents/{incident_id}/manual-resolution",
+                _call_with_body(service.declare_manual_resolution),
+            ),
+            _route(
                 "/v1/incidents/{incident_id}/diagnose",
                 _call(service.diagnose_incident),
             ),

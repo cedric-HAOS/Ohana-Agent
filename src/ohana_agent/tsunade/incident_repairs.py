@@ -401,6 +401,7 @@ class TsunadeRepairs:
             )""",
             (now.isoformat(), legacy_deadline.isoformat()),
         ).fetchall()
+        self._expire_manual_actions_locked(now)
         for row in overdue:
             delay = (
                 datetime.fromisoformat(row["verification_deadline"])
@@ -482,6 +483,11 @@ class TsunadeRepairs:
                     candidate.diagnostic,
                     str(candidate.action.get("operation", "")),
                     str(candidate.action.get("target", "")),
+                    *(
+                        (" ".join(str(candidate.action["description"]).split()),)
+                        if candidate.kind == "manual"
+                        else ()
+                    ),
                 )
             ).encode("utf-8")
         ).hexdigest()
@@ -854,7 +860,7 @@ class TsunadeRepairs:
             None,
         )
         if repair is None:
-            return None
+            return self._manual_experience_candidate(incident)
         counted = self._connection.execute(
             "SELECT experience_id FROM tsunade_repairs WHERE repair_id=?",
             (str(repair.repair_id),),
@@ -888,6 +894,50 @@ class TsunadeRepairs:
             diagnostic=diagnostic,
             action={"operation": repair.operation, "target": repair.target},
             result=repair.result or incident.final_result or "Capacité saine",
+        )
+
+    def _manual_experience_candidate(
+        self, incident: TsunadeIncident
+    ) -> TsunadeExperienceCandidate | None:
+        """Offer to keep a manual action Shikamaru saw followed by recovery."""
+        action = next(
+            (item for item in incident.manual_actions if item.status == "confirmed"),
+            None,
+        )
+        if action is None:
+            return None
+        already_saved = self._connection.execute(
+            "SELECT 1 FROM tsunade_experiences WHERE incident_id=? LIMIT 1",
+            (str(incident.incident_id),),
+        ).fetchone()
+        if already_saved is not None:
+            return None
+        diagnostic = next(
+            (
+                event.summary
+                for event in reversed(incident.events)
+                if event.kind == "diagnostic"
+                and event.payload.get("epistemic_status")
+                in {"confirmed_by_probe", "confirmed_by_supervisor"}
+            ),
+            f"Symptôme observé : {incident.message}",
+        )
+        return TsunadeExperienceCandidate(
+            incident_id=incident.incident_id,
+            kind="manual",
+            prompt=(
+                "Cette action semble avoir participé à la résolution. "
+                "Souhaitez-vous la conserver comme piste de réparation connue ?"
+            ),
+            diagnostic=diagnostic,
+            action={"kind": "manual", "description": action.description},
+            result=action.result or incident.final_result or "Capacité saine",
+            caution=(
+                "Shikamaru a constaté le retour à l’état sain après votre action ; "
+                "cette proximité dans le temps ne prouve pas à elle seule qu’elle "
+                "en est la cause. La piste restera une note : Ohana ne l’exécutera "
+                "jamais."
+            ),
         )
 
     @staticmethod

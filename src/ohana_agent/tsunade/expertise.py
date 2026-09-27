@@ -813,7 +813,13 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
     @staticmethod
     def _experience_proposals(experiences: list[TsunadeExperience]) -> list[str]:
         return [
-            "Réparation connue validée : "
+            (
+                "Piste manuelle connue, à appliquer vous-même (Ohana ne "
+                f"l’exécute jamais) : « {experience.action.get('description')} » "
+                f"({experience.success_count} réussite(s))."
+            )
+            if experience.action.get("kind") == "manual"
+            else "Réparation connue validée : "
             f"{experience.action.get('operation')} sur "
             f"{experience.action.get('target')} "
             f"({experience.success_count} réussite(s), "

@@ -114,10 +114,35 @@ class TsunadeExperienceCandidate(AdministrationModel):
     """A repair outcome that still requires explicit human confirmation."""
 
     incident_id: UUID
+    kind: Literal["repair", "manual"] = "repair"
     prompt: str
     diagnostic: str
     action: dict[str, Any]
     result: str
+    caution: str | None = None
+
+
+class TsunadeManualResolutionRequest(AdministrationModel):
+    """What the user did by hand; a note, never an executable command."""
+
+    description: str = Field(min_length=3, max_length=500)
+    declared_by: str | None = Field(default=None, max_length=120)
+    source: ValidationSource = "vision"
+
+
+class TsunadeManualAction(AdministrationModel):
+    """A manual action declared on an incident and its Shikamaru verification."""
+
+    action_id: UUID
+    incident_id: UUID
+    description: str
+    declared_at: ParisDatetime
+    declared_by: str | None = None
+    source: ValidationSource
+    status: Literal["verifying", "confirmed", "unconfirmed"]
+    verification_deadline: ParisDatetime | None = None
+    verified_at: ParisDatetime | None = None
+    result: str | None = None
 
 
 class TsunadeIncidentEvent(AdministrationModel):
@@ -157,6 +182,7 @@ class TsunadeIncident(AdministrationModel):
     events: list[TsunadeIncidentEvent] = Field(default_factory=list)
     repairs: list[TsunadeRepair] = Field(default_factory=list)
     experience_candidate: TsunadeExperienceCandidate | None = None
+    manual_actions: list[TsunadeManualAction] = Field(default_factory=list)
     followup: dict[str, Any] | None = None
 
 

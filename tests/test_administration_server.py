@@ -788,3 +788,54 @@ def test_administration_server_lists_and_disables_known_repairs(
     finally:
         server.stop()
         incidents.close()
+
+
+def test_administration_server_records_a_manual_resolution(tmp_path: Path) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    incident = incidents.process(
+        Observation(
+            node="infra-01",
+            service="dns",
+            capability="dns.resolve",
+            status=ObservationStatus.UNHEALTHY,
+            success=False,
+            message="DNS is unhealthy",
+            source="dns.resolve",
+            timestamp=datetime.now(UTC),
+        )
+    )
+    verifications = []
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            incident_repository=incidents,
+            repair_verification_requester=verifications.append,
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        action = request_json(
+            server,
+            f"/v1/incidents/{incident.incident_id}/manual-resolution",
+            method="POST",
+            payload={"description": "Câble réseau rebranché", "source": "vision"},
+        )
+        assert action["status"] == "verifying"
+        assert [item.incident_id for item in verifications] == [incident.incident_id]
+        with pytest.raises(HTTPError) as invalid:
+            request_json(
+                server,
+                f"/v1/incidents/{incident.incident_id}/manual-resolution",
+                method="POST",
+                payload={"description": "x"},
+            )
+        assert invalid.value.code == 422
+    finally:
+        server.stop()
+        incidents.close()

@@ -18,6 +18,7 @@ from ohana_agent.tsunade.evidence_privacy import (
 )
 from ohana_agent.tsunade.followup_store import FollowupPersistence
 from ohana_agent.tsunade.incident_log_health import TsunadeLogHealthIncidents
+from ohana_agent.tsunade.incident_manual import TsunadeManualResolutions
 from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
     TsunadeIncidentEvent,
@@ -33,6 +34,7 @@ class TsunadeIncidentRepository(
     TsunadeIncidentSchema,
     TsunadeLogHealthIncidents,
     TsunadeRepairs,
+    TsunadeManualResolutions,
     TsunadeUserRequests,
     FollowupPersistence,
 ):
@@ -74,6 +76,7 @@ class TsunadeIncidentRepository(
             if severity is not None:
                 if current is not None:
                     self._verify_pending_repair(current, observation, succeeded=False)
+                    self._verify_manual_action(current, observation, succeeded=False)
                 incident = (
                     self._open(
                         observation,
@@ -87,6 +90,7 @@ class TsunadeIncidentRepository(
                 observation.status is ObservationStatus.HEALTHY and current is not None
             ):
                 self._verify_pending_repair(current, observation, succeeded=True)
+                self._verify_manual_action(current, observation, succeeded=True)
                 incident = self._resolve(current, observation)
             self._write_state(observation)
             self._mark_processed(observation.id)
@@ -627,6 +631,7 @@ class TsunadeIncidentRepository(
             ),
             events=events,
             repairs=repairs,
+            manual_actions=self._manual_actions_locked(row["incident_id"]),
         )
         if include_events:
             incident.experience_candidate = self._experience_candidate(incident)

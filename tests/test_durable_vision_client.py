@@ -138,3 +138,49 @@ def test_client_synchronizes_infrastructure_directly(tmp_path: Path) -> None:
 
     assert target.infrastructure == [infrastructure]
     client.stop()
+
+
+def test_producers_never_wait_for_the_outbox_database(tmp_path: Path) -> None:
+    """A commit stalled by a slow SD card must not freeze the Agent event loop."""
+
+    class SlowOutbox(VisionObservationOutbox):
+        def __init__(self, path: Path) -> None:
+            super().__init__(path)
+            self.writing = Event()
+            self.release = Event()
+
+        def enqueue_many(self, payloads: Any) -> None:
+            self.writing.set()
+            self.release.wait(timeout=1)
+            super().enqueue_many(payloads)
+
+    outbox = SlowOutbox(tmp_path / "outbox.db")
+    client = DurableVisionClient(FakeVisionClient(), outbox, retry_seconds=0.01)
+    client.start()
+    client.send_observation(payload())
+    assert outbox.writing.wait(timeout=1)
+
+    started = monotonic()
+    client.send_observation(payload())
+    elapsed = monotonic() - started
+
+    assert elapsed < 0.1
+    outbox.release.set()
+    deadline = monotonic() + 1.0
+    while client.pending_count and monotonic() < deadline:
+        sleep(0.01)
+    assert client.pending_count == 0
+    client.stop()
+
+
+def test_stop_persists_observations_not_yet_written(tmp_path: Path) -> None:
+    target = FakeVisionClient()
+    target.available = False
+    client = durable_client(tmp_path, target)
+    client.send_observation(payload())
+
+    client.stop()
+
+    reopened = VisionObservationOutbox(tmp_path / "outbox.db")
+    assert reopened.pending_count == 1
+    reopened.close()

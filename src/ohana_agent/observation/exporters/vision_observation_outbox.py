@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,24 +62,39 @@ class VisionObservationOutbox:
 
     def enqueue(self, payload: dict[str, Any]) -> None:
         """Persist a payload once, identified by its observation UUID."""
-        observation_id = str(payload.get("observation_id", "")).strip()
-        if not observation_id:
-            raise ValueError("Vision observation payload must contain observation_id.")
+        self.enqueue_many((payload,))
 
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+    def enqueue_many(self, payloads: Iterable[dict[str, Any]]) -> None:
+        """Persist payloads in one transaction, each once by observation UUID."""
+        rows = []
+        for payload in payloads:
+            observation_id = str(payload.get("observation_id", "")).strip()
+            if not observation_id:
+                raise ValueError(
+                    "Vision observation payload must contain observation_id."
+                )
+            rows.append(
+                (
+                    observation_id,
+                    json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    datetime.now(UTC).isoformat(),
+                )
+            )
+        if not rows:
+            return
         with self._lock:
-            self._connection.execute(
+            self._connection.executemany(
                 """
                 INSERT OR IGNORE INTO observation_outbox (
                     observation_id, payload_json, enqueued_at
                 ) VALUES (?, ?, ?)
                 """,
-                (observation_id, serialized, datetime.now(UTC).isoformat()),
+                rows,
             )
             removed = self._connection.execute(
                 """
@@ -162,7 +178,10 @@ class VisionObservationOutbox:
 
     def _initialize_database(self) -> None:
         self._connection.execute("PRAGMA journal_mode=WAL")
-        self._connection.execute("PRAGMA synchronous=FULL")
+        # FULL cost two fsyncs per observation; on INFRA-01's SD card each
+        # write averaged 284 ms and stalled the Agent and Vision for seconds.
+        # NORMAL only risks the last commits on power loss, not corruption.
+        self._connection.execute("PRAGMA synchronous=NORMAL")
         self._connection.execute("PRAGMA busy_timeout=5000")
         version = int(self._connection.execute("PRAGMA user_version").fetchone()[0])
         if version > self._SCHEMA_VERSION:

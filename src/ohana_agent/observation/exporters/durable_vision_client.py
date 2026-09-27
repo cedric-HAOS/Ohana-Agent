@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from threading import Event, Lock, Thread
 from typing import Any
 
@@ -35,11 +36,16 @@ class DurableVisionClient:
         self._wake_event = Event()
         self._flush_lock = Lock()
         self._worker: Thread | None = None
+        # Producers run on the Agent event loop: they never touch SQLite, whose
+        # commits can wait seconds on a slow SD card.
+        self._incoming: deque[dict[str, Any]] = deque()
+        self._incoming_lock = Lock()
 
     @property
     def pending_count(self) -> int:
-        """Return the current durable backlog size."""
-        return self.outbox.pending_count
+        """Return the current backlog size, persisted or not yet."""
+        with self._incoming_lock:
+            return len(self._incoming) + self.outbox.pending_count
 
     def start(self) -> None:
         """Start the background retry worker."""
@@ -62,11 +68,14 @@ class DurableVisionClient:
         if self._worker is not None:
             self._worker.join()
             self._worker = None
+        self._persist_incoming()
         self.outbox.close()
 
     def send_observation(self, payload: dict[str, Any]) -> None:
-        """Persist an observation and wake the asynchronous delivery worker."""
-        self.outbox.enqueue(payload)
+        """Queue an observation and wake the worker that persists and sends it."""
+        if not str(payload.get("observation_id", "")).strip():
+            raise ValueError("Vision observation payload must contain observation_id.")
+        self._incoming.append(payload)
         self._wake_event.set()
 
     def send_infrastructure(self, payload: dict[str, Any]) -> None:
@@ -77,6 +86,7 @@ class DurableVisionClient:
         """Deliver queued observations in order until Vision becomes unavailable."""
         delivered = 0
         with self._flush_lock:
+            self._persist_incoming()
             while not self._stop_event.is_set():
                 entry = self.outbox.oldest()
                 if entry is None:
@@ -97,6 +107,14 @@ class DurableVisionClient:
                 delivered += 1
 
         return delivered
+
+    def _persist_incoming(self) -> None:
+        with self._incoming_lock:
+            batch = list(self._incoming)
+            self.outbox.enqueue_many(batch)
+            # Appends made meanwhile stay queued for the next pass.
+            for _ in batch:
+                self._incoming.popleft()
 
     def _run(self) -> None:
         while not self._stop_event.is_set():

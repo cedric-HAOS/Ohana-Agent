@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.37.0] — 2026-09-27 — Incidents de journaux significatifs et DNS
+
 - DNS du réseau : dnsmasq répondait `infra-01.ohana.lan → 127.0.1.1` à tous
   les clients. `expand-hosts` publiait la ligne `127.0.1.1 infra-01` que
   cloud-init écrit dans `/etc/hosts`. teleinfo2mqtt envoyait donc ses trames

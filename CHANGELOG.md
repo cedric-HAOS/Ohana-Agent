@@ -2,6 +2,45 @@
 
 ## Non publié
 
+- DNS du réseau : dnsmasq répondait `infra-01.ohana.lan → 127.0.1.1` à tous
+  les clients. `expand-hosts` publiait la ligne `127.0.1.1 infra-01` que
+  cloud-init écrit dans `/etc/hosts`. teleinfo2mqtt envoyait donc ses trames
+  sur sa propre boucle locale : 2 764 `ECONNREFUSED` par jour sur LINKY-01.
+  La configuration ajoute `no-hosts` et
+  `interface-name=infra-01.ohana.lan,eth0/4` (adresse IPv4 réelle de
+  l'interface). Un fichier écrit par un Agent plus ancien est mis à niveau au
+  démarrage, validé par dnsmasq et rechargé ; en cas de refus, l'ancien
+  fichier est rétabli.
+- Écritures disque hors de la boucle de l'Agent : la file d'envoi vers Vision
+  est alimentée en mémoire, et son thread écrit dans SQLite par lots, en
+  `synchronous=NORMAL` au lieu de `FULL`. La base des jobs passe aussi en
+  `WAL` et `NORMAL`, comme Tsunade qui partage le fichier. Sur la carte SD
+  d'INFRA-01 (284 ms par écriture en moyenne), chaque cycle Z-Wave (une
+  vingtaine d'observations) forçait des dizaines d'écritures. L'Agent se
+  figeait jusqu'à 20 s, et Vision paraissait injoignable toutes les
+  4 minutes (« Unable to deliver observation … Timed out »).
+- Rafraîchissement de l'infrastructure dans Vision : un échec ne coupe plus
+  la surveillance. L'Agent arrêtait tout son ordonnanceur jusqu'au succès
+  suivant, puis écrivait « Ohana-Agent started. » sans avoir redémarré. Les
+  observations continuent (Vision les accepte sans l'infrastructure, et la
+  file les garde dans l'ordre), et le rafraîchissement est retenté au bout du
+  délai de reprise.
+- Incidents de journaux : seules les erreurs et les avertissements répétés au
+  moins 100 fois en 24 h ouvrent ou maintiennent un incident `logs.health`.
+  Le reste figure dans l'incident comme bruit de fond non compté. Les quatre
+  incidents ouverts depuis août ne pouvaient pas se fermer, car une journée
+  sans aucune ligne suspecte n'arrive jamais. Une collecte partielle sans
+  anomalie significative résout désormais l'incident, avec la mention
+  « Collecte partielle ». L'expertise IA ne reçoit plus les anomalies
+  acceptées ; ses règles d'escalade sont inchangées.
+- Anomalies acceptées comme connues : `GET`/`POST /v1/incidents/logs/accepted`
+  et `POST /v1/incidents/logs/accepted/revoke`. Une signature acceptée ne
+  compte plus, et l'incident qu'elle seule maintenait est résolu aussitôt.
+- Capteurs hôte Home Assistant : une mesure absente est publiée `None`, la
+  seule valeur que Home Assistant traduit en « inconnu ». `'unknown'`
+  provoquait une `ValueError` sur `sensor.ohana_host_utilisation_cpu` à chaque
+  démarrage de l'Agent.
+
 - Assistant de réparation non installé : l'Agent n'attend plus 15 secondes
   son résultat (`LoadState=not-found`). Sur un runner Linux de la CI,
   `systemctl` existe sans assistant Ohana, et deux tests HTTP expiraient

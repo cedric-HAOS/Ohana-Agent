@@ -500,6 +500,10 @@ def _administration_routes(
             _route("/v1/jobs/workers", _call(service.list_workers)),
             _route("/v1/jobs/wake-on-lan", _call(service.read_wake_on_lan)),
             _route("/v1/incidents/logs", _call(service.read_log_analysis)),
+            _route(
+                "/v1/incidents/logs/accepted",
+                _call(service.list_accepted_log_signatures),
+            ),
             _route("/v1/jobs/workers/pairings", _call(service.list_worker_pairings)),
             _route("/v1/pairings/companions", _call(service.list_companion_pairings)),
             _route("/v1/companions", _call(service.list_companion_devices)),
@@ -550,6 +554,14 @@ def _administration_routes(
             _route(
                 "/v1/incidents/logs/check",
                 _call(service.request_log_health_check),
+            ),
+            _route(
+                "/v1/incidents/logs/accepted",
+                _call_with_body(service.accept_log_signature),
+            ),
+            _route(
+                "/v1/incidents/logs/accepted/revoke",
+                _call_with_body(service.revoke_log_signature),
             ),
             _route(
                 "/v1/incidents/{incident_id}/logs/investigate",

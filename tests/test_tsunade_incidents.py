@@ -5,8 +5,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
-
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
@@ -269,53 +267,108 @@ def test_log_health_synthesis_opens_updates_and_resolves_one_incident(
         repository.close()
 
 
-@pytest.mark.parametrize("truncated", [True, None, "false"])
-def test_incomplete_empty_logs_do_not_resolve_existing_incident_after_restart(
-    tmp_path, truncated
-):
+def _log_result(source: str, findings: list, *, truncated=False) -> dict:
+    return {
+        "sources": [
+            {
+                "source": source,
+                "status": "KO" if findings else "OK",
+                "findings": findings,
+                "truncated": truncated,
+            }
+        ]
+    }
+
+
+def _finding(signature: str, severity: str, occurrences: int) -> dict:
+    return {
+        "source": "ha-01",
+        "signature": signature,
+        "summary": signature,
+        "severity": severity,
+        "occurrences": occurrences,
+    }
+
+
+def test_partial_collection_without_significant_anomaly_resolves(tmp_path):
+    """A daily truncated source (ZWAVE-01) must not keep an incident forever."""
+    repository = TsunadeIncidentRepository(tmp_path / "incidents.db")
+    try:
+        finding = _finding("known error", "error", 3)
+        incident_id = repository.record_log_health(
+            uuid4(), _log_result("ha-01", [finding])
+        )[0]
+
+        repository.record_log_health(uuid4(), _log_result("ha-01", [], truncated=True))
+
+        resolved = repository.get(incident_id)
+        assert resolved.state == "resolved"
+        assert "Collecte partielle" in (resolved.final_result or "")
+    finally:
+        repository.close()
+
+
+def test_only_errors_and_frequent_warnings_open_a_log_incident(tmp_path):
+    repository = TsunadeIncidentRepository(tmp_path / "incidents.db")
+    try:
+        routine = [_finding("reconnecting", "warning", 99)]
+        assert (
+            repository.record_log_health(uuid4(), _log_result("ha-01", routine)) == []
+        )
+
+        frequent = [_finding("connection refused", "warning", 100)]
+        incident_id = repository.record_log_health(
+            uuid4(), _log_result("ha-01", [*routine, *frequent])
+        )[0]
+        incident = repository.get(incident_id)
+        assert [item["signature"] for item in incident.context["findings"]] == [
+            "connection refused"
+        ]
+        assert [
+            item["signature"] for item in incident.context["background_findings"]
+        ] == ["reconnecting"]
+        assert "1 anomalie(s) significative(s)" in incident.message
+
+        repository.record_log_health(uuid4(), _log_result("ha-01", routine))
+        assert repository.get(incident_id).state == "resolved"
+    finally:
+        repository.close()
+
+
+def test_accepted_signature_resolves_the_incident_it_alone_kept_open(tmp_path):
     path = tmp_path / "incidents.db"
     repository = TsunadeIncidentRepository(path)
-    finding = {"source": "ha-01", "signature": "known error", "occurrences": 3}
-    incident_id = repository.record_log_health(
-        uuid4(),
-        {
-            "sources": [
-                {
-                    "source": "ha-01",
-                    "status": "KO",
-                    "findings": [finding],
-                    "truncated": False,
-                }
-            ]
-        },
-    )[0]
-    repository.close()
+    try:
+        tapo = _finding("tapo max retries", "error", 266)
+        kasa = _finding("kasa error querying", "error", 143)
+        incident_id = repository.record_log_health(
+            uuid4(), _log_result("ha-01", [tapo, kasa])
+        )[0]
+
+        repository.accept_log_signature("ha-01", "tapo max retries")
+        incident = repository.get(incident_id)
+        assert incident.state == "active"
+        assert [item["signature"] for item in incident.context["findings"]] == [
+            "kasa error querying"
+        ]
+
+        repository.accept_log_signature("ha-01", "kasa error querying")
+        resolved = repository.get(incident_id)
+        assert resolved.state == "resolved"
+        assert "acceptées comme connues" in (resolved.final_result or "")
+        assert {item["signature"] for item in repository.accepted_log_signatures()} == {
+            "tapo max retries",
+            "kasa error querying",
+        }
+    finally:
+        repository.close()
+
     repository = TsunadeIncidentRepository(path)
     try:
-        job = uuid4()
-        result = {
-            "sources": [
-                {
-                    "source": "ha-01",
-                    "status": "OK",
-                    "findings": [],
-                    "truncated": truncated,
-                }
-            ]
-        }
-        assert repository.record_log_health(job, result) == [incident_id]
-        before = repository.get(incident_id)
-        assert before.state == "active"
-        assert before.context["findings"] == []
-        assert before.context["historical_findings"] == [finding]
-        assert "résolution non vérifiée" in before.message
-        repository.record_log_health(job, result)
-        assert len(repository.get(incident_id).events) == len(before.events)
-        repository.record_log_health(uuid4(), result)
-        assert repository.get(incident_id).context["historical_findings"] == [finding]
-        result["sources"][0]["truncated"] = False
-        repository.record_log_health(uuid4(), result)
-        assert repository.get(incident_id).state == "resolved"
+        # Accepted noise never reopens; revoking counts it again.
+        assert repository.record_log_health(uuid4(), _log_result("ha-01", [tapo])) == []
+        assert repository.revoke_log_signature("ha-01", "tapo max retries") is True
+        assert repository.record_log_health(uuid4(), _log_result("ha-01", [tapo]))
     finally:
         repository.close()
 

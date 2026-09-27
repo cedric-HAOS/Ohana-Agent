@@ -41,8 +41,8 @@ def test_correlation_replay_survives_restart_and_preserves_new_information(tmp_p
                             "category": "network",
                             "severity": "warning",
                             "trend": "known",
-                            "occurrences": 87,
-                            "reference_occurrences": 86,
+                            "occurrences": 187,
+                            "reference_occurrences": 186,
                         }
                     ],
                 }

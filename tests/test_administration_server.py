@@ -700,3 +700,57 @@ def test_access_log_keeps_successful_requests_out_of_the_journal(
     assert access[0].levelno == logging.INFO
     assert '"GET /v1/capabilities" 401' in messages[0]
     assert "query-secret" not in caplog.text
+
+
+def test_administration_server_accepts_and_revokes_log_signatures(
+    tmp_path: Path,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            incident_repository=incidents,
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        signature = {"source": "ha-01", "signature": "tapo max retries"}
+        accepted = request_json(
+            server, "/v1/incidents/logs/accepted", method="POST", payload=signature
+        )
+        assert [item["signature"] for item in accepted["signatures"]] == [  # type: ignore[union-attr]
+            "tapo max retries"
+        ]
+        assert request_json(server, "/v1/incidents/logs/accepted")["signatures"]
+        with pytest.raises(HTTPError) as invalid:
+            request_json(
+                server,
+                "/v1/incidents/logs/accepted",
+                method="POST",
+                payload={"source": "elsewhere", "signature": "x"},
+            )
+        assert invalid.value.code == 422
+        revoked = request_json(
+            server,
+            "/v1/incidents/logs/accepted/revoke",
+            method="POST",
+            payload=signature,
+        )
+        assert revoked["signatures"] == []
+        with pytest.raises(HTTPError) as missing:
+            request_json(
+                server,
+                "/v1/incidents/logs/accepted/revoke",
+                method="POST",
+                payload=signature,
+            )
+        assert missing.value.code == 404
+    finally:
+        server.stop()
+        incidents.close()

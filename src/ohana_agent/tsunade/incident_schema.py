@@ -121,6 +121,13 @@ class TsunadeIncidentSchema:
             );
             CREATE INDEX IF NOT EXISTS tsunade_experiences_capability
             ON tsunade_experiences(equipment_id, capability_id, last_used_at);
+            CREATE TABLE IF NOT EXISTS tsunade_accepted_log_signatures (
+                source TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                accepted_at TEXT NOT NULL,
+                PRIMARY KEY(source, signature)
+            );
             """
         )
         repair_columns = {

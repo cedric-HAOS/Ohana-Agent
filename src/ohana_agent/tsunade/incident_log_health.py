@@ -38,6 +38,21 @@ def log_check_summary(result: dict[str, Any]) -> str:
     return f"Contrôle des journaux par Katsuyu terminé : {outcome}"
 
 
+# A warning repeated this often in 24 h is a symptom, not noise: the DNS
+# fault on LINKY-01 (2 764 refusals a day) only ever logged warnings.
+LOG_WARNING_VOLUME = 100
+
+
+def is_significant_log_finding(finding: dict[str, Any]) -> bool:
+    """Errors and high-volume warnings justify an incident; the rest is reported."""
+    if finding.get("severity") in {"error", "critical"}:
+        return True
+    try:
+        return int(finding.get("occurrences") or 0) >= LOG_WARNING_VOLUME
+    except (TypeError, ValueError):
+        return False
+
+
 class TsunadeLogHealthIncidents:
     """Incidents opened and resolved from Katsuyu log health reviews."""
 
@@ -115,25 +130,24 @@ class TsunadeLogHealthIncidents:
                 ):
                     affected.append(current.incident_id)
                     continue
-                findings = source.get("findings", [])
-                if source.get("status") == "OK":
-                    if source.get("truncated") is False:
-                        if current is not None:
-                            self._resolve_log_incident(current, job_id, now, source)
-                        continue
-                    if current is None:
-                        # Missing coverage does not establish a new service fault.
-                        continue
-                    source["historical_findings"] = current.context.get(
-                        "findings"
-                    ) or current.context.get("historical_findings", [])
+                findings = source.get("findings") or []
+                split = self._split_log_findings(source_id, findings)
+                source = {**source, **split}
+                significant = split["findings"]
+                collection_failed = source.get("status") != "OK" and not findings
+                if not significant and not collection_failed:
+                    if current is not None:
+                        self._resolve_log_incident(current, job_id, now, source)
+                    continue
                 severity = "degraded"
                 message = (
-                    f"{source_id} : collecte incomplète ; résolution non vérifiée"
-                    if source.get("status") == "OK"
-                    else f"{source_id} : {len(findings)} anomalie(s) "
-                    "de journaux regroupée(s)"
+                    f"{source_id} : collecte des journaux sans résultat exploitable"
+                    if collection_failed
+                    else f"{source_id} : {len(significant)} anomalie(s) "
+                    "significative(s) dans les journaux"
                 )
+                if source.get("truncated") is True:
+                    message += " (collecte incomplète)"
                 if current is None:
                     recurrence = int(
                         self._connection.execute(
@@ -211,6 +225,121 @@ class TsunadeLogHealthIncidents:
             },
         )
 
+    def _split_log_findings(
+        self, source_id: str, findings: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Separate what justifies an incident from routine and accepted noise."""
+        accepted = {
+            row[0]
+            for row in self._connection.execute(
+                "SELECT signature FROM tsunade_accepted_log_signatures WHERE source=?",
+                (source_id,),
+            )
+        }
+        split: dict[str, list[dict[str, Any]]] = {
+            "findings": [],
+            "background_findings": [],
+            "accepted_findings": [],
+        }
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            if finding.get("signature") in accepted:
+                split["accepted_findings"].append(finding)
+            elif is_significant_log_finding(finding):
+                split["findings"].append(finding)
+            else:
+                split["background_findings"].append(finding)
+        return split
+
+    def accepted_log_signatures(self) -> list[dict[str, str]]:
+        """Return the signatures the user accepted as known noise."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT source, signature, summary, accepted_at
+                FROM tsunade_accepted_log_signatures ORDER BY source, accepted_at"""
+            ).fetchall()
+        return [
+            {
+                "source": row[0],
+                "signature": row[1],
+                "summary": row[2],
+                "accepted_at": row[3],
+            }
+            for row in rows
+        ]
+
+    def accept_log_signature(self, source: str, signature: str) -> None:
+        """Stop counting one anomaly signature; resolve what it alone kept open."""
+        now = paris_now()
+        with self._lock, self._connection:
+            key = (
+                source,
+                "system-journal" if source == "infra-01" else "home-assistant",
+                "logs.health",
+            )
+            current = self._active(key)
+            known = (
+                [
+                    *current.context.get("findings", []),
+                    *current.context.get("background_findings", []),
+                    *current.context.get("accepted_findings", []),
+                ]
+                if current is not None
+                else []
+            )
+            summary = next(
+                (
+                    str(item.get("summary") or signature)
+                    for item in known
+                    if isinstance(item, dict) and item.get("signature") == signature
+                ),
+                signature,
+            )
+            self._connection.execute(
+                """INSERT OR REPLACE INTO tsunade_accepted_log_signatures
+                (source, signature, summary, accepted_at) VALUES (?,?,?,?)""",
+                (source, signature, summary[:500], now.isoformat()),
+            )
+            if current is None:
+                return
+            context = {**current.context, **self._split_log_findings(source, known)}
+            if not context["findings"]:
+                self._resolve_log_incident(
+                    current, current.last_observation_id, now, context
+                )
+                return
+            message = (
+                f"{source} : {len(context['findings'])} anomalie(s) "
+                "significative(s) dans les journaux"
+            )
+            self._connection.execute(
+                "UPDATE tsunade_incidents SET context_json=?,message=? "
+                "WHERE incident_id=?",
+                (
+                    json.dumps(context, ensure_ascii=False, default=str),
+                    message,
+                    str(current.incident_id),
+                ),
+            )
+            self._event(
+                current.incident_id,
+                kind="investigation",
+                occurred_at=now,
+                summary=f"Anomalie acceptée comme connue : {summary[:200]}",
+                payload={"accepted_signature": signature},
+            )
+
+    def revoke_log_signature(self, source: str, signature: str) -> bool:
+        """Count one accepted signature again from the next review."""
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM tsunade_accepted_log_signatures "
+                "WHERE source=? AND signature=?",
+                (source, signature),
+            )
+        return cursor.rowcount > 0
+
     def reviewed_log_findings(self, incident_id: UUID | str) -> set[str]:
         """Read durable evidence markers beyond the bounded display history."""
         with self._lock:
@@ -245,6 +374,10 @@ class TsunadeLogHealthIncidents:
         result = (
             "Katsuyu n’a trouvé aucune anomalie significative dans la période analysée."
         )
+        if source.get("accepted_findings"):
+            result += " Les anomalies restantes sont acceptées comme connues."
+        if source.get("truncated") is True:
+            result += " Collecte partielle : la partie analysée est saine."
         self._connection.execute(
             """UPDATE tsunade_incidents SET ended_at=?,last_observed_at=?,
             last_observation_id=?,message=?,final_result=? WHERE incident_id=?""",

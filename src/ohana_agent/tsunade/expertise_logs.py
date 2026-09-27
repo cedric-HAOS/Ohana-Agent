@@ -105,6 +105,16 @@ class TsunadeLogExpertise:
         )
         if source is None:
             return
+        if "accepted_findings" in incident.context:
+            # Accepted noise stays in the report, never in the analysis; the
+            # escalation rules keep seeing routine anomalies as before.
+            source = {
+                **source,
+                "findings": [
+                    *incident.context.get("findings", []),
+                    *incident.context.get("background_findings", []),
+                ],
+            }
         evidence = {
             **source,
             **{

@@ -1027,6 +1027,42 @@ class AdministrationService:
 
         return self.read_log_analysis()
 
+    def list_accepted_log_signatures(self) -> object:
+        """List log anomalies the user accepted as known noise."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        return {
+            "schema_version": 1,
+            "signatures": self.incident_repository.accepted_log_signatures(),
+        }
+
+    def accept_log_signature(self, payload: dict[str, Any]) -> object:
+        """Stop counting one known log anomaly in Tsunade incidents."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        source, signature = self._log_signature_payload(payload)
+        self.incident_repository.accept_log_signature(source, signature)
+        return self.list_accepted_log_signatures()
+
+    def revoke_log_signature(self, payload: dict[str, Any]) -> object:
+        """Count one accepted log anomaly again from the next review."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        source, signature = self._log_signature_payload(payload)
+        if not self.incident_repository.revoke_log_signature(source, signature):
+            raise LookupError("Signature acceptée introuvable")
+        return self.list_accepted_log_signatures()
+
+    @staticmethod
+    def _log_signature_payload(payload: dict[str, Any]) -> tuple[str, str]:
+        source = payload.get("source")
+        signature = payload.get("signature")
+        if source not in {"infra-01", "ha-01", "linky-01", "zwave-01"}:
+            raise ValueError("Source de journaux inconnue")
+        if not isinstance(signature, str) or not 0 < len(signature) <= 1000:
+            raise ValueError("Signature d’anomalie invalide")
+        return source, signature
+
     def request_log_investigation(
         self, incident_id: str, payload: dict[str, Any]
     ) -> object:

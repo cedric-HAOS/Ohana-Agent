@@ -543,8 +543,7 @@ def test_publisher_announces_discovery_summary_and_availability() -> None:
         if topic == "homeassistant/sensor/ohana_host_cpu_usage/config"
     )
     assert host_cpu_discovery["value_template"] == (
-        "{{ value_json.cpu_percent if value_json.cpu_percent is not none "
-        "else 'unknown' }}"
+        "{{ value_json.cpu_percent if value_json.cpu_percent is not none else 'None' }}"
     )
     host_payload = next(
         json.loads(payload)

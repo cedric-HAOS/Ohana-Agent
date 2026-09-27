@@ -601,9 +601,11 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         ) -> tuple[str, str, dict[str, Any]]:
             value_template = f"{{{{ value_json.{field} }}}}"
             if nullable:
+                # Home Assistant only maps "None" to unknown; "unknown" reached
+                # measurement sensors as a value and raised a ValueError.
                 value_template = (
                     f"{{{{ value_json.{field} if value_json.{field} is not none "
-                    f"else 'unknown' }}}}"
+                    f"else 'None' }}}}"
                 )
             return (
                 "sensor",

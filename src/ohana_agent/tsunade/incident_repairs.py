@@ -18,6 +18,7 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeExperience,
     TsunadeExperienceCandidate,
     TsunadeExperienceConfirmationRequest,
+    TsunadeExperienceStateRequest,
     TsunadeIncident,
     TsunadeRepair,
     TsunadeRepairAuthorizationRequest,
@@ -59,6 +60,10 @@ def observes_repaired_service(
         None,
         incident.node_id,
     )
+
+
+def _optional_datetime(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 class TsunadeRepairs:
@@ -233,6 +238,7 @@ class TsunadeRepairs:
             if row["authorized_at"] is None or row["status"] != "authorized":
                 raise ValueError("La réparation n’est pas autorisée")
             delay = self._verification_seconds_locked(row["incident_id"])
+            self._count_experience_attempt_locked(row, now)
             self._connection.execute(
                 """UPDATE tsunade_repairs SET status='verifying',executed_at=?,
                 verification_deadline=? WHERE repair_id=?""",
@@ -289,6 +295,10 @@ class TsunadeRepairs:
         detail = redact_sensitive_text(str(error))[:1000]
         with self._lock, self._connection:
             row = self._required_repair(repair_id)
+            if row["experience_id"] is None:
+                self._count_experience_attempt_locked(row, now)
+                row = self._required_repair(repair_id)
+            self._count_experience_outcome_locked(row, now, succeeded=False)
             self._connection.execute(
                 """UPDATE tsunade_repairs SET status='failed',executed_at=?,
                 verified_at=?,result=? WHERE repair_id=?""",
@@ -482,8 +492,9 @@ class TsunadeRepairs:
                     symptoms_json,context_json,observations_json,anomalies_json,
                     validated_diagnostic,action_json,result,occurrence_count,
                     success_count,failure_count,last_used_at,confidence,confirmed_by,
-                    confirmation_source,incident_id)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,1,0,?,1,?,?,?)""",
+                    confirmation_source,incident_id,attempt_count,
+                    last_success_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,1,0,?,1,?,?,?,1,?)""",
                     (
                         str(experience_id),
                         signature,
@@ -500,6 +511,7 @@ class TsunadeRepairs:
                         request.confirmed_by,
                         request.source,
                         str(incident.incident_id),
+                        now.isoformat(),
                     ),
                 )
             else:
@@ -507,10 +519,13 @@ class TsunadeRepairs:
                 self._connection.execute(
                     """UPDATE tsunade_experiences
                     SET occurrence_count=occurrence_count+1,
-                    success_count=success_count+1,last_used_at=?,confidence=1,
+                    attempt_count=attempt_count+1,
+                    success_count=success_count+1,last_used_at=?,
+                    last_success_at=?,confidence=1,
                     confirmed_by=?,confirmation_source=?,incident_id=?
                     WHERE signature=?""",
                     (
+                        now.isoformat(),
                         now.isoformat(),
                         request.confirmed_by,
                         request.source,
@@ -545,10 +560,93 @@ class TsunadeRepairs:
         with self._lock:
             rows = self._connection.execute(
                 """SELECT * FROM tsunade_experiences WHERE equipment_id=?
-                AND capability_id=? ORDER BY julianday(last_used_at) DESC LIMIT 5""",
+                AND capability_id=? AND state='active'
+                ORDER BY julianday(last_used_at) DESC LIMIT 5""",
                 (incident.equipment_id, incident.capability_id),
             ).fetchall()
         return [self._experience(row) for row in rows]
+
+    def list_experiences(self) -> list[TsunadeExperience]:
+        """Return every known repair, active ones first."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT * FROM tsunade_experiences
+                ORDER BY state<>'active', julianday(last_used_at) DESC"""
+            ).fetchall()
+        return [self._experience(row) for row in rows]
+
+    def set_experience_state(
+        self, experience_id: UUID | str, payload: dict[str, Any]
+    ) -> TsunadeExperience:
+        """Disable, retire or reactivate a known repair; history is kept."""
+        request = TsunadeExperienceStateRequest.model_validate(payload)
+        now = paris_now()
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """UPDATE tsunade_experiences SET state=?,state_changed_at=?,
+                state_reason=? WHERE experience_id=?""",
+                (
+                    request.state,
+                    now.isoformat(),
+                    redact_sensitive_text(request.reason) if request.reason else None,
+                    str(experience_id),
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise LookupError("Réparation connue introuvable")
+            row = self._connection.execute(
+                "SELECT * FROM tsunade_experiences WHERE experience_id=?",
+                (str(experience_id),),
+            ).fetchone()
+        return self._experience(row)
+
+    def _count_experience_attempt_locked(
+        self, repair: sqlite3.Row, now: datetime
+    ) -> None:
+        """Count an execution against the active known repair it reproduces."""
+        incident = self._connection.execute(
+            "SELECT equipment_id,capability_id FROM tsunade_incidents "
+            "WHERE incident_id=?",
+            (repair["incident_id"],),
+        ).fetchone()
+        if incident is None:
+            return
+        experience = self._connection.execute(
+            """SELECT experience_id FROM tsunade_experiences
+            WHERE equipment_id=? AND capability_id=? AND state='active'
+            AND json_extract(action_json,'$.operation')=?
+            AND json_extract(action_json,'$.target')=?
+            ORDER BY julianday(last_used_at) DESC LIMIT 1""",
+            (
+                incident["equipment_id"],
+                incident["capability_id"],
+                repair["operation"],
+                repair["target"],
+            ),
+        ).fetchone()
+        if experience is None:
+            return
+        self._connection.execute(
+            """UPDATE tsunade_experiences SET attempt_count=attempt_count+1,
+            last_used_at=? WHERE experience_id=?""",
+            (now.isoformat(), experience["experience_id"]),
+        )
+        self._connection.execute(
+            "UPDATE tsunade_repairs SET experience_id=? WHERE repair_id=?",
+            (experience["experience_id"], repair["repair_id"]),
+        )
+
+    def _count_experience_outcome_locked(
+        self, repair: sqlite3.Row, at: datetime, *, succeeded: bool
+    ) -> None:
+        if repair["experience_id"] is None:
+            return
+        column = "success" if succeeded else "failure"
+        self._connection.execute(
+            f"""UPDATE tsunade_experiences SET {column}_count={column}_count+1,
+            last_{column}_at=? WHERE experience_id=?""",
+            (at.isoformat(), repair["experience_id"]),
+        )
 
     def _verify_pending_repair(
         self,
@@ -576,6 +674,11 @@ class TsunadeRepairs:
             "Shikamaru confirme que la capacité est redevenue saine."
             if succeeded
             else "Shikamaru observe encore une capacité dégradée après la réparation."
+        )
+        self._count_experience_outcome_locked(
+            row,
+            datetime.fromisoformat(paris_iso(observation.timestamp)),
+            succeeded=succeeded,
         )
         self._connection.execute(
             """UPDATE tsunade_repairs SET status=?,verified_at=?,result=?
@@ -670,6 +773,12 @@ class TsunadeRepairs:
         )
         if repair is None:
             return None
+        counted = self._connection.execute(
+            "SELECT experience_id FROM tsunade_repairs WHERE repair_id=?",
+            (str(repair.repair_id),),
+        ).fetchone()
+        if counted is not None and counted["experience_id"] is not None:
+            return None
         already_saved = self._connection.execute(
             "SELECT 1 FROM tsunade_experiences WHERE incident_id=? LIMIT 1",
             (str(incident.incident_id),),
@@ -707,10 +816,16 @@ class TsunadeRepairs:
             equipment_id=row["equipment_id"],
             capability_id=row["capability_id"],
             occurrence_count=int(row["occurrence_count"]),
+            attempt_count=int(row["attempt_count"]),
             success_count=int(row["success_count"]),
             failure_count=int(row["failure_count"]),
             last_used_at=datetime.fromisoformat(row["last_used_at"]),
+            last_success_at=_optional_datetime(row["last_success_at"]),
+            last_failure_at=_optional_datetime(row["last_failure_at"]),
             confidence=float(row["confidence"]),
+            state=row["state"],
+            state_changed_at=_optional_datetime(row["state_changed_at"]),
+            state_reason=row["state_reason"],
             symptoms=redact_sensitive_value(json.loads(row["symptoms_json"])),
             context=redact_sensitive_value(json.loads(row["context_json"])),
             observations=redact_sensitive_value(json.loads(row["observations_json"])),

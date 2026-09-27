@@ -514,6 +514,7 @@ def _administration_routes(
             ),
             _route("/v1/incidents/all", _call(partial(service.list_incidents, "all"))),
             _route("/v1/investigations", _call(service.list_investigations)),
+            _route("/v1/experiences", _call(service.list_experiences)),
             _route("/v1/plugins/{identifier}", _call(service.read_plugin)),
             _route("/v1/jobs/{job_id}", _call(service.read_job)),
             _route("/v1/incidents/{incident_id}", _call(service.read_incident)),
@@ -586,6 +587,10 @@ def _administration_routes(
             _route(
                 "/v1/incidents/{incident_id}/experience",
                 _call_with_body(service.confirm_incident_experience),
+            ),
+            _route(
+                "/v1/experiences/{experience_id}/state",
+                _call_with_body(service.set_experience_state),
             ),
             _route(
                 "/v1/incidents/{incident_id}/diagnose",

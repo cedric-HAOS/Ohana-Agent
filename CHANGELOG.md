@@ -2,6 +2,20 @@
 
 ## Non publié
 
+- Mémoire opérationnelle (Phase 3) : chaque exécution d'une réparation
+  connue compte comme une tentative. Sa réussite ou son échec est enregistré
+  après la vérification de Shikamaru ou l'échec d'exécution, avec la date de
+  la dernière réussite et du dernier échec. Jusqu'ici, seul l'enregistrement
+  par l'utilisateur comptait, toujours comme une réussite, et les échecs
+  n'étaient jamais comptés. Une réparation déjà connue et comptée
+  automatiquement ne demande plus à être enregistrée à nouveau. Les
+  expériences existantes reprennent leur historique : tentatives = réussites,
+  dernière réussite = dernière utilisation.
+- Une réparation connue peut être désactivée, rendue obsolète ou réactivée
+  (`GET /v1/experiences`, `POST /v1/experiences/{id}/state`). Désactivée ou
+  obsolète, elle n'est plus proposée ni comptée, et son historique est
+  conservé. Le compteur de réparations connues ne compte que les actives.
+
 ## [1.37.0] — 2026-09-27 — Incidents de journaux significatifs et DNS
 
 - DNS du réseau : dnsmasq répondait `infra-01.ohana.lan → 127.0.1.1` à tous

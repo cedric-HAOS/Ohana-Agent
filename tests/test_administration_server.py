@@ -754,3 +754,37 @@ def test_administration_server_accepts_and_revokes_log_signatures(
     finally:
         server.stop()
         incidents.close()
+
+
+def test_administration_server_lists_and_disables_known_repairs(
+    tmp_path: Path,
+) -> None:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    server = AdministrationHTTPServer(
+        service=AdministrationService(
+            infrastructure_repository=InfrastructureConfigurationRepository(
+                infrastructure_path
+            ),
+            incident_repository=incidents,
+        ),
+        token="test-secret",
+        port=0,
+    )
+    server.start()
+    try:
+        assert request_json(server, "/v1/experiences")["experiences"] == []
+        with pytest.raises(HTTPError) as missing:
+            request_json(
+                server,
+                "/v1/experiences/11111111-1111-4111-8111-111111111111/state",
+                method="POST",
+                payload={"state": "disabled"},
+            )
+        assert missing.value.code == 404
+        capabilities = request_json(server, "/v1/capabilities")
+        assert "incidents.experiences.state" in capabilities["operations"]  # type: ignore[operator]
+    finally:
+        server.stop()
+        incidents.close()

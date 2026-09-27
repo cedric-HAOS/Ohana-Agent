@@ -301,6 +301,8 @@ class AdministrationService:
                     "incidents.read",
                     "incidents.records.write",
                     "incidents.experiences.confirm",
+                    "incidents.experiences.read",
+                    "incidents.experiences.state",
                 ]
             )
             if self.dhcp_repository is not None:
@@ -921,6 +923,26 @@ class AdministrationService:
         if self.incident_repository is None:
             raise LookupError("La mémoire des diagnostics est indisponible")
         return self.incident_repository.confirm_experience(incident_id, payload)
+
+    def list_experiences(self) -> object:
+        """List known repairs with their attempts, outcomes and state."""
+        if self.incident_repository is None:
+            raise LookupError("La mémoire des diagnostics est indisponible")
+        return {
+            "schema_version": 1,
+            "experiences": [
+                experience.model_dump(mode="json")
+                for experience in self.incident_repository.list_experiences()
+            ],
+        }
+
+    def set_experience_state(
+        self, experience_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Disable, retire or reactivate one known repair."""
+        if self.incident_repository is None:
+            raise LookupError("La mémoire des diagnostics est indisponible")
+        return self.incident_repository.set_experience_state(experience_id, payload)
 
     def request_log_health_check(
         self,

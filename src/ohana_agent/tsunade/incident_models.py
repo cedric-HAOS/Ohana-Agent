@@ -77,10 +77,23 @@ class TsunadeExperience(AdministrationModel):
     action: dict[str, Any]
     result: str
     occurrence_count: int = Field(ge=1)
+    attempt_count: int = Field(default=0, ge=0)
     success_count: int = Field(ge=0)
     failure_count: int = Field(ge=0)
     last_used_at: ParisDatetime
+    last_success_at: ParisDatetime | None = None
+    last_failure_at: ParisDatetime | None = None
     confidence: float = Field(ge=0, le=1)
+    state: Literal["active", "disabled", "obsolete"] = "active"
+    state_changed_at: ParisDatetime | None = None
+    state_reason: str | None = None
+
+
+class TsunadeExperienceStateRequest(AdministrationModel):
+    """Disable, retire or reactivate one known repair."""
+
+    state: Literal["active", "disabled", "obsolete"]
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class TsunadeExperienceCandidate(AdministrationModel):

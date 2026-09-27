@@ -202,7 +202,7 @@ class TsunadeIncidentRepository(
             )
             learned_repair_count = int(
                 self._connection.execute(
-                    "SELECT COUNT(*) FROM tsunade_experiences"
+                    "SELECT COUNT(*) FROM tsunade_experiences WHERE state='active'"
                 ).fetchone()[0]
             )
             repair_rows = self._connection.execute(

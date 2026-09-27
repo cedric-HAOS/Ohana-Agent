@@ -6,6 +6,33 @@ from __future__ import annotations
 class TsunadeIncidentSchema:
     """SQLite schema and migrations of the Tsunade control database."""
 
+    def _migrate_experience_history(self) -> None:
+        """Phase 3: attempts, last outcomes and a lifecycle state per repair."""
+        columns = {
+            row[1]
+            for row in self._connection.execute(
+                "PRAGMA table_info(tsunade_experiences)"
+            )
+        }
+        if "attempt_count" in columns:
+            return
+        for statement in (
+            "ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0",
+            "ADD COLUMN last_success_at TEXT",
+            "ADD COLUMN last_failure_at TEXT",
+            "ADD COLUMN state TEXT NOT NULL DEFAULT 'active'",
+            "ADD COLUMN state_changed_at TEXT",
+            "ADD COLUMN state_reason TEXT",
+        ):
+            self._connection.execute(f"ALTER TABLE tsunade_experiences {statement}")
+        # Until now an experience was only written when a user saved a verified
+        # repair: each count was one attempt, and its last use a success.
+        self._connection.execute(
+            """UPDATE tsunade_experiences
+            SET attempt_count=success_count+failure_count,
+            last_success_at=CASE WHEN success_count>0 THEN last_used_at END"""
+        )
+
     def _initialize(self) -> None:
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.execute("PRAGMA synchronous=NORMAL")
@@ -139,5 +166,11 @@ class TsunadeIncidentSchema:
             self._connection.execute(
                 "ALTER TABLE tsunade_repairs ADD COLUMN verification_deadline TEXT"
             )
+        if "experience_id" not in repair_columns:
+            # The known repair an execution was counted against, if any.
+            self._connection.execute(
+                "ALTER TABLE tsunade_repairs ADD COLUMN experience_id TEXT"
+            )
+        self._migrate_experience_history()
         self.initialize_followups()
         self._connection.commit()

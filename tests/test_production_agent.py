@@ -201,7 +201,7 @@ def test_production_agent_retries_until_vision_accepts_snapshot() -> None:
     assert scheduler.stop_calls == 1
 
 
-def test_production_agent_pauses_and_retries_after_refresh_failure() -> None:
+def test_production_agent_keeps_observing_when_a_refresh_fails() -> None:
     scheduler = FakeScheduler()
     client = FakeVisionClient(
         outcomes=[
@@ -218,14 +218,9 @@ def test_production_agent_pauses_and_retries_after_refresh_failure() -> None:
             True,
         ]
     )
-    clock = SequenceClock(
-        values=[
-            0.0,
-            300.0,
-            301.0,
-            302.0,
-        ]
-    )
+    # Sync at 0; refresh due at 300 fails (retry at 311); 305 not due;
+    # 311 refresh succeeds (next at 612).
+    clock = SequenceClock(values=[0.0, 300.0, 301.0, 305.0, 311.0, 312.0])
     agent = ProductionAgent(
         scheduler=scheduler,  # type: ignore[arg-type]
         vision_client=client,
@@ -239,16 +234,12 @@ def test_production_agent_pauses_and_retries_after_refresh_failure() -> None:
 
     agent.run()
 
+    # The failed refresh is retried 10 s later; the scheduler never stops.
     assert len(client.infrastructure_payloads) == 3
-    assert stop_event.wait_timeouts == [
-        1.0,
-        10.0,
-        1.0,
-        1.0,
-    ]
-    assert scheduler.start_calls == 2
-    assert scheduler.stop_calls == 2
-    assert scheduler.tick_calls == 1
+    assert stop_event.wait_timeouts == [1.0, 1.0, 1.0, 1.0]
+    assert scheduler.start_calls == 1
+    assert scheduler.stop_calls == 1
+    assert scheduler.tick_calls == 3
 
 
 def test_production_agent_propagates_unexpected_sync_error() -> None:

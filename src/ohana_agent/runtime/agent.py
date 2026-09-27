@@ -213,11 +213,7 @@ class ProductionAgent:
                     break
 
                 if self._infrastructure_refresh_due():
-                    if not self._synchronize_infrastructure():
-                        if self._stop_event.wait(self.infrastructure_retry_seconds):
-                            break
-
-                        continue
+                    self._refresh_infrastructure()
 
                 self.tick()
         finally:
@@ -377,6 +373,30 @@ class ProductionAgent:
 
         LOGGER.info("Infrastructure synchronized with Ohana-Vision.")
         return True
+
+    def _refresh_infrastructure(self) -> None:
+        """Resend the snapshot Vision already has, without pausing observations.
+
+        Vision accepts observations without it and the outbox keeps them in
+        order: a refresh timing out on a slow SD card once stopped every probe
+        until the next successful attempt.
+        """
+        try:
+            self.vision_client.send_infrastructure(self.infrastructure_payload)
+        except VisionClientError as error:
+            self._next_infrastructure_refresh_at = (
+                self.monotonic_clock() + self.infrastructure_retry_seconds
+            )
+            LOGGER.warning(
+                "Unable to refresh infrastructure in Ohana-Vision; "
+                "observations continue: %s",
+                error,
+            )
+            return
+
+        self._next_infrastructure_refresh_at = (
+            self.monotonic_clock() + self.infrastructure_refresh_seconds
+        )
 
     def _infrastructure_refresh_due(self) -> bool:
         """Return whether the infrastructure snapshot must be refreshed."""

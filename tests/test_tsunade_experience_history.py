@@ -221,3 +221,130 @@ def test_experiences_saved_before_phase_3_gain_their_history(tmp_path: Path) -> 
         assert experience.state == "active"
     finally:
         repository.close()
+
+
+def _saved_known_repair(repository: TsunadeIncidentRepository, start: datetime):
+    incident, repair = _executed_repair(repository, start)
+    repository.mark_repair_executed(repair.repair_id)
+    repository.process(
+        _observation(ObservationStatus.HEALTHY, start + timedelta(seconds=2))
+    )
+    return repository.confirm_experience(
+        incident.incident_id,
+        {"confirm": True, "source": "vision", "confirmed_by": "C"},
+    )
+
+
+def test_a_proposal_cites_the_known_repair_found_on_explicit_evidence(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    start = datetime.now(UTC)
+    try:
+        saved = _saved_known_repair(repository, start)
+
+        incident = repository.process(
+            _observation(ObservationStatus.UNHEALTHY, start + timedelta(seconds=10))
+        )
+        repository.append_record(
+            incident.incident_id,
+            {
+                "kind": "diagnostic",
+                "summary": "dnsmasq est arrêté.",
+                "payload": {"epistemic_status": "confirmed_by_probe"},
+            },
+        )
+        repair = repository.propose_repair(
+            incident.incident_id, repair_spec("restart_service", "dnsmasq.service")
+        )
+
+        known = repair.known_repair
+        assert known is not None
+        assert known.experience_id == saved.experience_id
+        assert (known.attempt_count, known.success_count, known.failure_count) == (
+            1,
+            1,
+            0,
+        )
+        assert known.criteria == [
+            "Même symptôme : dns.resolve en échec sur infra-01",
+            "Même preuve : diagnostic confirmé par une sonde déterministe "
+            "(dhcp.status)",
+            f"Même action : {repair.action}",
+        ]
+        assert known.caution is None
+        # Proposed only: the Phase 2 authorization still applies.
+        assert repair.status == "proposed" and repair.authorized_at is None
+        [request] = repository.list_user_requests(state="pending").requests
+        assert "Réparation connue : 1 réussite(s) et 0 échec(s)" in request.context
+        assert "dernière réussite le" in request.context
+    finally:
+        repository.close()
+
+
+def test_no_known_repair_without_confirmed_evidence_or_once_disabled(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    start = datetime.now(UTC)
+    try:
+        saved = _saved_known_repair(repository, start)
+
+        hypothesis = repository.process(
+            _observation(ObservationStatus.UNHEALTHY, start + timedelta(seconds=10))
+        )
+        repository.append_record(
+            hypothesis.incident_id,
+            {
+                "kind": "diagnostic",
+                "summary": "Peut-être dnsmasq.",
+                "payload": {"epistemic_status": "hypothesis"},
+            },
+        )
+        repair = repository.propose_repair(
+            hypothesis.incident_id,
+            repair_spec("restart_service", "dnsmasq.service"),
+        )
+        assert repair.known_repair is None
+        repository.process(
+            _observation(ObservationStatus.HEALTHY, start + timedelta(seconds=12))
+        )
+
+        repository.set_experience_state(saved.experience_id, {"state": "disabled"})
+        _, repair = _executed_repair(repository, start + timedelta(seconds=20))
+        assert repair.known_repair is None
+    finally:
+        repository.close()
+
+
+def test_a_known_repair_that_mostly_failed_is_cited_with_a_caution(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    start = datetime.now(UTC)
+    try:
+        _saved_known_repair(repository, start)
+        for offset in (10, 20):
+            _, repair = _executed_repair(repository, start + timedelta(seconds=offset))
+            repository.mark_repair_execution_failed(repair.repair_id, "échec")
+            repository.process(
+                _observation(
+                    ObservationStatus.HEALTHY, start + timedelta(seconds=offset + 2)
+                )
+            )
+
+        _, repair = _executed_repair(repository, start + timedelta(seconds=30))
+
+        assert repair.known_repair is not None
+        assert (
+            repair.known_repair.success_count,
+            repair.known_repair.failure_count,
+        ) == (
+            1,
+            2,
+        )
+        assert repair.known_repair.caution == (
+            "Cette réparation a plus souvent échoué que réussi."
+        )
+    finally:
+        repository.close()

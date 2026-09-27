@@ -20,6 +20,7 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeExperienceConfirmationRequest,
     TsunadeExperienceStateRequest,
     TsunadeIncident,
+    TsunadeKnownRepairMatch,
     TsunadeRepair,
     TsunadeRepairAuthorizationRequest,
     ValidationSource,
@@ -62,6 +63,20 @@ def observes_repaired_service(
     )
 
 
+def _track_record(known: TsunadeKnownRepairMatch) -> str:
+    """One sentence citing the known repair's history, for every decision view."""
+    record = (
+        f"Réparation connue : {known.success_count} réussite(s) et "
+        f"{known.failure_count} échec(s) sur {known.attempt_count} tentative(s)"
+    )
+    if known.last_success_at is not None:
+        record += f", dernière réussite le {known.last_success_at:%d/%m/%Y à %H:%M}"
+    record += "."
+    if known.caution:
+        record += f" {known.caution}"
+    return record
+
+
 def _optional_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
@@ -87,10 +102,12 @@ class TsunadeRepairs:
             if existing is not None:
                 return self._repair(existing)
             repair_id = uuid4()
+            known = self._known_repair_match_locked(incident, spec)
             self._connection.execute(
                 """INSERT INTO tsunade_repairs
-                (repair_id,incident_id,operation,target,risk,status,proposed_at)
-                VALUES (?,?,?,?,?,'proposed',?)""",
+                (repair_id,incident_id,operation,target,risk,status,proposed_at,
+                known_repair_json)
+                VALUES (?,?,?,?,?,'proposed',?,?)""",
                 (
                     str(repair_id),
                     str(incident.incident_id),
@@ -98,8 +115,10 @@ class TsunadeRepairs:
                     spec.target,
                     spec.risk,
                     now.isoformat(),
+                    known.model_dump_json() if known is not None else None,
                 ),
             )
+            track_record = f" {_track_record(known)}" if known is not None else ""
             request_id = uuid4()
             self._connection.execute(
                 """INSERT INTO tsunade_user_requests (
@@ -112,7 +131,7 @@ class TsunadeRepairs:
                     str(incident.incident_id),
                     (
                         f"{incident.equipment_id} : {incident.message} "
-                        f"Tsunade propose {spec.action}."
+                        f"Tsunade propose {spec.action}.{track_record}"
                     ),
                     spec.question,
                     json.dumps(["AUTHORIZE", "REFUSE", "LATER"]),
@@ -126,9 +145,12 @@ class TsunadeRepairs:
                 incident.incident_id,
                 kind="action",
                 occurred_at=now,
-                summary=f"Tsunade propose {spec.action}.",
+                summary=f"Tsunade propose {spec.action}.{track_record}",
                 payload={
                     "repair_id": str(repair_id),
+                    "known_experience_id": (
+                        str(known.experience_id) if known is not None else None
+                    ),
                     "operation": spec.operation,
                     "target": spec.target,
                     "risk": spec.risk,
@@ -566,6 +588,61 @@ class TsunadeRepairs:
             ).fetchall()
         return [self._experience(row) for row in rows]
 
+    def _known_repair_match_locked(
+        self, incident: TsunadeIncident, spec: RepairSpec
+    ) -> TsunadeKnownRepairMatch | None:
+        """Find the active known repair this proposal reproduces, on evidence.
+
+        Same failing capability on the same equipment (symptom), a diagnostic
+        explicitly confirmed by a probe or the Supervisor (evidence), and the
+        same catalogue action. Closeness in time is never a criterion.
+        """
+        evidence = (incident.latest_decision or {}).get("epistemic_status")
+        if evidence not in {"confirmed_by_probe", "confirmed_by_supervisor"}:
+            return None
+        row = self._connection.execute(
+            """SELECT * FROM tsunade_experiences
+            WHERE equipment_id=? AND capability_id=? AND state='active'
+            AND json_extract(action_json,'$.operation')=?
+            AND json_extract(action_json,'$.target')=?
+            ORDER BY julianday(last_used_at) DESC LIMIT 1""",
+            (
+                incident.equipment_id,
+                incident.capability_id,
+                spec.operation,
+                spec.target,
+            ),
+        ).fetchone()
+        if row is None:
+            return None
+        experience = self._experience(row)
+        criteria = [
+            f"Même symptôme : {incident.capability_id} en échec sur "
+            f"{incident.equipment_id}",
+            "Même preuve : diagnostic confirmé "
+            + (
+                "par une sonde déterministe"
+                if evidence == "confirmed_by_probe"
+                else "par le Supervisor"
+            )
+            + (f" ({spec.probe_operation})" if spec.probe_operation else ""),
+            f"Même action : {spec.action}",
+        ]
+        caution = (
+            "Cette réparation a plus souvent échoué que réussi."
+            if experience.failure_count > experience.success_count
+            else None
+        )
+        return TsunadeKnownRepairMatch(
+            experience_id=experience.experience_id,
+            attempt_count=experience.attempt_count,
+            success_count=experience.success_count,
+            failure_count=experience.failure_count,
+            last_success_at=experience.last_success_at,
+            criteria=criteria,
+            caution=caution,
+        )
+
     def list_experiences(self) -> list[TsunadeExperience]:
         """Return every known repair, active ones first."""
         with self._lock:
@@ -755,6 +832,11 @@ class TsunadeRepairs:
             ),
             result=(
                 redact_sensitive_text(str(row["result"])) if row["result"] else None
+            ),
+            known_repair=(
+                TsunadeKnownRepairMatch.model_validate_json(row["known_repair_json"])
+                if "known_repair_json" in row.keys() and row["known_repair_json"]
+                else None
             ),
         )
 

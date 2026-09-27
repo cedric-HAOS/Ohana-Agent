@@ -37,6 +37,19 @@ UserRequestState = Literal["pending", "answered", "expired", "cancelled", "resol
 UserRequestChoice = Literal["YES", "NO", "AUTHORIZE", "REFUSE", "LATER", "CONFIRM"]
 
 
+class TsunadeKnownRepairMatch(AdministrationModel):
+    """Why a proposal reproduces a known repair, with its track record."""
+
+    experience_id: UUID
+    attempt_count: int = Field(ge=0)
+    success_count: int = Field(ge=0)
+    failure_count: int = Field(ge=0)
+    last_success_at: ParisDatetime | None = None
+    # Explicit criteria shared with the known case: never time proximity.
+    criteria: list[str] = Field(default_factory=list, max_length=8)
+    caution: str | None = None
+
+
 class TsunadeRepair(AdministrationModel):
     """One finite repair proposal and its human authorization audit."""
 
@@ -60,6 +73,7 @@ class TsunadeRepair(AdministrationModel):
     verification_deadline: ParisDatetime | None = None
     verified_at: ParisDatetime | None = None
     result: str | None = None
+    known_repair: TsunadeKnownRepairMatch | None = None
 
 
 class TsunadeExperience(AdministrationModel):

@@ -166,6 +166,11 @@ class TsunadeIncidentSchema:
             self._connection.execute(
                 "ALTER TABLE tsunade_repairs ADD COLUMN verification_deadline TEXT"
             )
+        if "known_repair_json" not in repair_columns:
+            # Phase 3: the known repair a proposal reproduces, and why.
+            self._connection.execute(
+                "ALTER TABLE tsunade_repairs ADD COLUMN known_repair_json TEXT"
+            )
         if "experience_id" not in repair_columns:
             # The known repair an execution was counted against, if any.
             self._connection.execute(

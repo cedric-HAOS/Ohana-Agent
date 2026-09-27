@@ -2,6 +2,18 @@
 
 ## Non publié
 
+- Proposition fondée sur une réparation connue (Phase 3) : quand le
+  catalogue retient une réparation, Tsunade la rattache à la réparation
+  connue active qui a le même symptôme (même capacité en échec sur le même
+  équipement), la même preuve (diagnostic confirmé par une sonde ou par le
+  Supervisor, avec la sonde nommée) et la même action. La proximité dans le
+  temps n'est jamais un critère. La proposition (`known_repair`) et la
+  demande d'autorisation citent ces critères et l'historique (« Réparation
+  connue : 3 réussite(s) et 0 échec(s) sur 3 tentative(s), dernière réussite
+  le … »), avec un avertissement si la réparation a plus souvent échoué que
+  réussi. Sans diagnostic confirmé, ou si la réparation connue est
+  désactivée, rien n'est cité. L'autorisation de la Phase 2 reste
+  obligatoire.
 - Mémoire opérationnelle (Phase 3) : chaque exécution d'une réparation
   connue compte comme une tentative. Sa réussite ou son échec est enregistré
   après la vérification de Shikamaru ou l'échec d'exécution, avec la date de

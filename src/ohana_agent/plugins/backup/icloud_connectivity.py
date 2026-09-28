@@ -31,7 +31,7 @@ _COMMAND_TIMEOUT_SECONDS = 90.0
 
 _SESSION_EXPIRED = re.compile(
     r"invalid global session|\b421\b|\b401\b|\b403\b|two[- ]factor|2fa|"
-    r"trust token|authenticat|unauthori[sz]ed|reconnect",
+    r"trust token|reauth|authenticat|unauthori[sz]ed|reconnect",
     re.IGNORECASE,
 )
 _UNREACHABLE = re.compile(

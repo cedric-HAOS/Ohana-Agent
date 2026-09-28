@@ -51,6 +51,12 @@ def _runner(code: int, stderr: str = ""):
             "session_expired",
         ),
         ("missing trust token, run rclone config reconnect", "session_expired"),
+        # INFRA-01, 28 September 14:00, as the ohana-agent user.
+        (
+            'CRITICAL: Failed to create file system for "icloud:": '
+            "trust token expired, please reauth",
+            "session_expired",
+        ),
         ("dial tcp: lookup www.icloud.com: no such host", "unreachable"),
         (
             "Failed to create file system: didn't find section in config file",

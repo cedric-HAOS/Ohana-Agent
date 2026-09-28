@@ -2,6 +2,36 @@
 
 ## Non publié
 
+## [1.39.0] — 2026-09-28 — Maintenance préventive et connexion iCloud
+
+Publiée le jour même de 1.38.1, à la demande de l'utilisateur.
+
+- Maintenance préventive (Phase 4) : Tsunade garde une ligne par jour de
+  Paris et par mesure à partir de la santé de l'hôte qu'il reçoit déjà
+  (écrite toutes les 15 min, pas à chaque échantillon, pour la carte SD),
+  retient les démarrages de l'hôte et les redémarrages automatiques de
+  l'Agent (hausse de `NRestarts`), et lit son historique d'incidents. Trois
+  règles sur 7 jours : croissance du disque (au moins 4 jours, hausse
+  médiane ≥ 0,5 point par jour, au moins 3 hausses, et ≥ 70 % ou 90 % sous
+  30 jours ; intervention à prévoir sous 7 jours), redémarrages répétés
+  (au moins 2), interruptions réseau répétées (au moins 3 incidents
+  `network.reachable` pour un même équipement). La médiane plutôt qu'une
+  pente : une mise à jour apt est un saut unique, pas une tendance.
+- `GET /v1/preventive` (opération `preventive.read`) : « Konoha est
+  stable. », « À surveiller » et « Aucune intervention nécessaire. », avec
+  chaque règle, son état (normal, à surveiller, historique insuffisant) et
+  ses preuves. Le résumé Shizune reçoit l'essentiel (`preventive` : titres et
+  conclusion). Rien n'ouvre d'incident ni ne propose de réparation, et rien
+  ne dépend de Katsuyu.
+- Rattrapage de l'historique : nouveau travail Katsuyu
+  `trends.history_backfill`. Katsuyu lit, avec un descripteur lié au travail
+  (`GET /v1/jobs/{id}/history-source/ha-01`), les statistiques horaires de
+  Home Assistant du capteur `ohana_host_disk_usage` et renvoie un jour par
+  ligne ; un jour mesuré par l'Agent et le jour en cours ne sont jamais
+  remplacés. Demande automatique toutes les 6 h s'il manque un jour de la
+  fenêtre (au plus une par 24 h), ou `POST /v1/preventive/backfill`
+  (opération `preventive.backfill`). Le travail attend Katsuyu jusqu'à 12 h.
+  Migration SQLite additive : colonne `source` de `tsunade_trend_daily`.
 - Connexion iCloud surveillée : toutes les heures (et au démarrage), l'Agent
   liste la racine du remote iCloud de rclone (`rclone lsd icloud:`, délai
   borné, dans un fil séparé qui ne bloque pas le planificateur). Le résultat

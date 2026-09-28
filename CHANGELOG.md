@@ -2,6 +2,18 @@
 
 ## Non publié
 
+- Connexion iCloud surveillée : toutes les heures (et au démarrage), l'Agent
+  liste la racine du remote iCloud de rclone (`rclone lsd icloud:`, délai
+  borné, dans un fil séparé qui ne bloque pas le planificateur). Le résultat
+  est publié par MQTT sur `ohana/icloud/connectivity` (retenu) et annoncé à
+  Home Assistant sur l'appareil « Ohana Platform » : `Connexion iCloud`
+  (binary_sensor `connectivity`) et `État iCloud` (enum : `connected`,
+  `session_expired`, `unreachable`, `not_configured`, `error`), avec en
+  attributs l'heure du contrôle et de la dernière réussite (heure de Paris)
+  et le message rclone sans secret. Le 28 septembre, la session iCloud avait
+  expiré (HTTP 421 « Invalid global session ») sans que rien ne le signale
+  avant qu'une mise à jour tente de copier la clé de récupération.
+
 ## [1.38.1] — 2026-09-28 — Pages lisibles pendant un traitement Katsuyu et journal allégé
 
 - Pages lisibles pendant le traitement d'un résultat Katsuyu : la liste et

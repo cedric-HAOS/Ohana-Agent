@@ -11,7 +11,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from threading import Event, RLock
 from time import monotonic
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.observation.observation import Observation
@@ -20,7 +20,21 @@ from ohana_agent.observation.observation_status import ObservationStatus
 from ohana_agent.plugins.mqtt.config import MQTTConfig
 from ohana_agent.plugins.mqtt.host_health import HostHealthSnapshot
 
+if TYPE_CHECKING:
+    from ohana_agent.plugins.backup.icloud_connectivity import (
+        ICloudConnectivityStatus,
+    )
+
 LOGGER = logging.getLogger(__name__)
+
+# Values of the "État iCloud" enum sensor (icloud_connectivity.STATES).
+ICLOUD_STATES = (
+    "connected",
+    "session_expired",
+    "unreachable",
+    "not_configured",
+    "error",
+)
 
 _STATUS_PRIORITY = {
     "healthy": 0,
@@ -92,6 +106,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._monotonic_clock = monotonic_clock
         self._agent_version = agent_version or self._resolve_agent_version()
         self._latest_host_health: HostHealthSnapshot | None = None
+        self._latest_icloud: ICloudConnectivityStatus | None = None
         self._client: Any | None = None
         self._connected = False
         self._started = False
@@ -426,6 +441,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._safe_publish(self._status_topic(), "online", retain=True)
         self._publish_summary(force=True)
         self._publish_latest_host_health()
+        self._publish_latest_icloud()
 
     def _on_disconnect(
         self,
@@ -488,6 +504,21 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._safe_publish(
             self._host_health_topic(),
             self._latest_host_health.to_json(),
+            retain=True,
+        )
+
+    def publish_icloud_connectivity(self, status: ICloudConnectivityStatus) -> None:
+        """Publish the latest iCloud session check when MQTT is connected."""
+        with self._lock:
+            self._latest_icloud = status
+            self._publish_latest_icloud()
+
+    def _publish_latest_icloud(self) -> None:
+        if not self._connected or self._latest_icloud is None:
+            return
+        self._safe_publish(
+            self._icloud_topic(),
+            self._latest_icloud.to_json(),
             retain=True,
         )
 
@@ -570,6 +601,21 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 "sw_version": self._agent_version,
             },
             "origin": origin,
+        }
+        icloud_topic = self._icloud_topic()
+        icloud_common = {
+            **common,
+            "state_topic": icloud_topic,
+            "json_attributes_topic": icloud_topic,
+            "json_attributes_template": (
+                "{{ {"
+                "'state': value_json.state, "
+                "'remote': value_json.remote, "
+                "'checked_at': value_json.checked_at, "
+                "'last_success_at': value_json.last_success_at, "
+                "'detail': value_json.detail"
+                "} | tojson }}"
+            ),
         }
 
         def sensor(
@@ -695,6 +741,34 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
                 "stale_capabilities",
                 state_class="measurement",
                 icon="mdi:clock-alert-outline",
+            ),
+            (
+                "binary_sensor",
+                "ohana_icloud_connectivity",
+                {
+                    **icloud_common,
+                    "name": "Connexion iCloud",
+                    "unique_id": "ohana_icloud_connectivity",
+                    "object_id": "ohana_icloud_connectivity",
+                    "value_template": "{{ 'ON' if value_json.connected else 'OFF' }}",
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "connectivity",
+                },
+            ),
+            (
+                "sensor",
+                "ohana_icloud_state",
+                {
+                    **icloud_common,
+                    "name": "État iCloud",
+                    "unique_id": "ohana_icloud_state",
+                    "object_id": "ohana_icloud_state",
+                    "value_template": "{{ value_json.state }}",
+                    "device_class": "enum",
+                    "options": list(ICLOUD_STATES),
+                    "icon": "mdi:cloud-lock-outline",
+                },
             ),
             host_sensor(
                 "ohana_host_health_state",
@@ -1037,6 +1111,9 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
 
     def _host_health_topic(self) -> str:
         return f"{self.config.home_assistant.topic_prefix}/host/health"
+
+    def _icloud_topic(self) -> str:
+        return f"{self.config.home_assistant.topic_prefix}/icloud/connectivity"
 
     def _cleanup_client(self) -> None:
         client = self._client

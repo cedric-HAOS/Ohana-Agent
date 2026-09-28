@@ -86,6 +86,8 @@ class ProductionAgent:
     teleinformation_ingestion_runtime: TeleinformationIngestionRuntime | None = None
     home_assistant_publisher: HomeAssistantPublisherRuntime | None = None
     host_health_runtime: HostHealthRuntime | None = None
+    # Same lifecycle as host health: hourly rclone iCloud session check.
+    icloud_connectivity_runtime: HostHealthRuntime | None = None
     vision_export_runtime: VisionExportRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     monotonic_clock: Callable[[], float] = field(
@@ -244,6 +246,9 @@ class ProductionAgent:
         if self.host_health_runtime is not None:
             self.host_health_runtime.stop()
 
+        if self.icloud_connectivity_runtime is not None:
+            self.icloud_connectivity_runtime.stop()
+
         if self.vision_export_runtime is not None:
             self.vision_export_runtime.stop()
 
@@ -331,10 +336,14 @@ class ProductionAgent:
     def _start_host_health(self) -> None:
         if self.host_health_runtime is not None:
             self.host_health_runtime.start()
+        if self.icloud_connectivity_runtime is not None:
+            self.icloud_connectivity_runtime.start()
 
     def _tick_host_health(self) -> None:
         if self.host_health_runtime is not None:
             self.host_health_runtime.tick()
+        if self.icloud_connectivity_runtime is not None:
+            self.icloud_connectivity_runtime.tick()
 
     def _start_scheduler(self) -> None:
         """Start observations after infrastructure synchronization."""

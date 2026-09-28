@@ -821,3 +821,59 @@ def test_infrastructure_reconfiguration_keeps_mqtt_availability_online() -> None
     )
     assert [topic for topic, *_ in new_publications] == ["ohana/health/summary"]
     assert new_publications[0][3] is True
+
+
+def test_publisher_announces_and_republishes_icloud_connectivity() -> None:
+    # 28 September: the rclone iCloud session had expired unnoticed.
+    from ohana_agent.plugins.backup.icloud_connectivity import (
+        STATES,
+        ICloudConnectivityStatus,
+    )
+    from ohana_agent.plugins.mqtt.home_assistant_publisher import ICLOUD_STATES
+
+    fake_client = FakePahoClient()
+    publisher = MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            brokers=[MQTTBrokerConfig(name="mqtt-primary", address="192.168.1.247")],
+            home_assistant=MQTTHomeAssistantConfig(
+                enabled=True, discovery_enabled=True, heartbeat_seconds=60
+            ),
+        ),
+        infrastructure=make_infrastructure(),
+        client_factory=lambda _client_id: fake_client,
+    )
+    status = ICloudConnectivityStatus(
+        state="session_expired",
+        connected=False,
+        remote="icloud:",
+        checked_at="2026-09-28T13:38:26+02:00",
+        last_success_at=None,
+        detail='HTTP error 421 "Invalid global session"',
+    )
+    # Checked before MQTT connects: published once the connection is up.
+    publisher.publish_icloud_connectivity(status)
+    publisher.start()
+
+    discovery = {
+        topic: json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic.endswith("/config") and payload
+    }
+    binary = discovery["homeassistant/binary_sensor/ohana_icloud_connectivity/config"]
+    enum = discovery["homeassistant/sensor/ohana_icloud_state/config"]
+    assert binary["device"]["name"] == "Ohana Platform"
+    assert binary["device_class"] == "connectivity"
+    assert binary["state_topic"] == "ohana/icloud/connectivity"
+    assert enum["options"] == list(STATES) == list(ICLOUD_STATES)
+    assert "last_success_at" in enum["json_attributes_template"]
+
+    publications = [
+        publication
+        for publication in fake_client.published
+        if publication[0] == "ohana/icloud/connectivity"
+    ]
+    assert len(publications) == 1
+    assert publications[0][3] is True
+    payload = json.loads(publications[0][1])
+    assert payload["state"] == "session_expired"
+    assert payload["connected"] is False

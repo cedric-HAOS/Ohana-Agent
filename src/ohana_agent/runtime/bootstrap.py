@@ -48,6 +48,10 @@ from ohana_agent.observation.exporters import (
 from ohana_agent.observation.monitoring import MonitoringScheduleRegistry
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.coordinator import BackupCoordinator
+from ohana_agent.plugins.backup.icloud_connectivity import (
+    ICloudConnectivityProbe,
+    ICloudConnectivityReporter,
+)
 from ohana_agent.plugins.dhcp.check import DHCPCheck
 from ohana_agent.plugins.home_assistant_telemetry.check import (
     HomeAssistantTelemetryCheck,
@@ -283,6 +287,11 @@ def build_production_agent(
         ),
     )
 
+    icloud_connectivity_reporter = ICloudConnectivityReporter(
+        ICloudConnectivityProbe(plugins["backup"].config),
+        sinks=(mqtt_home_assistant_publisher.publish_icloud_connectivity,),
+    )
+
     export_handler = ObservationExportHandler(
         pipeline=ObservationExportPipeline(
             exporters=[
@@ -395,6 +404,7 @@ def build_production_agent(
         )
 
     def update_log_source_broker(backup_config: BackupConfig, _: object) -> None:
+        icloud_connectivity_reporter.update_config(backup_config)
         if (
             administration_service is not None
             and administration_service.log_source_broker is not None
@@ -430,6 +440,7 @@ def build_production_agent(
         teleinformation_ingestion_runtime=teleinformation_ingestion_runtime,
         home_assistant_publisher=mqtt_home_assistant_publisher,
         host_health_runtime=host_health_reporter,
+        icloud_connectivity_runtime=icloud_connectivity_reporter,
         vision_export_runtime=vision_export_runtime,
     )
 

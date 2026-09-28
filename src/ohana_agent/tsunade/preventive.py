@@ -15,6 +15,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from statistics import median
 from threading import RLock
 from typing import Any
 
@@ -44,7 +45,7 @@ RULES: tuple[dict[str, str], ...] = (
         "title": "Croissance du disque",
         "rule": (
             f"Maximum journalier de l'occupation disque sur {WINDOW_DAYS} jours : "
-            f"au moins {DISK_MIN_DAYS} jours mesurés, pente d'au moins "
+            f"au moins {DISK_MIN_DAYS} jours mesurés, hausse médiane d'au moins "
             f"{DISK_MIN_SLOPE} point par jour et au moins {DISK_MIN_RISES} "
             f"hausses d'un jour sur l'autre ; signalé si l'occupation atteint "
             f"{DISK_HIGH_PERCENT:.0f} % ou si {DISK_FULL_PERCENT:.0f} % serait "
@@ -532,22 +533,14 @@ def _disk_evaluation(points: list[tuple[date, float]]) -> dict[str, Any]:
     }
     if len(points) < DISK_MIN_DAYS:
         return {**evaluation, "state": "insufficient_data"}
-    origin = points[0][0]
-    xs = [(day - origin).days for day, _ in points]
-    ys = [value for _, value in points]
-    mean_x = sum(xs) / len(xs)
-    mean_y = sum(ys) / len(ys)
-    spread = sum((x - mean_x) ** 2 for x in xs)
-    slope = (
-        sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True)) / spread
-        if spread
-        else 0.0
-    )
-    rises = sum(
-        1
-        for (_, before), (_, after) in zip(points, points[1:], strict=False)
-        if after - before >= DISK_RISE_EPSILON
-    )
+    # Median of the day-over-day changes: one apt upgrade or one large file
+    # is a single jump and does not make a trend; a missing day is spread.
+    deltas = [
+        (after - before) / max((next_day - day).days, 1)
+        for (day, before), (next_day, after) in zip(points, points[1:], strict=False)
+    ]
+    slope = median(deltas)
+    rises = sum(1 for delta in deltas if delta >= DISK_RISE_EPSILON)
     days_to_full = max((DISK_FULL_PERCENT - latest) / slope, 0.0) if slope > 0 else None
     watch = (
         slope >= DISK_MIN_SLOPE

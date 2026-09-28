@@ -86,8 +86,11 @@ def test_slow_or_one_off_disk_changes_stay_normal(tmp_path: Path) -> None:
     _days(slow, [60.0, 60.2, 60.4, 60.6, 60.8, 61.0, 61.2])
     jump = TsunadePreventiveMonitor(tmp_path / "jump.db")
     _days(jump, [60.0, 60.0, 68.0, 68.0, 68.0, 68.0])
+    # Above 70 %, drifting slowly around one apt upgrade: still one jump.
+    upgrade = TsunadePreventiveMonitor(tmp_path / "upgrade.db")
+    _days(upgrade, [71.0, 71.1, 71.2, 74.5, 74.6, 74.6, 74.7])
 
-    for monitor in (slow, jump):
+    for monitor in (slow, jump, upgrade):
         summary = monitor.summary(now=NOW)
         assert summary["status"] == "stable"
         assert _check(summary, "disk_growth")["state"] == "ok"

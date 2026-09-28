@@ -87,3 +87,80 @@ def test_home_assistant_telemetry_plugin_requires_primary_entity() -> None:
             node_id="device-kitchen",
             primary_entity_id="",
         )
+
+
+def _failing(value: float | None, error: str) -> FakeHomeAssistantTelemetryCheck:
+    return FakeHomeAssistantTelemetryCheck(
+        HomeAssistantTelemetryCheckResult(
+            service_name="Mesure Puissance",
+            healthy=False,
+            primary=HomeAssistantTelemetryValue(
+                entity_id="sensor.sun_01_power", value=value, unit="W"
+            ),
+            error=error,
+        )
+    )
+
+
+def _run(plugin: HomeAssistantTelemetryPlugin):
+    return plugin.execute(
+        service_id="mesure-puissance",
+        service_name="Mesure Puissance",
+        node_id="sun-01",
+        primary_entity_id="sensor.sun_01_power",
+        maximum_age_seconds=600,
+    )
+
+
+def test_an_entity_missing_while_home_assistant_restarts_is_degraded_first(
+    monkeypatch,
+) -> None:
+    # HA-01 update, 28 September: "Entity not found" for five minutes, and
+    # SUN-01 was reported critical although nothing was broken.
+    from ohana_agent.infrastructure.enums import HealthStatus
+    from ohana_agent.plugins.home_assistant_telemetry import plugin as module
+
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    failing = _failing(
+        None, 'Home Assistant returned HTTP 404: {"message":"Entity not found."}'
+    )
+    plugin = HomeAssistantTelemetryPlugin(check=failing)
+
+    first = _run(plugin)
+    assert first.success is False
+    assert first.health is HealthStatus.DEGRADED
+    assert first.metadata["restart_grace_seconds"] == 600
+    assert "may be restarting" in first.message
+
+    clock[0] += 599
+    assert _run(plugin).health is HealthStatus.DEGRADED
+    clock[0] += 2
+    # Still no value after the grace period: a real fault, reported critical.
+    assert _run(plugin).health is None
+
+    # A recovery resets the grace period for the next restart.
+    plugin._check = FakeHomeAssistantTelemetryCheck(
+        HomeAssistantTelemetryCheckResult(
+            service_name="Mesure Puissance",
+            healthy=True,
+            primary=HomeAssistantTelemetryValue(
+                entity_id="sensor.sun_01_power", value=10.5, unit="W"
+            ),
+        )
+    )
+    assert _run(plugin).success is True
+    plugin._check = failing
+    assert _run(plugin).health is HealthStatus.DEGRADED
+
+
+def test_a_value_that_stopped_reporting_stays_critical_at_once() -> None:
+    plugin = HomeAssistantTelemetryPlugin(
+        check=_failing(
+            12.0, "Entity sensor.sun_01_power has not reported for 900 seconds."
+        )
+    )
+    result = _run(plugin)
+    assert result.success is False
+    assert result.health is None
+    assert "restart_grace_seconds" not in result.metadata

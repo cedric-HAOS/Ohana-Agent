@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Télémétrie Home Assistant : quand Home Assistant ne fournit aucune valeur
+  (entité introuvable, erreur HTTP, API injoignable, état `unavailable`),
+  l'observation est dégradée pendant 10 minutes, puis critique si cela dure.
+  Pendant la mise à jour d'HA-01 du 28 septembre, l'API répondait « Entity
+  not found » et SUN-01 était signalé critique pendant cinq minutes sans
+  panne réelle. Une valeur qui ne rapporte plus reste critique aussitôt.
 - Résolution manuelle déclarée après coup : une action faite à la main peut
   encore être déclarée jusqu'à 10 minutes après la résolution de l'incident,
   s'il n'a pas été résolu par une réparation supervisée et qu'aucune action

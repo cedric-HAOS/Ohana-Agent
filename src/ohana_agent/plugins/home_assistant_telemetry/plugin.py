@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from time import perf_counter
+from time import monotonic, perf_counter
 from typing import TYPE_CHECKING, Any
 
+from ohana_agent.infrastructure.enums import HealthStatus
 from ohana_agent.plugins.home_assistant_telemetry.check import (
     HomeAssistantTelemetryCheck,
 )
@@ -22,6 +23,12 @@ from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 if TYPE_CHECKING:
     from ohana_agent.observation.observer_result import ObserverResult
 
+# While Home Assistant restarts, its API answers "Entity not found" until the
+# integration is loaded again: HA-01 update, 28 September, SUN-01 critical for
+# five minutes. Home Assistant giving no value is degraded this long, then
+# critical; a value that stopped reporting stays critical at once.
+HOME_ASSISTANT_RESTART_GRACE_SECONDS = 600
+
 
 class HomeAssistantTelemetryPlugin(Plugin):
     """Plugin responsible for generic Home Assistant entity freshness."""
@@ -35,6 +42,7 @@ class HomeAssistantTelemetryPlugin(Plugin):
         self._state = PluginState.LOADED
         self._check = check or HomeAssistantTelemetryCheck()
         self.config = config or HomeAssistantTelemetryConfig()
+        self._without_value_since: dict[tuple[str, str], float] = {}
 
     @property
     def name(self) -> str:
@@ -192,6 +200,16 @@ class HomeAssistantTelemetryPlugin(Plugin):
             metadata["power"] = metadata["primary"]
             metadata["energy"] = metadata["secondary"]
 
+        health = self._restart_grace(
+            (node_id.strip(), service_id.strip()), result.healthy, primary, secondary
+        )
+        if health is HealthStatus.DEGRADED:
+            metadata["restart_grace_seconds"] = HOME_ASSISTANT_RESTART_GRACE_SECONDS
+            message = (
+                f"{message} Home Assistant may be restarting: critical if this "
+                f"lasts {HOME_ASSISTANT_RESTART_GRACE_SECONDS // 60} minutes."
+            )
+
         return ObserverResult(
             success=result.healthy,
             latency=elapsed_ms,
@@ -201,7 +219,27 @@ class HomeAssistantTelemetryPlugin(Plugin):
                 "Check that Home Assistant still receives a configured entity."
             ),
             metadata=metadata,
+            health=health,
         )
+
+    def _restart_grace(
+        self,
+        key: tuple[str, str],
+        healthy: bool,
+        primary: HomeAssistantTelemetryValue,
+        secondary: HomeAssistantTelemetryValue | None,
+    ) -> HealthStatus | None:
+        """Degraded while Home Assistant gives no value, for a bounded time."""
+        without_value = not healthy and (
+            primary.value is None or (secondary is not None and secondary.value is None)
+        )
+        if not without_value:
+            self._without_value_since.pop(key, None)
+            return None
+        since = self._without_value_since.setdefault(key, monotonic())
+        if monotonic() - since < HOME_ASSISTANT_RESTART_GRACE_SECONDS:
+            return HealthStatus.DEGRADED
+        return None
 
     def test(self, **kwargs: Any) -> ObserverResult:
         return self.execute(**kwargs)

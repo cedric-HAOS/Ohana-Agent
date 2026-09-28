@@ -1520,6 +1520,12 @@ class AdministrationService:
             previous_worker_id=previous_worker_id,
         )
 
+    def report_worker_runtimes(self, payload: dict[str, Any]) -> object:
+        """Record the local runtimes Katsuyu checked (Phase 5 vitals)."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.report_worker_runtimes(payload)
+
     def list_workers(self) -> object:
         """List the worker registrations visible to Tsunade."""
         if self.job_repository is None:

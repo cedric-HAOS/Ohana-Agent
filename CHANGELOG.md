@@ -2,6 +2,17 @@
 
 ## Non publié
 
+- Vitaux de Katsuyu (Phase 5, lot 4) : nouvelle route worker
+  `POST /v1/jobs/workers/runtimes` où Katsuyu déclare l'état du runtime local
+  de chaque capacité (`ready`, `unverified`, `missing`, `failed` et sa
+  cause). Route distincte de l'enregistrement, qui mettrait fin à un réveil
+  par Ohana ; la réponse d'enregistrement ne change pas (Katsuyu 0.9.0 la lit
+  strictement). `GET /v1/jobs/workers` ajoute `runtimes`,
+  `runtimes_reported_at` et `activity` : dernier job réussi et dernier échec
+  (`FAILED`/`TIMEOUT`, message) par capacité, sur les jobs conservés (30 j).
+  Aucun incident : l'absence de Katsuyu reste informative.
+- Appareils Shizune (`GET /v1/companions`) : dates exposées à l'heure de
+  Paris (stockage inchangé) ; `last_seen_at` est la dernière synchronisation.
 - Vitaux de l'Agent (Phase 5) : le planificateur, la livraison à Vision, le
   gestionnaire Tsunade et la boucle de l'API d'administration notent leur
   dernière activité utile (bornes 300 s, et 60 s pour la boucle qui bat

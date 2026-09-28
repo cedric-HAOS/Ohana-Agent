@@ -11,10 +11,13 @@ from pathlib import Path
 from threading import RLock
 from typing import Literal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
 from ohana_agent.contracts.administration import AdministrationModel
+
+PARIS = ZoneInfo("Europe/Paris")
 
 PAIRING_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 CompanionPairingStatus = Literal[
@@ -528,21 +531,19 @@ class CompanionRepository:
 
     @staticmethod
     def _device_document(row: sqlite3.Row) -> CompanionDeviceDocument:
+        # Stored in UTC; exposed in Paris time like every Ohana API date.
+        def paris(value: str | None) -> datetime | None:
+            return datetime.fromisoformat(value).astimezone(PARIS) if value else None
+
         return CompanionDeviceDocument(
             device_id=row["device_id"],
             device_name=row["device_name"],
             platform=row["platform"],
             app_version=row["app_version"],
-            created_at=datetime.fromisoformat(row["created_at"]),
-            expires_at=datetime.fromisoformat(row["expires_at"]),
-            last_seen_at=(
-                datetime.fromisoformat(row["last_seen_at"])
-                if row["last_seen_at"]
-                else None
-            ),
-            revoked_at=(
-                datetime.fromisoformat(row["revoked_at"]) if row["revoked_at"] else None
-            ),
+            created_at=paris(row["created_at"]),
+            expires_at=paris(row["expires_at"]),
+            last_seen_at=paris(row["last_seen_at"]),
+            revoked_at=paris(row["revoked_at"]),
         )
 
     def _now(self) -> datetime:

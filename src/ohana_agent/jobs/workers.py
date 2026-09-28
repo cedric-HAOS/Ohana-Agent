@@ -13,9 +13,13 @@ from typing import Any
 from ohana_agent.contracts.administration import (
     DistributedJobStatus,
     DistributedWorkerAvailability,
+    DistributedWorkerCapabilityActivity,
     DistributedWorkerCollection,
     DistributedWorkerDocument,
     DistributedWorkerRegistration,
+    DistributedWorkerRuntime,
+    DistributedWorkerRuntimeReport,
+    DistributedWorkerStatusDocument,
 )
 from ohana_agent.jobs.job_types import (
     JOB_TYPE_MODELS,
@@ -129,16 +133,126 @@ class DistributedWorkerRegistry:
             ),
         )
 
+    def report_worker_runtimes(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Store the local runtime state Katsuyu checked for its capabilities.
+
+        Separate from registration: re-registering would end an Ohana wake.
+        """
+        report = DistributedWorkerRuntimeReport.model_validate(payload)
+        now = self._now()
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT capabilities_json FROM distributed_workers WHERE worker_id = ?",
+                (report.worker_id,),
+            ).fetchone()
+            if row is None:
+                raise LookupError(f"distributed worker not found: {report.worker_id}")
+            capabilities = set(json.loads(row["capabilities_json"]))
+            runtimes = {
+                capability: runtime.model_dump(mode="json")
+                for capability, runtime in sorted(report.runtimes.items())
+                if capability in capabilities
+            }
+            self._connection.execute(
+                """
+                UPDATE distributed_workers
+                SET runtimes_json = ?, runtimes_reported_at = ?, last_seen_at = ?
+                WHERE worker_id = ?
+                """,
+                (
+                    self._json(runtimes),
+                    self._timestamp(now),
+                    self._timestamp(now),
+                    report.worker_id,
+                ),
+            )
+        LOGGER.info(
+            "Katsuyu worker %s runtimes: %s",
+            report.worker_id,
+            ", ".join(f"{key}={value['state']}" for key, value in runtimes.items())
+            or "none",
+        )
+        return {
+            "protocol_version": 1,
+            "worker_id": report.worker_id,
+            "runtimes": runtimes,
+            "reported_at": now.isoformat(),
+        }
+
     def list_workers(self) -> DistributedWorkerCollection:
         """Return the latest authenticated registrations to Tsunade."""
         with self._lock:
             rows = self._connection.execute(
                 "SELECT * FROM distributed_workers ORDER BY worker_id"
             ).fetchall()
+            activity = {row["worker_id"]: self._activity_locked(row) for row in rows}
         now = self._now()
         return DistributedWorkerCollection(
-            workers=[self._worker_document(row, now) for row in rows]
+            workers=[
+                DistributedWorkerStatusDocument(
+                    **self._worker_document(row, now).model_dump(),
+                    runtimes={
+                        capability: DistributedWorkerRuntime.model_validate(runtime)
+                        for capability, runtime in json.loads(
+                            row["runtimes_json"] or "{}"
+                        ).items()
+                    },
+                    runtimes_reported_at=(
+                        self._parse_timestamp(row["runtimes_reported_at"])
+                        if row["runtimes_reported_at"]
+                        else None
+                    ),
+                    activity=activity[row["worker_id"]],
+                )
+                for row in rows
+            ]
         )
+
+    def _activity_locked(
+        self, worker: sqlite3.Row
+    ) -> list[DistributedWorkerCapabilityActivity]:
+        """Last success and failure per announced capability, from retained jobs."""
+        rows = self._connection.execute(
+            """
+            SELECT type, status, finished_at, error_json FROM (
+                SELECT type, status, finished_at, error_json,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY type, status = ?
+                        ORDER BY julianday(finished_at) DESC
+                    ) AS rank
+                FROM distributed_jobs
+                WHERE worker_id = ? AND finished_at IS NOT NULL
+                  AND status IN (?, ?, ?)
+            ) WHERE rank = 1
+            """,
+            (
+                DistributedJobStatus.SUCCEEDED.value,
+                worker["worker_id"],
+                DistributedJobStatus.SUCCEEDED.value,
+                DistributedJobStatus.FAILED.value,
+                DistributedJobStatus.TIMEOUT.value,
+            ),
+        ).fetchall()
+        activity = {
+            capability: DistributedWorkerCapabilityActivity(type=capability)
+            for capability in json.loads(worker["capabilities_json"])
+        }
+        for row in rows:
+            current = activity.setdefault(
+                row["type"], DistributedWorkerCapabilityActivity(type=row["type"])
+            )
+            finished_at = self._parse_timestamp(row["finished_at"])
+            if row["status"] == DistributedJobStatus.SUCCEEDED.value:
+                current.last_succeeded_at = finished_at
+                continue
+            error = json.loads(row["error_json"]) if row["error_json"] else {}
+            current.last_failed_at = finished_at
+            current.last_failure_status = DistributedJobStatus(row["status"])
+            message = error.get("message") if isinstance(error, dict) else None
+            current.last_failure_message = (
+                str(message)[:300] if message is not None else None
+            )
+        return [activity[capability] for capability in sorted(activity)]
 
     def mark_worker_waking(
         self,

@@ -120,6 +120,15 @@ class DistributedJobSchema:
                     "ALTER TABLE distributed_workers "
                     "ADD COLUMN wake_on_lan_mac_address TEXT"
                 )
+            if "runtimes_json" not in worker_columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_workers ADD COLUMN runtimes_json TEXT"
+                )
+            if "runtimes_reported_at" not in worker_columns:
+                self._connection.execute(
+                    "ALTER TABLE distributed_workers "
+                    "ADD COLUMN runtimes_reported_at TEXT"
+                )
             self._connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS distributed_worker_pairings (

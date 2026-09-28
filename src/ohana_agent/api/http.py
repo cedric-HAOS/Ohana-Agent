@@ -487,6 +487,10 @@ def _worker_routes(service: AdministrationService) -> _RouteTable:
             _call_with_body(service.poll_worker_pairing),
         ),
         _route("/v1/jobs/workers/register", _register_worker),
+        _route(
+            "/v1/jobs/workers/runtimes",
+            _worker_call_with_body(service.report_worker_runtimes),
+        ),
         _route("/v1/jobs/claim", _worker_call_with_body(service.claim_job)),
         _route("/v1/jobs/next", _worker_call_with_body(service.next_worker_job)),
         _route(

@@ -374,6 +374,30 @@ class DistributedWorkerRegistration(AdministrationModel):
         return normalized
 
 
+class DistributedWorkerRuntimeState(StrEnum):
+    """Local runtime a capability needs on the worker, as Katsuyu checked it."""
+
+    READY = "ready"
+    UNVERIFIED = "unverified"
+    MISSING = "missing"
+    FAILED = "failed"
+
+
+class DistributedWorkerRuntime(AdministrationModel):
+    """Synthetic state of the local runtime needed by one capability."""
+
+    state: DistributedWorkerRuntimeState
+    detail: str = Field(default="", max_length=300)
+
+
+class DistributedWorkerRuntimeReport(AdministrationModel):
+    """Katsuyu's own check of the runtimes its capabilities need."""
+
+    protocol_version: Literal[1] = 1
+    worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    runtimes: dict[str, DistributedWorkerRuntime] = Field(max_length=32)
+
+
 class DistributedWorkerAvailability(StrEnum):
     """Operational availability exposed independently from job states."""
 
@@ -393,11 +417,33 @@ class DistributedWorkerDocument(DistributedWorkerRegistration):
     wake_deadline_at: datetime | None = None
 
 
+class DistributedWorkerCapabilityActivity(AdministrationModel):
+    """Last finished jobs of one capability on one worker (retained jobs only)."""
+
+    type: str
+    last_succeeded_at: datetime | None = None
+    last_failed_at: datetime | None = None
+    last_failure_status: DistributedJobStatus | None = None
+    last_failure_message: str | None = None
+
+
+class DistributedWorkerStatusDocument(DistributedWorkerDocument):
+    """Administration view of a worker: registration plus Phase 5 vitals.
+
+    Kept apart from DistributedWorkerDocument, which Katsuyu parses strictly
+    in the registration response.
+    """
+
+    runtimes: dict[str, DistributedWorkerRuntime] = Field(default_factory=dict)
+    runtimes_reported_at: datetime | None = None
+    activity: list[DistributedWorkerCapabilityActivity] = Field(default_factory=list)
+
+
 class DistributedWorkerCollection(AdministrationModel):
     """Workers registered with the Agent control plane."""
 
     protocol_version: Literal[1] = 1
-    workers: list[DistributedWorkerDocument] = Field(default_factory=list)
+    workers: list[DistributedWorkerStatusDocument] = Field(default_factory=list)
 
 
 class DistributedWorkerPairingRequest(DistributedWorkerRegistration):

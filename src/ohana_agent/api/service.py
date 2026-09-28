@@ -521,7 +521,7 @@ class AdministrationService:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
         self._settle_for_read(reconcile=True)
-        requests =self.incident_repository.list_user_requests(state="pending").requests
+        requests = self.incident_repository.list_user_requests(state="pending").requests
         incidents = self.incident_repository.list(state="active", limit=500)
         incidents.sort(
             key=lambda incident: (

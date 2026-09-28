@@ -76,6 +76,7 @@ from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
 from ohana_agent.tsunade.investigations import InvestigationExecutor
+from ohana_agent.tsunade.preventive import TsunadePreventiveMonitor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -184,6 +185,9 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         ),
     )
     incident_repository = _build_incident_repository(context, administration_config)
+    preventive_monitor = TsunadePreventiveMonitor(
+        administration_config.control_database_path
+    )
     companions = _build_companions(administration_config)
     worker_tls = _build_worker_tls(administration_config.jobs)
     investigation_executor = _build_investigation_executor(
@@ -213,6 +217,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         worker_ca_sha256=worker_tls.ca_sha256 if worker_tls is not None else None,
         **_wake_arguments(context, administration_config.jobs.wake_on_lan),
         incident_repository=incident_repository,
+        preventive_monitor=preventive_monitor,
         investigation_executor=investigation_executor,
         log_source_broker=(
             LogSourceBroker(context.plugins["backup"].config, job_repository)
@@ -278,6 +283,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
     )
     context.event_bus.subscribe(ObservationPublished, tsunade_handler)
     context.event_bus.subscribe(HostHealthObserved, tsunade_handler)
+    context.event_bus.subscribe(HostHealthObserved, preventive_monitor.handle)
     if (
         job_repository is not None
         and context.plugins["backup"].config.infra_01.use_katsuyu

@@ -67,6 +67,7 @@ from ohana_agent.tsunade.investigations import (
     investigation_summary,
 )
 from ohana_agent.tsunade.local_time import paris_now
+from ohana_agent.tsunade.preventive import TsunadePreventiveMonitor
 from ohana_agent.tsunade.repair_catalog import eligible_repair, repair_spec
 
 LOGGER = logging.getLogger(__name__)
@@ -111,6 +112,7 @@ class AdministrationService:
         wake_mac_address: str | None = None,
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
+        preventive_monitor: TsunadePreventiveMonitor | None = None,
         investigation_executor: InvestigationExecutor | None = None,
         log_source_broker: LogSourceBroker | None = None,
         expertise_service: TsunadeExpertiseService | None = None,
@@ -192,6 +194,7 @@ class AdministrationService:
         self._last_job_settlement: datetime | None = None
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
+        self.preventive_monitor = preventive_monitor
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
         self.expertise_service = expertise_service
@@ -318,6 +321,8 @@ class AdministrationService:
                     "incidents.activity.read",
                 ]
             )
+        if self.preventive_monitor is not None:
+            operations.append("preventive.read")
         if self.companion_repository is not None:
             operations.extend(
                 [
@@ -942,6 +947,12 @@ class AdministrationService:
                 # The scheduled observation and the deadline still apply.
                 LOGGER.exception("Unable to request the manual action verification")
         return action
+
+    def read_preventive_summary(self) -> object:
+        """Phase 4: the short synthesis and the detail of each drift rule."""
+        if self.preventive_monitor is None:
+            raise LookupError("La maintenance préventive est indisponible")
+        return self.preventive_monitor.summary()
 
     def list_experiences(self) -> object:
         """List known repairs with their attempts, outcomes and state."""

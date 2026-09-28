@@ -147,6 +147,11 @@ def configure_logging(level: str) -> None:
         format=("%(asctime)s %(levelname)s %(name)s — %(message)s"),
         force=True,
     )
+    # Each zwave.status probe opens a client that logs two INFO lines; on
+    # INFRA-01 they alone filled 1,250 journal lines a day.
+    logging.getLogger("zwave_js_server").setLevel(
+        logging.DEBUG if normalized_level == "DEBUG" else logging.WARNING
+    )
 
 
 def install_signal_handlers(

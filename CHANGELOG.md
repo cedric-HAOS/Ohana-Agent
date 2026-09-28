@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Journal d'INFRA-01 allégé : une tâche planifiée réussie n'écrit plus de
+  ligne `INFO` (seulement en `DEBUG`), et le client Z-Wave JS n'écrit plus ses
+  deux lignes de connexion à chaque sonde `zwave.status`. L'Agent écrivait
+  environ 26 000 lignes par jour, dont 14 500 pour `jobs.wake.dispatch`
+  (toutes les 5 secondes) : au-delà de 10 000 lignes en 24 h, le contrôle
+  quotidien de Katsuyu ne couvrait plus la fenêtre et déclarait INFRA-01
+  tronqué. Les échecs de tâches restent en `ERROR`.
 - Télémétrie Home Assistant : quand Home Assistant ne fournit aucune valeur
   (entité introuvable, erreur HTTP, API injoignable, état `unavailable`),
   l'observation est dégradée pendant 10 minutes, puis critique si cela dure.

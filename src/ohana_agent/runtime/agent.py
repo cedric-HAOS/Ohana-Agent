@@ -172,7 +172,10 @@ class ProductionAgent:
 
             for result in results:
                 if result.success:
-                    LOGGER.info(
+                    # One line per successful task (jobs.wake.dispatch every
+                    # 5 s) pushed the INFRA-01 journal past the 10,000 lines
+                    # Katsuyu reads for a 24 h window.
+                    LOGGER.debug(
                         "Scheduled task completed: %s",
                         result.command,
                     )

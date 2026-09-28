@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ohana_agent.api.service import AdministrationService
+from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.observation.observation import Observation
 from ohana_agent.observation.observation_status import ObservationStatus
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
@@ -43,11 +45,15 @@ def _host(
     )
 
 
-def _days(monitor: TsunadePreventiveMonitor, values: list[float]) -> None:
+def _days(
+    monitor: TsunadePreventiveMonitor,
+    values: list[float],
+    today: datetime = NOW,
+) -> None:
     """One sample per day ending today, with a fixed boot long ago."""
-    boot = NOW - timedelta(days=60)
+    boot = today - timedelta(days=60)
     for offset, value in enumerate(values):
-        at = NOW - timedelta(days=len(values) - 1 - offset)
+        at = today - timedelta(days=len(values) - 1 - offset)
         monitor.record_host_health(
             _host(at, disk=value, uptime=int((at - boot).total_seconds()))
         )
@@ -264,3 +270,50 @@ def _network_incident(
     incidents.process(observation(started, False))
     if minutes is not None:
         incidents.process(observation(started + timedelta(minutes=minutes), True))
+
+
+def test_agent_serves_the_detail_and_shizune_gets_only_the_essential(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "control.db"
+    incidents = TsunadeIncidentRepository(database)
+    monitor = TsunadePreventiveMonitor(database)
+    # The service evaluates at the real current time.
+    _days(monitor, [70.0, 71.2, 72.1, 73.4, 74.5], datetime.now(PARIS))
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            tmp_path / "infrastructure.yaml"
+        ),
+        incident_repository=incidents,
+        preventive_monitor=monitor,
+    )
+
+    assert "preventive.read" in service.capabilities().operations
+    detail = service.read_preventive_summary()
+    assert [check["id"] for check in detail["checks"]] == [
+        "disk_growth",
+        "repeated_reboots",
+        "network_interruptions",
+    ]
+    essential = service.read_companion_summary()["preventive"]
+    assert essential["status"] == "watch"
+    assert essential["watch"] == [
+        {
+            "title": "INFRA-01 : espace disque en hausse depuis 5 jours",
+            "urgent": False,
+        }
+    ]
+    assert essential["conclusion"] == "Aucune intervention nécessaire."
+    assert "evidence" not in str(essential)
+
+
+def test_the_monitor_never_keeps_the_control_database_locked(tmp_path: Path) -> None:
+    database = tmp_path / "control.db"
+    monitor = TsunadePreventiveMonitor(database)
+    monitor.record_host_health(_host(NOW))
+    monitor.record_host_health(_host(NOW + timedelta(minutes=1), disk=41.0))
+    monitor.summary(now=NOW + timedelta(minutes=2))
+
+    other = sqlite3.connect(database, timeout=0)
+    other.execute("BEGIN IMMEDIATE")
+    other.rollback()

@@ -585,6 +585,26 @@ class AdministrationService:
             "attention": attention,
             "active_count": active_count,
             "attention_truncated": active_count > len(attention),
+            "preventive": self._companion_preventive(),
+        }
+
+    def _companion_preventive(self) -> dict[str, Any] | None:
+        """The essential of the preventive synthesis; Vision has the detail."""
+        if self.preventive_monitor is None:
+            return None
+        try:
+            summary = self.preventive_monitor.summary()
+        except Exception:  # noqa: BLE001 - incidents stay readable without it.
+            LOGGER.exception("Unable to evaluate the preventive synthesis")
+            return None
+        return {
+            "status": summary["status"],
+            "watch": [
+                {"title": item["title"], "urgent": item["urgent"]}
+                for item in summary["watch"]
+            ],
+            "conclusion": summary["conclusion"],
+            "generated_at": summary["generated_at"],
         }
 
     def read_companion_requests(self, state: str = "pending") -> object:

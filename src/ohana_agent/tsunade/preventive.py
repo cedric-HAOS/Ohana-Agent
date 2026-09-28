@@ -120,6 +120,7 @@ class TsunadePreventiveMonitor:
         # sample, because INFRA-01 writes to a slow SD card every minute.
         self._days: dict[tuple[str, str, str], _Day] = {}
         self._last_flush: datetime | None = None
+        self._purged_on: str | None = None
         self._agent_restarts: dict[str, int] = {}
 
     # Recording -----------------------------------------------------------
@@ -270,10 +271,15 @@ class TsunadePreventiveMonitor:
                 written = True
             if key[0] != today:
                 del self._days[key]
-        cutoff = (current.date() - timedelta(days=90)).isoformat()
-        self._connection.execute(
-            "DELETE FROM tsunade_trend_daily WHERE day < ?", (cutoff,)
-        )
+        if self._purged_on != today:
+            cutoff = (current.date() - timedelta(days=90)).isoformat()
+            self._connection.execute(
+                "DELETE FROM tsunade_trend_daily WHERE day < ?", (cutoff,)
+            )
+            self._purged_on = today
+            written = True
+        # Any DML opened a transaction: leaving it open would lock the whole
+        # control database for the incident repository.
         if written:
             self._connection.commit()
         self._last_flush = current

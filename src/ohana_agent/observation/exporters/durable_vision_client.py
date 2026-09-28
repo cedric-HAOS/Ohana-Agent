@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from collections.abc import Callable
 from threading import Event, Lock, Thread
 from typing import Any
 
@@ -25,6 +26,7 @@ class DurableVisionClient:
         outbox: VisionObservationOutbox,
         *,
         retry_seconds: float = 10.0,
+        on_progress: Callable[[], None] | None = None,
     ) -> None:
         if retry_seconds <= 0:
             raise ValueError("retry_seconds must be greater than zero.")
@@ -32,6 +34,8 @@ class DurableVisionClient:
         self.client = client
         self.outbox = outbox
         self.retry_seconds = retry_seconds
+        # Phase 5 vitals: a pass that delivered something or emptied the backlog.
+        self.on_progress = on_progress
         self._stop_event = Event()
         self._wake_event = Event()
         self._flush_lock = Lock()
@@ -85,11 +89,13 @@ class DurableVisionClient:
     def flush(self) -> int:
         """Deliver queued observations in order until Vision becomes unavailable."""
         delivered = 0
+        drained = False
         with self._flush_lock:
             self._persist_incoming()
             while not self._stop_event.is_set():
                 entry = self.outbox.oldest()
                 if entry is None:
+                    drained = True
                     break
 
                 try:
@@ -106,6 +112,8 @@ class DurableVisionClient:
                 self.outbox.mark_delivered(entry.observation_id)
                 delivered += 1
 
+        if (delivered or drained) and self.on_progress is not None:
+            self.on_progress()
         return delivered
 
     def _persist_incoming(self) -> None:

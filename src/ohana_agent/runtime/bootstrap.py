@@ -86,6 +86,7 @@ from ohana_agent.runtime.plugin_catalog import (
     production_plugin_specs,
 )
 from ohana_agent.runtime.plugin_specs import ProductionPlugins
+from ohana_agent.runtime.vitals import AgentVitals
 from ohana_agent.scheduler import (
     DispatcherTaskExecutor,
     Scheduler,
@@ -133,6 +134,7 @@ def _build_teleinformation_ingestion_runtime(
 def _build_vision_client(
     configuration: Configuration,
     vision_client: VisionClient | None,
+    vitals: AgentVitals | None = None,
 ) -> tuple[VisionClient, DurableVisionClient | None]:
     """Resolve the Ohana-Vision client, durable in production by default."""
     if vision_client is not None:
@@ -158,6 +160,12 @@ def _build_vision_client(
     if outbox_path is None:
         return http_vision_client, None
 
+    on_progress = None
+    if vitals is not None:
+        vitals.declare(
+            "vision_delivery", label="Livraison à Vision", max_silence_seconds=300
+        )
+        on_progress = vitals.beater("vision_delivery")
     durable_client = DurableVisionClient(
         http_vision_client,
         VisionObservationOutbox(
@@ -165,6 +173,7 @@ def _build_vision_client(
             max_entries=configuration.vision.outbox_max_entries,
         ),
         retry_seconds=configuration.vision.outbox_retry_seconds,
+        on_progress=on_progress,
     )
     return durable_client, durable_client
 
@@ -220,8 +229,10 @@ def build_production_agent(
     )
 
     event_bus = EventBus()
+    vitals = AgentVitals()
+    vitals.declare("scheduler", label="Planificateur", max_silence_seconds=300)
     resolved_vision_client, vision_export_runtime = _build_vision_client(
-        configuration, vision_client
+        configuration, vision_client, vitals
     )
     vision_observation_exporter = VisionObservationExporter(
         client=resolved_vision_client,
@@ -269,7 +280,7 @@ def build_production_agent(
     )
 
     host_health_observation_mapper = HostHealthObservationMapper()
-    host_health_monitor = HostHealthMonitor(SystemHostProbe())
+    host_health_monitor = HostHealthMonitor(SystemHostProbe(), vitals=vitals)
     host_health_reporter = HostHealthReporter(
         host_health_monitor,
         sinks=(
@@ -450,6 +461,7 @@ def build_production_agent(
         host_health_runtime=host_health_reporter,
         icloud_connectivity_runtime=icloud_connectivity_reporter,
         vision_export_runtime=vision_export_runtime,
+        on_scheduler_activity=vitals.beater("scheduler"),
     )
 
     zwave_discovery_handler = ZWaveDiscoveryHandler(
@@ -477,6 +489,7 @@ def build_production_agent(
                 clock=resolved_clock,
                 agent=agent,
                 apply_plugin_configuration=apply_plugin_configuration,
+                vitals=vitals,
             )
         )
 

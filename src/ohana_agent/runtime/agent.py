@@ -90,6 +90,8 @@ class ProductionAgent:
     icloud_connectivity_runtime: HostHealthRuntime | None = None
     vision_export_runtime: VisionExportRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
+    # Phase 5 vitals: called whenever the scheduler actually ran a task.
+    on_scheduler_activity: Callable[[], None] | None = None
     monotonic_clock: Callable[[], float] = field(
         default=monotonic,
         repr=False,
@@ -171,6 +173,9 @@ class ProductionAgent:
         """Execute one scheduler iteration."""
         with self._runtime_lock:
             results = self.scheduler.tick()
+
+            if results and self.on_scheduler_activity is not None:
+                self.on_scheduler_activity()
 
             for result in results:
                 if result.success:

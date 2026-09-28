@@ -86,6 +86,9 @@ class ThreadedHTTPListener:
     thread_name = "ohana-agent-http"
     server_header = "Ohana-Agent"
     max_workers = 16
+    # Phase 5 vitals: called from the loop itself, so a blocked loop goes silent.
+    heartbeat: Callable[[], None] | None = None
+    heartbeat_seconds = 10.0
 
     def __init__(self, *, host: str, port: int, logger: logging.Logger) -> None:
         self.host = host
@@ -187,12 +190,27 @@ class ThreadedHTTPListener:
             return
 
         ready.set_result(runner)
+        self._schedule_heartbeat(loop)
 
         try:
             loop.run_forever()
         finally:
             loop.run_until_complete(runner.cleanup())
             self._close_loop(loop, executor)
+
+    def _schedule_heartbeat(self, loop: asyncio.AbstractEventLoop) -> None:
+        heartbeat = self.heartbeat
+        if heartbeat is None:
+            return
+
+        def beat() -> None:
+            try:
+                heartbeat()
+            except Exception:  # noqa: BLE001 - vitals never stop the listener.
+                LOGGER.exception("Listener heartbeat failed")
+            loop.call_later(self.heartbeat_seconds, beat)
+
+        loop.call_soon(beat)
 
     @staticmethod
     def _close_loop(

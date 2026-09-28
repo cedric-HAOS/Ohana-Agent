@@ -17,6 +17,7 @@ from time import monotonic
 from typing import Any
 
 from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.runtime.vitals import AgentVitals, stale_components
 
 LOGGER = logging.getLogger(__name__)
 
@@ -81,6 +82,9 @@ class HostHealthSnapshot:
     agent_restarts: int | None
     failed_systemd_units: tuple[str, ...]
     inactive_systemd_units: tuple[str, ...]
+    # Phase 5: last useful activity of the Agent's own components.
+    agent_components: tuple[dict[str, Any], ...] = ()
+    stale_agent_components: tuple[str, ...] = ()
 
     def to_json(self) -> str:
         """Serialize the snapshot using stable compact JSON."""
@@ -369,16 +373,25 @@ class HostHealthMonitor:
         *,
         required_samples: int = 3,
         utc_now: Callable[[], datetime] | None = None,
+        vitals: AgentVitals | None = None,
     ) -> None:
         self._probe = probe
         self._required_samples = max(required_samples, 1)
         self._utc_now = utc_now or (lambda: datetime.now(UTC))
+        self._vitals = vitals
         self._streaks: dict[str, int] = {}
 
     def collect(self) -> HostHealthSnapshot:
         """Collect and evaluate one host health snapshot."""
         metrics = self._probe.collect()
+        components = self._vitals.snapshot() if self._vitals is not None else ()
+        stale = stale_components(components)
         conditions = self._conditions(metrics)
+        if stale:
+            # The silence bound already spans several samples.
+            conditions.append(
+                ("agent_components", "degraded", "agent_components_stale", True)
+            )
         active: list[tuple[str, str]] = []
         observed = {key for key, _severity, _reason, _immediate in conditions}
 
@@ -401,6 +414,8 @@ class HostHealthMonitor:
             reasons=tuple(reason for _severity, reason in active),
             updated_at=self._utc_now().isoformat(),
             **asdict(metrics),
+            agent_components=components,
+            stale_agent_components=stale,
         )
 
     @staticmethod

@@ -128,6 +128,11 @@ class InvestigationExecutor:
                 5,
                 lambda: self._host("services"),
             ),
+            "agent.vitals": (
+                "Read the last useful activity of Agent components",
+                5,
+                lambda: self._host("agent"),
+            ),
         }
 
     def catalog(self) -> list[InvestigationOperation]:
@@ -263,6 +268,7 @@ class InvestigationExecutor:
                 "inactive_systemd_units",
                 "agent_restarts",
             ),
+            "agent": ("agent_components", "stale_agent_components"),
         }[section]
         return {field: snapshot.get(field) for field in fields}
 
@@ -295,6 +301,8 @@ def probe_failed(result: InvestigationResult) -> bool:
         return bool(
             data.get("failed_systemd_units") or data.get("inactive_systemd_units")
         )
+    if result.operation == "agent.vitals":
+        return bool(data.get("stale_agent_components"))
     return False
 
 

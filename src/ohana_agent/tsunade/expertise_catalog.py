@@ -63,6 +63,16 @@ class KnownProcedure:
 
 
 KNOWN_PROCEDURES = (
+    # Phase 5, first: a host.health message may also carry other reasons.
+    KnownProcedure(
+        ("agent_components",),
+        ("agent.vitals",),
+        "Un composant interne de l’Agent n’a plus d’activité utile récente.",
+        (
+            "Consulter le composant silencieux et le journal de l’Agent ; "
+            "le redémarrage de l’Agent reste une décision manuelle.",
+        ),
+    ),
     # "zwave.status" only: a dead device (zwave.node.alive) is no driver fault.
     KnownProcedure(
         ("zwave.status",),

@@ -53,6 +53,7 @@ from ohana_agent.plugins.runtime.plugin_manager import PluginManager
 from ohana_agent.runtime.agent import ProductionAgent
 from ohana_agent.runtime.plugin_catalog import LOCAL_SCHEDULE_TIMEZONE
 from ohana_agent.runtime.plugin_specs import ProductionPlugins, replace_plugin_tasks
+from ohana_agent.runtime.vitals import AgentVitals
 from ohana_agent.scheduler import CronTrigger, IntervalTrigger, Scheduler, Task
 from ohana_agent.scheduler.clock import Clock
 from ohana_agent.tsunade.configuration_inspection import (
@@ -97,6 +98,7 @@ class AdministrationContext:
     clock: Clock
     agent: ProductionAgent
     apply_plugin_configuration: Callable[[str, object], None]
+    vitals: AgentVitals | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,6 +303,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
             ),
             (timedelta(0),),
         ),
+        on_processed=_vital(context.vitals, "tsunade", "Tsunade (incidents)", 300),
     )
     context.event_bus.subscribe(ObservationPublished, tsunade_handler)
     context.event_bus.subscribe(HostHealthObserved, tsunade_handler)
@@ -319,8 +322,21 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         worker_token=worker_token,
         worker_tls=worker_tls,
         companions=companions,
+        heartbeat=_vital(context.vitals, "administration", "API d’administration", 60),
     )
     return administration_service
+
+
+def _vital(
+    vitals: AgentVitals | None,
+    component: str,
+    label: str,
+    max_silence_seconds: float,
+) -> Callable[[], None] | None:
+    if vitals is None:
+        return None
+    vitals.declare(component, label=label, max_silence_seconds=max_silence_seconds)
+    return vitals.beater(component)
 
 
 def _read_secret(path: Path, description: str) -> str:
@@ -645,6 +661,7 @@ class TsunadeObservationHandler:
         logs_config: DistributedLogAnalysisConfig,
         notifications: APNsNotificationPublisher | None,
         on_name_lookup_failure: Callable[[], object] | None = None,
+        on_processed: Callable[[], object] | None = None,
     ) -> None:
         self._incidents = incidents
         self._expertise = expertise
@@ -652,9 +669,12 @@ class TsunadeObservationHandler:
         self._logs_config = logs_config
         self._notifications = notifications
         self._on_name_lookup_failure = on_name_lookup_failure
+        self._on_processed = on_processed
 
     def __call__(self, event: ObservationPublished) -> None:
         incident = self._incidents.process(event.observation)
+        if self._on_processed is not None:
+            self._on_processed()
         if incident is None:
             return
 
@@ -759,6 +779,7 @@ def _build_listeners(
     worker_token: str | None,
     worker_tls: _WorkerTLS | None,
     companions: _CompanionRuntime | None,
+    heartbeat: Callable[[], None] | None = None,
 ) -> AdministrationHTTPServer | AdministrationServerGroup:
     """Loopback API, plus the TLS worker and companion listeners when enabled."""
     servers = [
@@ -770,6 +791,8 @@ def _build_listeners(
             port=administration_config.port,
         )
     ]
+    # The loopback API Vision reads: its loop going silent is what froze pages.
+    servers[0].heartbeat = heartbeat
     if worker_tls is not None:
         servers.append(
             AdministrationHTTPServer(

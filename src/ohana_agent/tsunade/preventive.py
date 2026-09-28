@@ -14,6 +14,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from statistics import median
 from threading import RLock
@@ -46,7 +47,8 @@ RULES: tuple[dict[str, str], ...] = (
         "rule": (
             f"Maximum journalier de l'occupation disque sur {WINDOW_DAYS} jours : "
             f"au moins {DISK_MIN_DAYS} jours mesurés, hausse médiane d'au moins "
-            f"{DISK_MIN_SLOPE} point par jour et au moins {DISK_MIN_RISES} "
+            f"{str(DISK_MIN_SLOPE).replace('.', ',')} point par jour et au moins "
+            f"{DISK_MIN_RISES} "
             f"hausses d'un jour sur l'autre ; signalé si l'occupation atteint "
             f"{DISK_HIGH_PERCENT:.0f} % ou si {DISK_FULL_PERCENT:.0f} % serait "
             f"atteint sous {DISK_HORIZON_DAYS} jours."
@@ -605,7 +607,9 @@ def _synthesis(headline: str, watch: list[dict[str, Any]], conclusion: str) -> s
 
 
 def _decimal(value: float) -> str:
-    return f"{value:.1f}".replace(".", ",")
+    # Half up, like Intl.NumberFormat in Vision: 1.15 reads 1,2 on both sides.
+    rounded = Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return str(rounded).replace(".", ",")
 
 
 def _percent(value: float) -> str:

@@ -2,6 +2,12 @@
 
 ## Non publié
 
+## [1.40.0] — 2026-09-28 — Ohana supervise Ohana
+
+Publiée le jour même de 1.39.0, à la demande de l'utilisateur.
+Déployer avec Vision 1.31.0, **Vision d'abord** : la sonde traite un Vision
+sans `/api/runtime/vitals` comme indisponible (incident critique).
+
 - Vitaux de Katsuyu (Phase 5, lot 4) : nouvelle route worker
   `POST /v1/jobs/workers/runtimes` où Katsuyu déclare l'état du runtime local
   de chaque capacité (`ready`, `unverified`, `missing`, `failed` et sa

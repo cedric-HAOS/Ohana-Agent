@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +19,7 @@ class FakeScheduler:
     start_calls: int = 0
     stop_calls: int = 0
     tick_calls: int = 0
+    on_tick: Callable[[], None] | None = None
 
     def start(self) -> None:
         self.start_calls += 1
@@ -29,6 +31,8 @@ class FakeScheduler:
 
     def tick(self) -> list[object]:
         self.tick_calls += 1
+        if self.on_tick is not None:
+            self.on_tick()
         return []
 
 
@@ -145,7 +149,9 @@ def test_production_agent_synchronizes_before_starting_scheduler() -> None:
     agent.stop()
 
 
-def test_production_agent_does_not_start_when_vision_is_unavailable() -> None:
+def test_production_agent_observes_when_vision_is_unavailable_at_start() -> None:
+    # Phase 5: an Agent started while Vision is down still observes Konoha,
+    # Vision's own failure included; the outbox keeps the observations.
     scheduler = FakeScheduler()
     client = FakeVisionClient(
         outcomes=[
@@ -160,13 +166,14 @@ def test_production_agent_does_not_start_when_vision_is_unavailable() -> None:
 
     agent.start()
 
-    assert scheduler.start_calls == 0
-    assert scheduler.tick_calls == 0
+    assert scheduler.start_calls == 1
     assert agent.infrastructure_synchronized is False
-    assert agent.running is False
+    assert agent.running is True
+
+    agent.stop()
 
 
-def test_production_agent_retries_until_vision_accepts_snapshot() -> None:
+def test_production_agent_retries_the_snapshot_while_observing() -> None:
     scheduler = FakeScheduler()
     client = FakeVisionClient(
         outcomes=[
@@ -180,24 +187,27 @@ def test_production_agent_retries_until_vision_accepts_snapshot() -> None:
             True,
         ]
     )
+    # Failed sync at 0 (retry at 10); the first tick at 10 resends it (next 310).
+    clock = SequenceClock(values=[0.0, 10.0, 10.0])
     agent = ProductionAgent(
         scheduler=scheduler,  # type: ignore[arg-type]
         vision_client=client,
         infrastructure_payload={"schema_version": 1},
         tick_interval_seconds=1.0,
         infrastructure_retry_seconds=10.0,
+        monotonic_clock=clock,
     )
     agent._stop_event = stop_event  # type: ignore[assignment]
+    synchronized: list[bool] = []
+    scheduler.on_tick = lambda: synchronized.append(agent.infrastructure_synchronized)
 
     agent.run()
 
     assert len(client.infrastructure_payloads) == 2
-    assert stop_event.wait_timeouts == [
-        10.0,
-        1.0,
-    ]
+    assert stop_event.wait_timeouts == [1.0, 1.0]
     assert scheduler.start_calls == 1
-    assert scheduler.tick_calls == 0
+    assert scheduler.tick_calls == 1
+    assert synchronized == [True]
     assert scheduler.stop_calls == 1
 
 

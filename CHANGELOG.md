@@ -2,6 +2,28 @@
 
 ## Non publié
 
+- Vitaux de l'Agent (Phase 5) : le planificateur, la livraison à Vision, le
+  gestionnaire Tsunade et la boucle de l'API d'administration notent leur
+  dernière activité utile (bornes 300 s, et 60 s pour la boucle qui bat
+  toutes les 10 s). `host.health` expose `agent_components` et
+  `stale_agent_components` ; un composant muet ajoute la raison
+  `agent_components_stale`, diagnostiquée par la sonde `agent.vitals` sans IA
+  ni réparation.
+- L'Agent observe même quand Vision est indisponible à son démarrage : le
+  planificateur et la santé de l'hôte ne l'attendent plus ; l'envoi de
+  l'infrastructure est retenté sans arrêter les observations, y compris lors
+  d'un changement de configuration.
+- Surveillance de Vision : sonde de `GET /api/runtime/vitals` toutes les 60 s
+  dans un fil séparé. Raisons `host.health` après 3 échantillons :
+  `vision_http_unavailable` (critique) et `vision_ingestion_stale` (plus de
+  5 min sans ingestion, dégradé). Sonde Tsunade `vision.status`, aucune
+  réparation. Requiert Vision avec `/api/runtime/vitals` ; avec un Vision
+  plus ancien, la sonde le voit comme indisponible.
+- Shizune est notifié quand un incident passe de dégradé à critique, plus
+  seulement quand il s'ouvre critique.
+- Une réponse JSON non objet aux vitaux Vision n'arrête pas le fil de
+  surveillance ; elle est signalée en échec et la mesure suivante continue.
+
 ## [1.39.0] — 2026-09-28 — Maintenance préventive et connexion iCloud
 
 Publiée le jour même de 1.38.1, à la demande de l'utilisateur.

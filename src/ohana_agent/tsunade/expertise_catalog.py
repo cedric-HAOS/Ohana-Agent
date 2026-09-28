@@ -65,6 +65,16 @@ class KnownProcedure:
 KNOWN_PROCEDURES = (
     # Phase 5, first: a host.health message may also carry other reasons.
     KnownProcedure(
+        ("vision_http", "vision_ingestion"),
+        ("vision.status",),
+        "Ohana-Vision ne répond plus ou n’ingère plus les observations.",
+        (
+            "Vérifier ohana-vision.service et son journal sur INFRA-01 ; "
+            "les observations restent en file dans l’Agent et le redémarrage "
+            "de Vision reste une décision manuelle.",
+        ),
+    ),
+    KnownProcedure(
         ("agent_components",),
         ("agent.vitals",),
         "Un composant interne de l’Agent n’a plus d’activité utile récente.",

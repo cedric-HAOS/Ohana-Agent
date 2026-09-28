@@ -89,6 +89,8 @@ class ProductionAgent:
     # Same lifecycle as host health: hourly rclone iCloud session check.
     icloud_connectivity_runtime: HostHealthRuntime | None = None
     vision_export_runtime: VisionExportRuntime | None = None
+    # Phase 5: background probe of Vision's vitals, same start/stop lifecycle.
+    vision_probe_runtime: VisionExportRuntime | None = None
     infrastructure_reconfigure: Callable[[InfrastructureConfig], None] | None = None
     # Phase 5 vitals: called whenever the scheduler actually ran a task.
     on_scheduler_activity: Callable[[], None] | None = None
@@ -140,12 +142,8 @@ class ProductionAgent:
 
     @property
     def running(self) -> bool:
-        """Return whether the production agent is running."""
-        return (
-            self.scheduler.running
-            and self._infrastructure_synchronized
-            and not self._stop_event.is_set()
-        )
+        """Return whether the production agent is observing."""
+        return self.scheduler.running and not self._stop_event.is_set()
 
     @property
     def infrastructure_synchronized(self) -> bool:
@@ -153,7 +151,12 @@ class ProductionAgent:
         return self._infrastructure_synchronized
 
     def start(self) -> None:
-        """Synchronize Vision and start the scheduler when possible."""
+        """Start observing, then synchronize Vision when it answers.
+
+        Phase 5: observations never wait for Vision. Before, an Agent started
+        while Vision was down observed nothing at all, not even Vision's own
+        failure; the outbox keeps observations until Vision is back.
+        """
         if self.scheduler.running:
             return
 
@@ -162,10 +165,7 @@ class ProductionAgent:
         self._start_teleinformation_ingestion()
         self._start_home_assistant_publisher()
         self._start_vision_export()
-
-        if not self._synchronize_infrastructure():
-            return
-
+        self._synchronize_infrastructure()
         self._start_host_health()
         self._start_scheduler()
 
@@ -203,18 +203,10 @@ class ProductionAgent:
         self._start_teleinformation_ingestion()
         self._start_home_assistant_publisher()
         self._start_vision_export()
+        self._synchronize_infrastructure()
 
         try:
             while not self._stop_event.is_set():
-                if not self._infrastructure_synchronized:
-                    if not self._synchronize_infrastructure():
-                        self._tick_home_assistant_publisher()
-
-                        if self._stop_event.wait(self.infrastructure_retry_seconds):
-                            break
-
-                        continue
-
                 if not self.scheduler.running:
                     self._start_host_health()
                     self._start_scheduler()
@@ -256,6 +248,9 @@ class ProductionAgent:
 
         if self.vision_export_runtime is not None:
             self.vision_export_runtime.stop()
+
+        if self.vision_probe_runtime is not None:
+            self.vision_probe_runtime.stop()
 
         self._infrastructure_synchronized = False
         self._next_infrastructure_refresh_at = None
@@ -313,9 +308,9 @@ class ProductionAgent:
                 self.infrastructure_reconfigure(configuration)
 
             self.infrastructure_payload = payload
-            synchronized = self._synchronize_infrastructure()
+            self._synchronize_infrastructure()
 
-            if scheduler_was_running and synchronized:
+            if scheduler_was_running:
                 self._start_scheduler()
 
     def _start_administration(self) -> None:
@@ -333,6 +328,8 @@ class ProductionAgent:
     def _start_vision_export(self) -> None:
         if self.vision_export_runtime is not None:
             self.vision_export_runtime.start()
+        if self.vision_probe_runtime is not None:
+            self.vision_probe_runtime.start()
 
     def _tick_home_assistant_publisher(self) -> None:
         if self.home_assistant_publisher is not None:
@@ -351,7 +348,7 @@ class ProductionAgent:
             self.icloud_connectivity_runtime.tick()
 
     def _start_scheduler(self) -> None:
-        """Start observations after infrastructure synchronization."""
+        """Start observations, whether or not Vision has the infrastructure."""
         self.scheduler.start()
         LOGGER.info("Ohana-Agent started.")
 
@@ -371,14 +368,15 @@ class ProductionAgent:
         try:
             self.vision_client.send_infrastructure(self.infrastructure_payload)
         except VisionClientError as error:
-            if self.scheduler.running:
-                self.scheduler.stop()
-
+            # Observations continue; the refresh path retries the snapshot.
             self._infrastructure_synchronized = False
-            self._next_infrastructure_refresh_at = None
+            self._next_infrastructure_refresh_at = (
+                self.monotonic_clock() + self.infrastructure_retry_seconds
+            )
 
             LOGGER.warning(
-                "Unable to synchronize infrastructure with Ohana-Vision: %s",
+                "Unable to synchronize infrastructure with Ohana-Vision; "
+                "observations continue: %s",
                 error,
             )
             return False
@@ -396,7 +394,8 @@ class ProductionAgent:
 
         Vision accepts observations without it and the outbox keeps them in
         order: a refresh timing out on a slow SD card once stopped every probe
-        until the next successful attempt.
+        until the next successful attempt. It is also how a snapshot Vision
+        never received (Vision down at start) is retried.
         """
         try:
             self.vision_client.send_infrastructure(self.infrastructure_payload)
@@ -411,6 +410,9 @@ class ProductionAgent:
             )
             return
 
+        if not self._infrastructure_synchronized:
+            LOGGER.info("Infrastructure synchronized with Ohana-Vision.")
+        self._infrastructure_synchronized = True
         self._next_infrastructure_refresh_at = (
             self.monotonic_clock() + self.infrastructure_refresh_seconds
         )

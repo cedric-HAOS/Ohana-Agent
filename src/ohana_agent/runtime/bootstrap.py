@@ -86,6 +86,7 @@ from ohana_agent.runtime.plugin_catalog import (
     production_plugin_specs,
 )
 from ohana_agent.runtime.plugin_specs import ProductionPlugins
+from ohana_agent.runtime.vision_probe import VisionVitalsProbe, vitals_url
 from ohana_agent.runtime.vitals import AgentVitals
 from ohana_agent.scheduler import (
     DispatcherTaskExecutor,
@@ -280,7 +281,17 @@ def build_production_agent(
     )
 
     host_health_observation_mapper = HostHealthObservationMapper()
-    host_health_monitor = HostHealthMonitor(SystemHostProbe(), vitals=vitals)
+    # Phase 5: only a real Vision is probed; an injected client means a test.
+    vision_probe = (
+        VisionVitalsProbe(vitals_url(str(configuration.vision.observation_url)))
+        if vision_client is None
+        else None
+    )
+    host_health_monitor = HostHealthMonitor(
+        SystemHostProbe(),
+        vitals=vitals,
+        vision=vision_probe.latest if vision_probe is not None else None,
+    )
     host_health_reporter = HostHealthReporter(
         host_health_monitor,
         sinks=(
@@ -461,6 +472,7 @@ def build_production_agent(
         host_health_runtime=host_health_reporter,
         icloud_connectivity_runtime=icloud_connectivity_reporter,
         vision_export_runtime=vision_export_runtime,
+        vision_probe_runtime=vision_probe,
         on_scheduler_activity=vitals.beater("scheduler"),
     )
 
@@ -490,6 +502,9 @@ def build_production_agent(
                 agent=agent,
                 apply_plugin_configuration=apply_plugin_configuration,
                 vitals=vitals,
+                vision_status_reader=(
+                    vision_probe.check_now if vision_probe is not None else None
+                ),
             )
         )
 

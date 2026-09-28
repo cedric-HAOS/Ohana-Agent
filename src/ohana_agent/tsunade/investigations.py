@@ -17,6 +17,7 @@ from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.contracts.administration import AdministrationModel
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
+from ohana_agent.runtime.vision_probe import vision_failures
 from ohana_agent.tsunade.evidence_privacy import redact_sensitive_value
 from ohana_agent.tsunade.local_time import paris_now
 from ohana_agent.tsunade.read_only import diagnostic_snapshot
@@ -63,6 +64,7 @@ class InvestigationExecutor:
         configuration_reader: Callable[[str], dict[str, Any]] | None = None,
         http_target_reader: Callable[[str], tuple[str, str] | None] | None = None,
         chrony_status_reader: Callable[[], dict[str, Any]] | None = None,
+        vision_status_reader: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.plugins = plugins
         self.host_health_reader = host_health_reader
@@ -71,6 +73,7 @@ class InvestigationExecutor:
         self.configuration_reader = configuration_reader
         self.http_target_reader = http_target_reader
         self.chrony_status_reader = chrony_status_reader
+        self.vision_status_reader = vision_status_reader
         self._operations: dict[str, tuple[str, int, Callable[[], dict[str, Any]]]] = {
             "network.ping": (
                 "Test configured network presence",
@@ -132,6 +135,11 @@ class InvestigationExecutor:
                 "Read the last useful activity of Agent components",
                 5,
                 lambda: self._host("agent"),
+            ),
+            "vision.status": (
+                "Ask Ohana-Vision whether it answers and still ingests",
+                10,
+                self._vision_status,
             ),
         }
 
@@ -234,6 +242,11 @@ class InvestigationExecutor:
             raise LookupError("chrony status is not available on this Agent")
         return self.chrony_status_reader()
 
+    def _vision_status(self) -> dict[str, Any]:
+        if self.vision_status_reader is None:
+            raise LookupError("Vision status is not available on this Agent")
+        return self.vision_status_reader()
+
     def _backup_status(self) -> dict[str, Any]:
         state = self.plugins.read("backup")
         result: dict[str, Any] = {
@@ -303,6 +316,8 @@ def probe_failed(result: InvestigationResult) -> bool:
         )
     if result.operation == "agent.vitals":
         return bool(data.get("stale_agent_components"))
+    if result.operation == "vision.status":
+        return bool(vision_failures(data))
     return False
 
 

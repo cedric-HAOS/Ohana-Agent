@@ -99,6 +99,7 @@ class AdministrationContext:
     agent: ProductionAgent
     apply_plugin_configuration: Callable[[str, object], None]
     vitals: AgentVitals | None = None
+    vision_status_reader: Callable[[], dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -516,6 +517,7 @@ def _build_investigation_executor(
             plugins["backup"].config, node
         ),
         chrony_status_reader=chrony_status,
+        vision_status_reader=context.vision_status_reader,
     )
 
 
@@ -611,12 +613,25 @@ class _AIJobDispatcher:
         return self._administration.create_job(payload)
 
 
+def _escalated_now(incident: Any) -> bool:
+    """Whether the observation just processed raised the incident to critical.
+
+    Phase 5: a stopped Vision first opens a degraded systemd incident and only
+    becomes critical once its HTTP silence is confirmed; that is when to push.
+    """
+    return any(
+        event.kind == "escalated"
+        and event.observation_id == incident.last_observation_id
+        for event in getattr(incident, "events", ())
+    )
+
+
 def incident_notification(incident: Any) -> dict[str, object] | None:
     """Return the companion push for a new critical or a resolved incident."""
     if (
         incident.state == "active"
         and incident.severity == "critical"
-        and incident.occurrence_count == 1
+        and (incident.occurrence_count == 1 or _escalated_now(incident))
     ):
         return {
             "schema_version": 1,

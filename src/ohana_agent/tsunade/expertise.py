@@ -808,6 +808,7 @@ class TsunadeExpertiseService(TsunadeLogExpertise, TsunadeAIExpertise):
             "dns.query": 15,
             "dhcp.status": 15,
             "ntp.status": 15,
+            "vision.status": 10,
         }.get(operation, 5)
 
     @staticmethod

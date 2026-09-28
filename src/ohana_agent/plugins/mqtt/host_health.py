@@ -17,6 +17,7 @@ from time import monotonic
 from typing import Any
 
 from ohana_agent.observation import Observation, ObservationStatus
+from ohana_agent.runtime.vision_probe import vision_failures
 from ohana_agent.runtime.vitals import AgentVitals, stale_components
 
 LOGGER = logging.getLogger(__name__)
@@ -85,6 +86,8 @@ class HostHealthSnapshot:
     # Phase 5: last useful activity of the Agent's own components.
     agent_components: tuple[dict[str, Any], ...] = ()
     stale_agent_components: tuple[str, ...] = ()
+    # Phase 5: the last Vision vitals measure, None when unknown.
+    vision: dict[str, Any] | None = None
 
     def to_json(self) -> str:
         """Serialize the snapshot using stable compact JSON."""
@@ -374,11 +377,13 @@ class HostHealthMonitor:
         required_samples: int = 3,
         utc_now: Callable[[], datetime] | None = None,
         vitals: AgentVitals | None = None,
+        vision: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self._probe = probe
         self._required_samples = max(required_samples, 1)
         self._utc_now = utc_now or (lambda: datetime.now(UTC))
         self._vitals = vitals
+        self._vision = vision
         self._streaks: dict[str, int] = {}
 
     def collect(self) -> HostHealthSnapshot:
@@ -386,7 +391,21 @@ class HostHealthMonitor:
         metrics = self._probe.collect()
         components = self._vitals.snapshot() if self._vitals is not None else ()
         stale = stale_components(components)
+        vision = self._vision() if self._vision is not None else None
+        vision_reasons = vision_failures(vision)
         conditions = self._conditions(metrics)
+        if "vision_http_unavailable" in vision_reasons:
+            # Undelivered observations are Vision's failure, not the Agent's.
+            stale = tuple(name for name in stale if name != "vision_delivery")
+            # Vision is also Shizune's only way in: the user is blind, so
+            # critical, which pushes. Three samples ride out a deployment.
+            conditions.append(
+                ("vision_http", "critical", "vision_http_unavailable", False)
+            )
+        elif vision_reasons:
+            conditions.append(
+                ("vision_ingestion", "degraded", "vision_ingestion_stale", False)
+            )
         if stale:
             # The silence bound already spans several samples.
             conditions.append(
@@ -416,6 +435,7 @@ class HostHealthMonitor:
             **asdict(metrics),
             agent_components=components,
             stale_agent_components=stale,
+            vision=vision,
         )
 
     @staticmethod

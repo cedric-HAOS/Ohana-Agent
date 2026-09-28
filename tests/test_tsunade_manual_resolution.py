@@ -88,6 +88,8 @@ def test_a_manual_action_confirmed_by_shikamaru_is_kept_only_on_request(
         experience = _confirm(repository, incident.incident_id)
         assert experience.action == {"kind": "manual", "description": COMMAND}
         assert (experience.attempt_count, experience.success_count) == (1, 1)
+        # The success is Shikamaru's recovery, not the moment of the click.
+        assert experience.last_success_at == resolved.ended_at
         assert repository.get(incident.incident_id).experience_candidate is None
     finally:
         repository.close()
@@ -234,11 +236,71 @@ def test_manual_resolution_requires_an_active_incident_and_a_real_note(
         repository.process(
             _observation(ObservationStatus.HEALTHY, paris_now() + timedelta(seconds=2))
         )
-        with pytest.raises(ValueError, match="incident actif"):
+        with pytest.raises(ValueError, match="déjà déclarée"):
             repository.declare_manual_resolution(
                 incident.incident_id, {"description": "Trop tard"}
             )
         with pytest.raises(LookupError):
             repository.declare_manual_resolution(uuid4(), {"description": "Inconnu"})
+    finally:
+        repository.close()
+
+
+def _resolved_without_declaration(repository: TsunadeIncidentRepository):
+    incident = repository.process(
+        _observation(ObservationStatus.UNHEALTHY, paris_now() - timedelta(seconds=30))
+    )
+    repository.process(
+        _observation(ObservationStatus.HEALTHY, paris_now() - timedelta(seconds=10))
+    )
+    return incident
+
+
+def test_a_manual_action_declared_just_after_the_recovery_is_kept_as_such(
+    tmp_path: Path,
+) -> None:
+    # Konoha, 28 September: teleinfo2mqtt restarted by hand, the incident
+    # closed before the form was sent and the declaration was refused.
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    try:
+        incident = _resolved_without_declaration(repository)
+        action = repository.declare_manual_resolution(
+            incident.incident_id, {"description": COMMAND, "source": "vision"}
+        )
+        resolved = repository.get(incident.incident_id)
+        assert action.status == "confirmed"
+        assert action.verified_at == resolved.ended_at
+        assert "avant cette déclaration" in action.result
+        candidate = resolved.experience_candidate
+        assert candidate is not None and candidate.kind == "manual"
+        assert candidate.caution.startswith("Votre action a été déclarée après")
+        assert "ne prouve pas à elle seule" in candidate.caution
+        assert repository.list_experiences() == []
+        with pytest.raises(ValueError, match="déjà déclarée"):
+            repository.declare_manual_resolution(
+                incident.incident_id, {"description": "Une autre action"}
+            )
+    finally:
+        repository.close()
+
+
+def test_a_manual_action_is_not_declared_long_after_the_recovery(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    try:
+        incident = _resolved_without_declaration(repository)
+        with repository._connection:
+            repository._connection.execute(
+                "UPDATE tsunade_incidents SET ended_at=? WHERE incident_id=?",
+                (
+                    (paris_now() - timedelta(minutes=11)).isoformat(),
+                    str(incident.incident_id),
+                ),
+            )
+        with pytest.raises(ValueError, match="10 minutes"):
+            repository.declare_manual_resolution(
+                incident.incident_id, {"description": COMMAND}
+            )
     finally:
         repository.close()

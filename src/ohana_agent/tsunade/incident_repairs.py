@@ -492,6 +492,8 @@ class TsunadeRepairs:
             ).encode("utf-8")
         ).hexdigest()
         now = paris_now()
+        # The success is Shikamaru's verified recovery, not the user's click.
+        succeeded_at = incident.ended_at or now
         anomalies = self._bounded_anomalies(incident.context)
         observations = [
             {
@@ -539,7 +541,7 @@ class TsunadeRepairs:
                         request.confirmed_by,
                         request.source,
                         str(incident.incident_id),
-                        now.isoformat(),
+                        succeeded_at.isoformat(),
                     ),
                 )
             else:
@@ -554,7 +556,7 @@ class TsunadeRepairs:
                     WHERE signature=?""",
                     (
                         now.isoformat(),
-                        now.isoformat(),
+                        succeeded_at.isoformat(),
                         request.confirmed_by,
                         request.source,
                         str(incident.incident_id),
@@ -933,10 +935,17 @@ class TsunadeRepairs:
             action={"kind": "manual", "description": action.description},
             result=action.result or incident.final_result or "Capacité saine",
             caution=(
-                "Shikamaru a constaté le retour à l’état sain après votre action ; "
-                "cette proximité dans le temps ne prouve pas à elle seule qu’elle "
-                "en est la cause. La piste restera une note : Ohana ne l’exécutera "
-                "jamais."
+                (
+                    "Votre action a été déclarée après le retour à l’état sain "
+                    "constaté par Shikamaru"
+                    if incident.ended_at is not None
+                    and action.declared_at > incident.ended_at
+                    else "Shikamaru a constaté le retour à l’état sain après "
+                    "votre action"
+                )
+                + " ; cette proximité dans le temps ne prouve pas à elle seule "
+                "qu’elle en est la cause. La piste restera une note : Ohana ne "
+                "l’exécutera jamais."
             ),
         )
 

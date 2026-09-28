@@ -2,6 +2,17 @@
 
 ## Non publié
 
+- Résolution manuelle déclarée après coup : une action faite à la main peut
+  encore être déclarée jusqu'à 10 minutes après la résolution de l'incident,
+  s'il n'a pas été résolu par une réparation supervisée et qu'aucune action
+  n'y est déjà déclarée. Elle est confirmée par l'observation saine qui a
+  clos l'incident, et la piste proposée précise qu'elle a été déclarée après
+  le retour à l'état sain. Sur Konoha, le 28 septembre, teleinfo2mqtt
+  redémarré à la main avait rétabli les trames avant l'envoi du formulaire,
+  et la déclaration était refusée.
+- Réparation connue enregistrée : sa dernière réussite est la résolution
+  constatée par Shikamaru, et non le moment où l'utilisateur l'enregistre.
+
 ## [1.38.0] — 2026-09-28 — Expérience des réparations et résolution manuelle
 
 - Résolution manuelle (Phase 3) : sur un incident actif, l'utilisateur

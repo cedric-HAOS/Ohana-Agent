@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.38.1] — 2026-09-28 — Pages lisibles pendant un traitement Katsuyu et journal allégé
+
 - Pages lisibles pendant le traitement d'un résultat Katsuyu : la liste et
   le détail des incidents, la synthèse et les demandes Shizune ne règlent
   plus la file des jobs quand un cycle Katsuyu la règle déjà. Le 28

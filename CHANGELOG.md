@@ -2,6 +2,14 @@
 
 ## Non publié
 
+- Pages lisibles pendant le traitement d'un résultat Katsuyu : la liste et
+  le détail des incidents, la synthèse et les demandes Shizune ne règlent
+  plus la file des jobs quand un cycle Katsuyu la règle déjà. Le 28
+  septembre de 12:09 à 12:12, le traitement d'un contrôle des journaux
+  (quatre revues, environ 2,4 s par écriture sur la carte SD d'INFRA-01) a
+  tenu ce verrou 38 s, puis chaque résultat IA l'a repris : chaque lecture
+  attendait au-delà des 10 s de Vision, qui répondait 502. Les échecs restent
+  réglés par le cycle en cours et par la tâche de réveil toutes les 30 s.
 - Journal d'INFRA-01 allégé : une tâche planifiée réussie n'écrit plus de
   ligne `INFO` (seulement en `DEBUG`), et le client Z-Wave JS n'écrit plus ses
   deux lignes de connexion à chaque sonde `zwave.status`. L'Agent écrivait

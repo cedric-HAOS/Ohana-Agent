@@ -471,9 +471,9 @@ class AdministrationService:
     def list_incidents(self, state: str = "active") -> object:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
-        self._refresh_failed_jobs()
-        if self.followups is not None and self.followups.automatic_read_only:
-            self._reconcile_followup_proposals()
+        self._settle_for_read(
+            reconcile=self.followups is not None and self.followups.automatic_read_only
+        )
         summary = self.incident_repository.statistics()
         latest_log_health = None
         if self.job_repository is not None:
@@ -513,16 +513,15 @@ class AdministrationService:
     def read_incident(self, incident_id: str) -> object:
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
-        self._refresh_failed_jobs()
+        self._settle_for_read()
         return self.incident_repository.get(incident_id)
 
     def read_companion_summary(self) -> object:
         """Return the smallest useful Konoha overview for a personal companion."""
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
-        self._refresh_failed_jobs()
-        self._reconcile_followup_proposals()
-        requests = self.incident_repository.list_user_requests(state="pending").requests
+        self._settle_for_read(reconcile=True)
+        requests =self.incident_repository.list_user_requests(state="pending").requests
         incidents = self.incident_repository.list(state="active", limit=500)
         incidents.sort(
             key=lambda incident: (
@@ -587,7 +586,7 @@ class AdministrationService:
         """Expose structured Tsunade questions without technical incident payloads."""
         if self.incident_repository is None:
             raise LookupError("Tsunade incidents are unavailable")
-        self._reconcile_followup_proposals()
+        self._settle_for_read(refresh=False, reconcile=True)
         return self.incident_repository.list_user_requests(
             state="all" if state == "all" else "pending"
         )
@@ -1543,6 +1542,26 @@ class AdministrationService:
                 if str(pending.job_id) == job_id:
                     self._process_job_completion(pending)
             return job
+
+    def _settle_for_read(
+        self, *, refresh: bool = True, reconcile: bool = False
+    ) -> None:
+        """Settle the queue before a read, unless a worker cycle is doing it.
+
+        Processing one Katsuyu result held the worker cycle lock for 38 s on
+        INFRA-01 (28 September, slow SD card): page reads waiting for it went
+        past Vision's 10 s timeout and Vision answered 502. The busy cycle
+        settles the queue itself and the wake task settles failures every 30 s.
+        """
+        if not self._worker_cycle_lock.acquire(blocking=False):
+            return
+        try:
+            if refresh:
+                self._refresh_failed_jobs()
+            if reconcile:
+                self._reconcile_followup_proposals()
+        finally:
+            self._worker_cycle_lock.release()
 
     def _refresh_failed_jobs(self) -> None:
         """Expose all terminal failures even when no worker polls again."""

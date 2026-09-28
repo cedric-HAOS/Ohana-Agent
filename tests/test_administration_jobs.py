@@ -1211,6 +1211,53 @@ def test_job_settlement_is_throttled_and_yields_to_a_worker_cycle(
         repository.close()
 
 
+def test_incident_reads_do_not_wait_for_a_busy_worker_cycle(
+    tmp_path: Path,
+    clock: MutableClock,
+) -> None:
+    # 28 September: a result held the worker cycle lock for 38 s on INFRA-01
+    # and every incident page waited past Vision's 10 s timeout (502).
+    from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
+
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(INFRASTRUCTURE_YAML, encoding="utf-8")
+    repository = DistributedJobRepository(tmp_path / "jobs.db", clock=clock)
+    incidents = TsunadeIncidentRepository(tmp_path / "control.db")
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        incident_repository=incidents,
+    )
+    held = threading.Event()
+    release = threading.Event()
+
+    def worker_cycle() -> None:
+        with service._worker_cycle_lock:
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=worker_cycle)
+    try:
+        thread.start()
+        assert held.wait(5)
+        reads = threading.Thread(
+            target=lambda: (
+                service.list_incidents("all"),
+                service.read_companion_summary(),
+                service.read_companion_requests(),
+            )
+        )
+        reads.start()
+        reads.join(2)
+        assert not reads.is_alive()
+    finally:
+        release.set()
+        thread.join(5)
+        repository.close()
+
+
 def test_active_queue_is_bounded(tmp_path: Path, clock: MutableClock) -> None:
     repository = DistributedJobRepository(
         tmp_path / "bounded.db",

@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.38.0] — 2026-09-28 — Expérience des réparations et résolution manuelle
+
 - Résolution manuelle (Phase 3) : sur un incident actif, l'utilisateur
   déclare ce qu'il a fait à la main (`POST
   /v1/incidents/{id}/manual-resolution`, description de 3 à 500 caractères).

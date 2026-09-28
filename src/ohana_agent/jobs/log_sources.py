@@ -6,12 +6,14 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.secrets import resolve_backup_secret
 
 LOG_JOB_TYPES = ("logs.health_check", "logs.investigate")
+HISTORY_JOB_TYPES = ("trends.history_backfill",)
 LOG_SOURCE_IDS = frozenset({"infra-01", "ha-01", "linky-01", "zwave-01"})
 _INFRA_JOURNAL_UNITS = ("ohana-agent.service", "ohana-vision.service")
 JournalReader = Callable[[str, str, int], tuple[str, bool]]
@@ -126,6 +128,52 @@ class LogSourceBroker:
                 "content": content,
                 "truncated": truncated,
             }
+        target, token = self._home_assistant(source_id)
+        return {
+            "schema_version": 1,
+            "source": source_id,
+            "base_url": target.url.rstrip("/"),
+            "url": (
+                f"{target.url.rstrip('/')}/api/hassio/core/logs/latest"
+                "?lines=10000&no_colors=1"
+            ),
+            "access_token": token,
+            "verify_tls": target.verify_tls,
+            "timeout_seconds": min(max(float(target.timeout), 5.0), 60.0),
+            "addon_name_patterns": {
+                "ha-01": [],
+                "linky-01": ["teleinfo2mqtt", "teleinfo", "linky"],
+                "zwave-01": ["z-wave js", "zwave js", "zwavejs", "zwave"],
+            }[source_id],
+        }
+
+    def history_descriptor(
+        self,
+        job_id: str,
+        worker_id: str,
+        attempt: int,
+        source_id: str,
+    ) -> dict[str, object]:
+        """Phase 4: Home Assistant access for one history backfill attempt."""
+        job = self.repository.authorize_job_transfer(
+            job_id,
+            worker_id=worker_id,
+            attempt=attempt,
+            job_type=HISTORY_JOB_TYPES,
+        )
+        if source_id != job.parameters.get("source"):
+            raise ValueError("history source is not authorized by this job")
+        target, token = self._home_assistant(source_id)
+        return {
+            "schema_version": 1,
+            "source": source_id,
+            "base_url": target.url.rstrip("/"),
+            "access_token": token,
+            "verify_tls": target.verify_tls,
+            "timeout_seconds": min(max(float(target.timeout), 5.0), 60.0),
+        }
+
+    def _home_assistant(self, source_id: str) -> tuple[Any, str]:
         target = next(
             (
                 candidate
@@ -144,20 +192,4 @@ class LogSourceBroker:
             )
         if not token:
             raise RuntimeError(f"Home Assistant token is missing for {source_id}")
-        return {
-            "schema_version": 1,
-            "source": source_id,
-            "base_url": target.url.rstrip("/"),
-            "url": (
-                f"{target.url.rstrip('/')}/api/hassio/core/logs/latest"
-                "?lines=10000&no_colors=1"
-            ),
-            "access_token": token,
-            "verify_tls": target.verify_tls,
-            "timeout_seconds": min(max(float(target.timeout), 5.0), 60.0),
-            "addon_name_patterns": {
-                "ha-01": [],
-                "linky-01": ["teleinfo2mqtt", "teleinfo", "linky"],
-                "zwave-01": ["z-wave js", "zwave js", "zwavejs", "zwave"],
-            }[source_id],
-        }
+        return target, token

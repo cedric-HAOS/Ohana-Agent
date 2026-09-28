@@ -98,7 +98,10 @@ administration:
         "logs.health_check",
         "logs.investigate",
         "ai.inference",
+        "trends.history_backfill",
     )
+    tasks = {task.id for task in agent.scheduler.list_tasks()}
+    assert "tsunade.preventive.backfill" in tasks
     assert jobs_database.is_file()
     repository.close()
 

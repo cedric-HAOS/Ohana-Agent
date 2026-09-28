@@ -24,6 +24,8 @@ from ohana_agent.contracts.administration import (
     LogsInvestigateResult,
     SystemHealthParameters,
     SystemHealthResult,
+    TrendsHistoryBackfillParameters,
+    TrendsHistoryBackfillResult,
 )
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
@@ -45,10 +47,18 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "logs.health_check": (LogsHealthCheckParameters, LogsHealthCheckResult),
     "logs.investigate": (LogsInvestigateParameters, LogsInvestigateResult),
     "ai.inference": (AiInferenceParameters, AiInferenceResult),
+    "trends.history_backfill": (
+        TrendsHistoryBackfillParameters,
+        TrendsHistoryBackfillResult,
+    ),
 }
 
 AUTOMATIC_WAKE_JOB_TYPES = frozenset(
     {"backup.infra", "logs.health_check", "logs.investigate"}
+)
+# Results Tsunade must record before the job is settled (resumed at restart).
+COMPLETION_PROCESSED_TYPES = frozenset(
+    {"logs.health_check", "logs.investigate", "ai.inference", "trends.history_backfill"}
 )
 PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 

@@ -778,6 +778,58 @@ class LogsInvestigateResult(AdministrationModel):
     truncated: bool
 
 
+HistorySourceId = Literal["ha-01"]
+HistoryMetric = Literal["disk_percent"]
+
+
+class TrendsHistoryBackfillParameters(AdministrationModel):
+    """Phase 4: daily values rebuilt from Home Assistant long-term statistics."""
+
+    source: HistorySourceId
+    node_id: str = Field(min_length=1, max_length=64)
+    metric: HistoryMetric
+    # The MQTT discovery unique_id; Katsuyu resolves the entity through the
+    # entity registry, whatever entity_id Home Assistant gave it.
+    unique_id: str = Field(min_length=1, max_length=120)
+    window_started_at: datetime
+    window_ended_at: datetime
+
+    @model_validator(mode="after")
+    def validate_window(self) -> Self:
+        timestamps = (self.window_started_at, self.window_ended_at)
+        if any(
+            value.tzinfo is None or value.utcoffset() is None for value in timestamps
+        ):
+            raise ValueError("history timestamps must include a timezone")
+        duration = self.window_ended_at - self.window_started_at
+        if duration.total_seconds() <= 0 or duration.days > 31:
+            raise ValueError("history window must be positive and at most 31 days")
+        return self
+
+
+class TrendsDailyValue(AdministrationModel):
+    """One Europe/Paris day aggregated from hourly statistics."""
+
+    day: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    minimum: float
+    maximum: float
+    last: float
+    hours: int = Field(ge=1, le=25)
+
+
+class TrendsHistoryBackfillResult(AdministrationModel):
+    """Compact daily series; the hourly rows never travel back to the Agent."""
+
+    status: Literal["OK", "NO_DATA"]
+    collected_at: datetime
+    source: HistorySourceId
+    node_id: str = Field(min_length=1, max_length=64)
+    metric: HistoryMetric
+    entity_id: str | None = Field(default=None, max_length=255)
+    rows_read: int = Field(ge=0, le=100_000)
+    days: list[TrendsDailyValue] = Field(default_factory=list, max_length=32)
+
+
 class AiInferenceEvidence(AdministrationModel):
     """One bounded evidence fragment supplied by Tsunade, never an instruction."""
 

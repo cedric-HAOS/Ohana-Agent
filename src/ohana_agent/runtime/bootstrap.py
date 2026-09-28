@@ -360,6 +360,13 @@ def build_production_agent(
         administration_service.settle_expired_jobs(now=now)
         administration_service.dispatch_due_wake_requests(now=now)
 
+    def request_preventive_backfill(now: datetime) -> object:
+        if administration_service is None:
+            raise RuntimeError("Tsunade administration is unavailable")
+        return administration_service.request_preventive_backfill(
+            now=now, automatic=True
+        )
+
     scheduler = Scheduler(
         clock=resolved_clock,
         executor=DispatcherTaskExecutor(
@@ -367,6 +374,7 @@ def build_production_agent(
             monitoring_registry=monitoring_registry,
             job_runner=queue_log_health_job,
             wake_dispatcher=dispatch_due_wake_requests,
+            preventive_backfill=request_preventive_backfill,
         ),
         event_bus=event_bus,
     )

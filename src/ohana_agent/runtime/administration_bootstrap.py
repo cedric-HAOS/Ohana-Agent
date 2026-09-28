@@ -166,6 +166,27 @@ def build_wake_dispatch_tasks(
     ]
 
 
+def build_preventive_backfill_tasks(
+    *, jobs_config: DistributedJobsConfig, start_at: datetime
+) -> list[Task]:
+    """Phase 4: check every 6 h whether Katsuyu should rebuild past days."""
+    if not jobs_config.enabled:
+        return []
+    return [
+        Task(
+            id="tsunade.preventive.backfill",
+            name="Rebuild missing preventive history with Katsuyu",
+            command="jobs.preventive.backfill",
+            trigger=IntervalTrigger(
+                timedelta(hours=6),
+                # After the first host health samples of a fresh start.
+                start_at=start_at + timedelta(minutes=5),
+            ),
+            metadata={"managed_by": "tsunade-preventive"},
+        )
+    ]
+
+
 def attach_administration(context: AdministrationContext) -> AdministrationService:
     """Build the administration service and its listeners onto ``context.agent``."""
     administration_config = context.configuration.administration
@@ -353,6 +374,14 @@ def _build_jobs(
             start_at=context.clock.now(),
         ),
         plugin_name="tsunade-wake",
+    )
+    replace_plugin_tasks(
+        context.scheduler,
+        build_preventive_backfill_tasks(
+            jobs_config=jobs_config,
+            start_at=context.clock.now(),
+        ),
+        plugin_name="tsunade-preventive",
     )
     return job_repository, worker_token
 

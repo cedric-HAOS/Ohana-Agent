@@ -24,6 +24,7 @@ from ohana_agent.contracts.administration import (
 )
 from ohana_agent.jobs.job_types import (
     AUTOMATIC_WAKE_JOB_TYPES,
+    COMPLETION_PROCESSED_TYPES,
     JOB_TYPE_MODELS,
     LOCAL_TIMEZONE,
     TERMINAL_STATUSES,
@@ -552,7 +553,7 @@ class DistributedJobRepository(
                 raise DistributedJobConflictError("job already has a different result")
 
             self._require_owner(row, completion.worker_id, completion.attempt)
-            if row["type"] in {"logs.health_check", "logs.investigate", "ai.inference"}:
+            if row["type"] in COMPLETION_PROCESSED_TYPES:
                 self._connection.execute(
                     "UPDATE distributed_jobs SET completion_processed=0 WHERE job_id=?",
                     (job_id,),

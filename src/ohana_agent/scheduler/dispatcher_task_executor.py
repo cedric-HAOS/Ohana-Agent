@@ -45,6 +45,7 @@ class DispatcherTaskExecutor:
     monitoring_registry: MonitoringScheduleRegistry | None = None
     job_runner: Callable[[dict[str, object], datetime], object] | None = None
     wake_dispatcher: Callable[[datetime], object] | None = None
+    preventive_backfill: Callable[[datetime], object] | None = None
     _suspended_tasks: set[str] = field(default_factory=set, init=False, repr=False)
 
     def execute(self, task: Task, now: datetime) -> TaskExecutionResult:
@@ -81,6 +82,10 @@ class DispatcherTaskExecutor:
                 if self.job_runner is None:
                     raise RuntimeError("distributed log job runner is unavailable")
                 self.job_runner(task.arguments, now)
+            elif task.command == "jobs.preventive.backfill":
+                if self.preventive_backfill is None:
+                    raise RuntimeError("preventive backfill is unavailable")
+                self.preventive_backfill(now)
             elif task.command == "jobs.wake.dispatch":
                 if self.wake_dispatcher is None:
                     raise RuntimeError("distributed wake dispatcher is unavailable")

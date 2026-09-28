@@ -334,6 +334,21 @@ async def _read_log_source(call: _Call, parameters: Mapping[str, str]) -> web.Re
     )
 
 
+async def _read_history_source(
+    call: _Call, parameters: Mapping[str, str]
+) -> web.Response:
+    worker_id, attempt = await call.worker_transfer_identity()
+    return await call.execute(
+        partial(
+            call.service.read_history_source,
+            parameters["job_id"],
+            worker_id,
+            attempt,
+            parameters["source_id"],
+        )
+    )
+
+
 async def _upload_backup_artifact(
     call: _Call,
     parameters: Mapping[str, str],
@@ -558,6 +573,10 @@ def _administration_routes(
                 _call(service.request_log_health_check),
             ),
             _route(
+                "/v1/preventive/backfill",
+                _call(service.request_preventive_backfill),
+            ),
+            _route(
                 "/v1/incidents/logs/accepted",
                 _call_with_body(service.accept_log_signature),
             ),
@@ -642,6 +661,9 @@ def _worker_listener_routes(
         "GET": (
             _route("/v1/jobs/{job_id}/input", _download_backup_source),
             _route("/v1/jobs/{job_id}/log-source/{source_id}", _read_log_source),
+            _route(
+                "/v1/jobs/{job_id}/history-source/{source_id}", _read_history_source
+            ),
             _route("/v1/jobs/workers/trust", _call(service.read_worker_trust)),
         ),
         "PUT": (),

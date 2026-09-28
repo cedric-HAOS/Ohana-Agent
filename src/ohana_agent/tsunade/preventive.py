@@ -118,6 +118,19 @@ class TsunadePreventiveMonitor:
             );
             """
         )
+        columns = {
+            row[1]
+            for row in self._connection.execute(
+                "PRAGMA table_info(tsunade_trend_daily)"
+            )
+        }
+        if "source" not in columns:
+            # Lot 3: live rows come from the Agent, rebuilt ones from Home
+            # Assistant statistics through Katsuyu.
+            self._connection.execute(
+                "ALTER TABLE tsunade_trend_daily "
+                "ADD COLUMN source TEXT NOT NULL DEFAULT 'agent'"
+            )
         self._connection.commit()
         # Pending daily aggregates: written every FLUSH_INTERVAL, not per
         # sample, because INFRA-01 writes to a slow SD card every minute.
@@ -157,6 +170,65 @@ class TsunadePreventiveMonitor:
                 or any(key[0] != observed_at.date().isoformat() for key in self._days)
             ):
                 self._flush(observed_at)
+
+    def missing_days(
+        self, node: str, metric: str, *, now: datetime | None = None
+    ) -> list[str]:
+        """Past days of the rule window without any daily value."""
+        current = to_paris(now) if now is not None else paris_now()
+        wanted = [
+            (current.date() - timedelta(days=offset)).isoformat()
+            for offset in range(WINDOW_DAYS - 1, 0, -1)
+        ]
+        with self._lock:
+            present = {
+                row[0]
+                for row in self._connection.execute(
+                    """SELECT day FROM tsunade_trend_daily
+                    WHERE node_id=? AND metric=? AND day >= ?""",
+                    (node, metric, wanted[0]),
+                )
+            }
+        return [day for day in wanted if day not in present]
+
+    def record_backfill(
+        self,
+        node: str,
+        metric: str,
+        days: list[dict[str, Any]],
+        *,
+        source: str,
+        now: datetime | None = None,
+    ) -> int:
+        """Store rebuilt past days; a day the Agent measured itself is kept."""
+        current = to_paris(now) if now is not None else paris_now()
+        today = current.date().isoformat()
+        inserted = 0
+        with self._lock:
+            for value in days:
+                day = str(value["day"])
+                if day >= today:
+                    # Today is still being measured live.
+                    continue
+                cursor = self._connection.execute(
+                    """INSERT OR IGNORE INTO tsunade_trend_daily
+                    (day, node_id, metric, minimum, maximum, last_value, samples,
+                    updated_at, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        day,
+                        node,
+                        metric,
+                        float(value["minimum"]),
+                        float(value["maximum"]),
+                        float(value["last"]),
+                        int(value["hours"]),
+                        paris_iso(current),
+                        source,
+                    ),
+                )
+                inserted += cursor.rowcount
+            self._connection.commit()
+        return inserted
 
     def flush(self) -> None:
         with self._lock:
@@ -345,21 +417,30 @@ class TsunadePreventiveMonitor:
     def _disk_growth(self, current: datetime) -> dict[str, Any]:
         since = (current.date() - timedelta(days=WINDOW_DAYS - 1)).isoformat()
         rows = self._connection.execute(
-            """SELECT day, node_id, maximum FROM tsunade_trend_daily
+            """SELECT day, node_id, maximum, source FROM tsunade_trend_daily
             WHERE metric='disk_percent' AND day >= ? AND day <= ?
             ORDER BY node_id, day""",
             (since, current.date().isoformat()),
         ).fetchall()
         series: dict[str, list[tuple[date, float]]] = {}
+        rebuilt: dict[str, int] = {}
         for row in rows:
             series.setdefault(row["node_id"], []).append(
                 (date.fromisoformat(row["day"]), float(row["maximum"]))
             )
+            if row["source"] != "agent":
+                rebuilt[row["node_id"]] = rebuilt.get(row["node_id"], 0) + 1
         items: list[dict[str, Any]] = []
         nodes: list[dict[str, Any]] = []
         for node, points in series.items():
             evaluation = _disk_evaluation(points)
-            nodes.append({"node_id": node, **evaluation})
+            nodes.append(
+                {
+                    "node_id": node,
+                    **evaluation,
+                    "rebuilt_days": rebuilt.get(node, 0),
+                }
+            )
             if evaluation["state"] == "watch":
                 items.append(_disk_item(node, points, evaluation))
         state = _check_state(items, nodes)

@@ -2,6 +2,12 @@
 
 ## Non publié
 
+## [1.41.0] — 2026-09-29 — Durcissement des phases 1 à 5
+
+Déployer avec Vision 1.32.0 (Platform 1.0.134), puis Katsuyu 0.12.0 : un
+Agent 1.40 refuse la section `host` du rapport de runtimes (Katsuyu repart
+alors sans elle).
+
 Défauts relevés pendant les validations réelles de la Phase 5 (29 septembre ;
 scénario Sandbox `agent-restart-quiet`, l'Agent 1.40.0 échoue).
 

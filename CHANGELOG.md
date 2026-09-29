@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## [1.44.0] — 2026-09-29 — Services essentiels et journaux par équipement pour Shizune
+
+Publiée le jour même de 1.43.1, à la demande de l'utilisateur.
+
 ### Ajouté
 
 - Résumé compagnon : `services` donne une tuile par service essentiel configuré

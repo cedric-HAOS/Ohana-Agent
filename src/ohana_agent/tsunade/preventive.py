@@ -158,6 +158,18 @@ class TsunadePreventiveMonitor:
             disk = health.get("disk_percent")
             if isinstance(disk, int | float):
                 self._accumulate(observed_at, node, "disk_percent", float(disk))
+            vision = health.get("vision")
+            for metric, value in (
+                ("memory_percent", health.get("memory_percent")),
+                ("swap_percent", health.get("swap_percent")),
+                ("ohana_data_bytes", health.get("ohana_data_bytes")),
+                (
+                    "vision_db_bytes",
+                    vision.get("database_bytes") if isinstance(vision, dict) else None,
+                ),
+            ):
+                if isinstance(value, int | float) and not isinstance(value, bool):
+                    self._accumulate(observed_at, node, metric, float(value))
             uptime = health.get("host_uptime_seconds")
             if isinstance(uptime, int | float) and uptime >= 0:
                 self._record_boot(node, observed_at - timedelta(seconds=uptime))
@@ -360,6 +372,45 @@ class TsunadePreventiveMonitor:
         self._last_flush = current
 
     # Evaluation ----------------------------------------------------------
+
+    def storage_growth(self, *, now: datetime | None = None) -> dict[str, Any]:
+        """Phase 5: daily maximum size of the Agent and Vision databases."""
+        current = to_paris(now) if now is not None else paris_now()
+        since = (current.date() - timedelta(days=WINDOW_DAYS - 1)).isoformat()
+        with self._lock:
+            self._flush(current)
+            rows = self._connection.execute(
+                """SELECT metric, day, maximum FROM tsunade_trend_daily
+                WHERE metric IN ('ohana_data_bytes', 'vision_db_bytes')
+                AND day >= ? ORDER BY metric, day""",
+                (since,),
+            ).fetchall()
+        series: dict[str, list[tuple[str, float]]] = {}
+        for row in rows:
+            series.setdefault(row["metric"], []).append((row["day"], row["maximum"]))
+        growth: dict[str, Any] = {"window_days": WINDOW_DAYS}
+        for metric, key in (
+            ("ohana_data_bytes", "agent"),
+            ("vision_db_bytes", "vision"),
+        ):
+            points = series.get(metric, [])
+            if not points:
+                growth[key] = None
+                continue
+            first, last = (date.fromisoformat(points[i][0]) for i in (0, -1))
+            days = max((last - first).days, 1)
+            growth[key] = {
+                "days": len(points),
+                "first_day": points[0][0],
+                "first_bytes": int(points[0][1]),
+                "latest_bytes": int(points[-1][1]),
+                "bytes_per_day": (
+                    int((points[-1][1] - points[0][1]) / days)
+                    if len(points) > 1
+                    else None
+                ),
+            }
+        return growth
 
     def summary(
         self,

@@ -102,6 +102,14 @@ class VisionVitalsProbe:
                 "last_ingested_at": document.get("last_ingested_at"),
                 "started_at": document.get("started_at"),
             }
+            # Vision >= 1.32: its version and database size (Phase 5 detail).
+            storage = document.get("storage")
+            if isinstance(document.get("version"), str):
+                result["version"] = document["version"]
+            if isinstance(storage, dict) and isinstance(
+                storage.get("database_bytes"), int
+            ):
+                result["database_bytes"] = storage["database_bytes"]
         result["checked_at"] = checked_at
         with self._lock:
             self._latest = result

@@ -288,6 +288,42 @@ class DistributedJobRepository(
                 ).fetchone()[0]
             )
 
+    def vitals(self) -> dict[str, Any]:
+        """Phase 5: queue length by status and retention, for the Ohana view."""
+        now = self._now()
+        with self._lock:
+            by_status = {
+                row[0]: int(row[1])
+                for row in self._connection.execute(
+                    "SELECT status, COUNT(*) FROM distributed_jobs GROUP BY status"
+                )
+            }
+            oldest = self._connection.execute(
+                f"""SELECT MIN(finished_at) FROM distributed_jobs
+                WHERE finished_at IS NOT NULL AND status IN
+                ({",".join("?" for _ in TERMINAL_STATUSES)})""",  # noqa: S608
+                tuple(status.value for status in TERMINAL_STATUSES),
+            ).fetchone()[0]
+        terminal = {status.value for status in TERMINAL_STATUSES}
+        active = sum(
+            count for status, count in by_status.items() if status not in terminal
+        )
+        oldest_at = self._parse_timestamp(oldest) if oldest else None
+        # The purge runs with the next claim or recovery: one day of slack.
+        overdue = oldest_at is not None and oldest_at < now - timedelta(
+            days=self.retention_days + 1
+        )
+        return {
+            "by_status": by_status,
+            "active": active,
+            "max_active": self.max_active_jobs,
+            "retention_days": self.retention_days,
+            "oldest_finished_at": (
+                oldest_at.astimezone(LOCAL_TIMEZONE).isoformat() if oldest_at else None
+            ),
+            "retention_overdue": overdue,
+        }
+
     def active_for_incident(
         self, job_type: str, incident_id: str | None
     ) -> DistributedJobDocument | None:

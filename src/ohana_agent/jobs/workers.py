@@ -16,6 +16,7 @@ from ohana_agent.contracts.administration import (
     DistributedWorkerCapabilityActivity,
     DistributedWorkerCollection,
     DistributedWorkerDocument,
+    DistributedWorkerHost,
     DistributedWorkerRegistration,
     DistributedWorkerRuntime,
     DistributedWorkerRuntimeReport,
@@ -156,13 +157,19 @@ class DistributedWorkerRegistry:
             self._connection.execute(
                 """
                 UPDATE distributed_workers
-                SET runtimes_json = ?, runtimes_reported_at = ?, last_seen_at = ?
+                SET runtimes_json = ?, runtimes_reported_at = ?, last_seen_at = ?,
+                    host_json = COALESCE(?, host_json)
                 WHERE worker_id = ?
                 """,
                 (
                     self._json(runtimes),
                     self._timestamp(now),
                     self._timestamp(now),
+                    (
+                        self._json(report.host.model_dump(mode="json"))
+                        if report.host is not None
+                        else None
+                    ),
                     report.worker_id,
                 ),
             )
@@ -203,6 +210,11 @@ class DistributedWorkerRegistry:
                         else None
                     ),
                     activity=activity[row["worker_id"]],
+                    host=(
+                        DistributedWorkerHost.model_validate_json(row["host_json"])
+                        if row["host_json"]
+                        else None
+                    ),
                 )
                 for row in rows
             ]

@@ -6,6 +6,8 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -53,6 +55,8 @@ from ohana_agent.plugins.runtime.plugin_manager import PluginManager
 from ohana_agent.runtime.agent import ProductionAgent
 from ohana_agent.runtime.plugin_catalog import LOCAL_SCHEDULE_TIMEZONE
 from ohana_agent.runtime.plugin_specs import ProductionPlugins, replace_plugin_tasks
+from ohana_agent.runtime.release_check import ReleaseCheck
+from ohana_agent.runtime.self_report import AgentSelfReport
 from ohana_agent.runtime.vitals import AgentVitals
 from ohana_agent.scheduler import CronTrigger, IntervalTrigger, Scheduler, Task
 from ohana_agent.scheduler.clock import Clock
@@ -100,6 +104,8 @@ class AdministrationContext:
     apply_plugin_configuration: Callable[[str, object], None]
     vitals: AgentVitals | None = None
     vision_status_reader: Callable[[], dict[str, Any]] | None = None
+    vision_latest: Callable[[], dict[str, Any] | None] | None = None
+    vision_outbox_pending: Callable[[], int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +218,18 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
     preventive_monitor = TsunadePreventiveMonitor(
         administration_config.control_database_path
     )
+    release_check = ReleaseCheck()
+    release_check.start()
+    self_report = AgentSelfReport(
+        scheduler=context.scheduler,
+        data_directory=administration_config.control_database_path.parent,
+        agent_version=_agent_version(),
+        job_vitals=job_repository.vitals if job_repository is not None else None,
+        outbox_pending=context.vision_outbox_pending,
+        vision_status=context.vision_latest,
+        storage_growth=preventive_monitor.storage_growth,
+        release_check=release_check,
+    )
     companions = _build_companions(administration_config)
     worker_tls = _build_worker_tls(administration_config.jobs)
     investigation_executor = _build_investigation_executor(
@@ -242,6 +260,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         **_wake_arguments(context, administration_config.jobs.wake_on_lan),
         incident_repository=incident_repository,
         preventive_monitor=preventive_monitor,
+        self_report=self_report.snapshot,
         investigation_executor=investigation_executor,
         log_source_broker=(
             LogSourceBroker(context.plugins["backup"].config, job_repository)
@@ -326,6 +345,13 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         heartbeat=_vital(context.vitals, "administration", "API d’administration", 60),
     )
     return administration_service
+
+
+def _agent_version() -> str:
+    try:
+        return package_version("ohana-agent")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def _vital(

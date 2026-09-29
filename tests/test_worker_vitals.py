@@ -313,3 +313,36 @@ def test_worker_route_stores_runtimes_and_admin_list_exposes_them(
         "ai.inference",
         "system.health",
     }
+
+
+def test_host_detail_is_kept_until_a_newer_report_brings_one(
+    repository: DistributedJobRepository,
+) -> None:
+    # Phase 5 hardening: workspace, AI runtime detail and update state.
+    repository.register_worker(REGISTRATION)
+    report = _report({"ai.inference": {"state": "ready"}})
+    report["host"] = {
+        "workspace": {
+            "path": "C:/ProgramData/Ohana/Katsuyu",
+            "used_bytes": 1_000,
+            "free_bytes": 50_000_000_000,
+            "total_bytes": 500_000_000_000,
+        },
+        "ai": {
+            "model": "ministral-3-14b",
+            "model_bytes": 8_000_000_000,
+            "model_verified": True,
+            "runtime": "llama-server b6500",
+            "last_inference_seconds": 42.5,
+        },
+        "update": {"latest_version": "0.12.0", "automatic": True, "state": "current"},
+    }
+    repository.report_worker_runtimes(report)
+    # A report without host (older Katsuyu) keeps the last known detail.
+    repository.report_worker_runtimes(_report({"ai.inference": {"state": "ready"}}))
+
+    host = repository.list_workers().workers[0].host
+    assert host is not None
+    assert host.workspace.free_bytes == 50_000_000_000
+    assert host.ai.runtime == "llama-server b6500"
+    assert host.update.latest_version == "0.12.0"

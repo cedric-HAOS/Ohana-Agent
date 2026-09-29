@@ -89,6 +89,8 @@ class HostHealthSnapshot:
     stale_agent_components: tuple[str, ...] = ()
     # Phase 5: the last Vision vitals measure, None when unknown.
     vision: dict[str, Any] | None = None
+    # Phase 5 hardening: SQLite files of the Agent, recorded daily for growth.
+    ohana_data_bytes: int | None = None
 
     def to_json(self) -> str:
         """Serialize the snapshot using stable compact JSON."""
@@ -104,6 +106,18 @@ class HostHealthSnapshot:
         payload["host_uptime"] = format_uptime(self.host_uptime_seconds)
         payload["agent_uptime"] = format_uptime(self.agent_uptime_seconds)
         return payload
+
+
+def database_bytes(directory: Path) -> int | None:
+    """Size of the SQLite files (with their WAL) kept in ``directory``."""
+    try:
+        return sum(
+            path.stat().st_size
+            for path in directory.iterdir()
+            if path.is_file() and ".db" in path.name
+        )
+    except OSError:
+        return None
 
 
 def format_uptime(seconds: int | None) -> str:
@@ -379,8 +393,10 @@ class HostHealthMonitor:
         utc_now: Callable[[], datetime] | None = None,
         vitals: AgentVitals | None = None,
         vision: Callable[[], dict[str, Any] | None] | None = None,
+        data_bytes: Callable[[], int | None] | None = None,
     ) -> None:
         self._probe = probe
+        self._data_bytes = data_bytes
         self._required_samples = max(required_samples, 1)
         self._utc_now = utc_now or (lambda: datetime.now(UTC))
         self._vitals = vitals
@@ -437,6 +453,7 @@ class HostHealthMonitor:
             agent_components=components,
             stale_agent_components=stale,
             vision=vision,
+            ohana_data_bytes=self._data_bytes() if self._data_bytes else None,
         )
 
     @staticmethod

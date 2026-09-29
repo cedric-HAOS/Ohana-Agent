@@ -61,6 +61,7 @@ from ohana_agent.plugins.mqtt.host_health import (
     HostHealthObservationMapper,
     HostHealthReporter,
     SystemHostProbe,
+    database_bytes,
 )
 from ohana_agent.plugins.network.check import NetworkCheck
 from ohana_agent.plugins.runtime.plugin_context import PluginContext
@@ -288,10 +289,12 @@ def build_production_agent(
         if vision_client is None
         else None
     )
+    data_directory = configuration.administration.control_database_path.parent
     host_health_monitor = HostHealthMonitor(
         SystemHostProbe(),
         vitals=vitals,
         vision=vision_probe.latest if vision_probe is not None else None,
+        data_bytes=lambda: database_bytes(data_directory),
     )
     host_health_reporter = HostHealthReporter(
         host_health_monitor,
@@ -505,6 +508,12 @@ def build_production_agent(
                 vitals=vitals,
                 vision_status_reader=(
                     vision_probe.check_now if vision_probe is not None else None
+                ),
+                vision_latest=vision_probe.latest if vision_probe is not None else None,
+                vision_outbox_pending=(
+                    (lambda: vision_export_runtime.pending_count)
+                    if vision_export_runtime is not None
+                    else None
                 ),
             )
         )

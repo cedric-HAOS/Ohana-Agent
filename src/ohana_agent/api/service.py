@@ -116,6 +116,7 @@ class AdministrationService:
         backup_transfer: Any | None = None,
         incident_repository: TsunadeIncidentRepository | None = None,
         preventive_monitor: TsunadePreventiveMonitor | None = None,
+        self_report: Callable[[], dict[str, Any]] | None = None,
         investigation_executor: InvestigationExecutor | None = None,
         log_source_broker: LogSourceBroker | None = None,
         expertise_service: TsunadeExpertiseService | None = None,
@@ -198,6 +199,7 @@ class AdministrationService:
         self.backup_transfer = backup_transfer
         self.incident_repository = incident_repository
         self.preventive_monitor = preventive_monitor
+        self.self_report = self_report
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
         self.expertise_service = expertise_service
@@ -324,6 +326,8 @@ class AdministrationService:
                     "incidents.activity.read",
                 ]
             )
+        if self.self_report is not None:
+            operations.append("agent.vitals.read")
         if self.preventive_monitor is not None:
             operations.append("preventive.read")
             if self._preventive_backfill_available():
@@ -972,6 +976,12 @@ class AdministrationService:
                 # The scheduled observation and the deadline still apply.
                 LOGGER.exception("Unable to request the manual action verification")
         return action
+
+    def read_agent_vitals(self) -> object:
+        """Phase 5: scheduler, queues, storage, retention and versions."""
+        if self.self_report is None:
+            raise LookupError("Le détail des vitaux de l'Agent est indisponible")
+        return self.self_report()
 
     def read_preventive_summary(self) -> object:
         """Phase 4: the short synthesis and the detail of each drift rule."""

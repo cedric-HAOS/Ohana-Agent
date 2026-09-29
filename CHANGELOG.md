@@ -23,6 +23,20 @@ scénario Sandbox `agent-restart-quiet`, l'Agent 1.40.0 échoue).
   (hors livraison à Vision), le résumé n'est plus publié et Home Assistant
   passe les capteurs Ohana en indisponible. Scénario
   `agent-frozen-heartbeat` : indisponible 6 min après le blocage.
+- Détail des vitaux (durcissement de la Phase 5), route `GET /v1/vitals`
+  (opération `agent.vitals.read`) lue par la vue Ohana de Vision : retard du
+  planificateur (tâches dues non exécutées, dernier cycle), files (livraison à
+  Vision, travaux Katsuyu par état), taille des bases SQLite et disque libre,
+  croissance sur 7 jours (maximum journalier de `ohana_data_bytes` et de la
+  base de Vision, enregistré par Tsunade), rétention des travaux (plus ancien
+  travail terminé, purge en retard) et version recommandée : le catalogue de
+  la dernière release Platform et la dernière release Katsuyu sont lus sur
+  GitHub toutes les 6 h, sans jamais rien installer.
+- Rapport de runtimes Katsuyu : section facultative `host` (espace de
+  travail, détail du runtime IA, mise à jour), conservée jusqu'au rapport
+  suivant qui en apporte une ; colonne `host_json`.
+- `host.health` : `ohana_data_bytes`. Tsunade enregistre aussi chaque jour la
+  mémoire et le swap (tendances de la Phase 4).
 
 ## [1.40.0] — 2026-09-28 — Ohana supervise Ohana
 

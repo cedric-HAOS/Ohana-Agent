@@ -390,12 +390,52 @@ class DistributedWorkerRuntime(AdministrationModel):
     detail: str = Field(default="", max_length=300)
 
 
+class DistributedWorkerWorkspace(AdministrationModel):
+    """Disk space around Katsuyu's working directory."""
+
+    path: str = Field(max_length=300)
+    used_bytes: int | None = Field(default=None, ge=0)
+    free_bytes: int | None = Field(default=None, ge=0)
+    total_bytes: int | None = Field(default=None, ge=0)
+
+
+class DistributedWorkerAIRuntime(AdministrationModel):
+    """Detail of the local AI runtime, beyond its synthetic state."""
+
+    model: str | None = Field(default=None, max_length=200)
+    model_bytes: int | None = Field(default=None, ge=0)
+    model_verified: bool | None = None
+    runtime: str | None = Field(default=None, max_length=200)
+    last_inference_at: datetime | None = None
+    last_inference_seconds: float | None = Field(default=None, ge=0)
+    last_error: str | None = Field(default=None, max_length=300)
+
+
+class DistributedWorkerUpdate(AdministrationModel):
+    """What Katsuyu knows of its own newer releases."""
+
+    latest_version: str | None = Field(default=None, max_length=40)
+    automatic: bool | None = None
+    state: str | None = Field(default=None, max_length=40)
+    detail: str | None = Field(default=None, max_length=300)
+
+
+class DistributedWorkerHost(AdministrationModel):
+    """Phase 5 hardening: Katsuyu's workspace, AI runtime and updates."""
+
+    workspace: DistributedWorkerWorkspace | None = None
+    ai: DistributedWorkerAIRuntime | None = None
+    update: DistributedWorkerUpdate | None = None
+
+
 class DistributedWorkerRuntimeReport(AdministrationModel):
     """Katsuyu's own check of the runtimes its capabilities need."""
 
     protocol_version: Literal[1] = 1
     worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
     runtimes: dict[str, DistributedWorkerRuntime] = Field(max_length=32)
+    # Katsuyu >= 0.12; an older Agent rejects it and Katsuyu reports without.
+    host: DistributedWorkerHost | None = None
 
 
 class DistributedWorkerAvailability(StrEnum):
@@ -437,6 +477,7 @@ class DistributedWorkerStatusDocument(DistributedWorkerDocument):
     runtimes: dict[str, DistributedWorkerRuntime] = Field(default_factory=dict)
     runtimes_reported_at: datetime | None = None
     activity: list[DistributedWorkerCapabilityActivity] = Field(default_factory=list)
+    host: DistributedWorkerHost | None = None
 
 
 class DistributedWorkerCollection(AdministrationModel):

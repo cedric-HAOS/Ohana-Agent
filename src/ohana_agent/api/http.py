@@ -535,6 +535,7 @@ def _administration_routes(
             _route("/v1/investigations", _call(service.list_investigations)),
             _route("/v1/experiences", _call(service.list_experiences)),
             _route("/v1/preventive", _call(service.read_preventive_summary)),
+            _route("/v1/vitals", _call(service.read_agent_vitals)),
             _route("/v1/plugins/{identifier}", _call(service.read_plugin)),
             _route("/v1/jobs/{job_id}", _call(service.read_job)),
             _route("/v1/incidents/{incident_id}", _call(service.read_incident)),

@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## [1.42.0] — 2026-09-29 — Journaux par composant, statistiques et classement des réparations
+
+Publiée le jour même de 1.41.0, à la demande de l'utilisateur.
+
 ### Ajouté
 
 - Journaux : chaque anomalie est rattachée à un composant lu dans sa

@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## [1.43.1] — 2026-09-29 — La permission d'arrêt survit à une réponse perdue, le contrôle manuel réveille Katsuyu
+
+Publiée le jour même de 1.43.0, à la demande de l'utilisateur.
+
 ### Corrigé
 
 - Arrêt de Katsuyu : la permission d'arrêt n'est plus consommée à l'octroi mais

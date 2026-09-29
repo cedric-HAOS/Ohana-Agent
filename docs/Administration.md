@@ -67,6 +67,11 @@ avec l'Agent sur la boucle locale.
 | `POST` | `/v1/jobs/{job_id}/heartbeat` | Renouveler le bail de l'exécution courante |
 | `POST` | `/v1/jobs/{job_id}/complete` | Publier le résultat terminal vérifié |
 | `POST` | `/v1/incidents/logs/check` | Demander le contrôle déterministe des journaux configurés |
+| `GET` | `/v1/incidents/logs/accepted` | Lister les anomalies (`signatures`) et les composants (`components`) acceptés comme connus |
+| `POST` | `/v1/incidents/logs/accepted` et `/revoke` | Accepter, ou compter à nouveau, une signature d'anomalie |
+| `POST` | `/v1/incidents/logs/accepted-components` et `/revoke` | Accepter, ou compter à nouveau, un composant (`source`, `component`, `label`) : toutes ses variantes, sauf les lignes critiques |
+| `GET` | `/v1/experiences` | Réparations connues, classées (`rank`, `score`, `success_rate`, `reliability`) |
+| `GET` | `/v1/repairs/statistics` | Statistiques des réparations par période, réparation, équipement et capacité, avec causes d'échec |
 | `POST` | `/v1/incidents/{incident_id}/logs/investigate` | Autoriser un suivi ciblé d’un incident de journaux |
 | `POST` | `/v1/incidents/{incident_id}/repairs` | Proposer une réparation finie et autorisée par Agent |
 | `POST` | `/v1/incidents/{incident_id}/repairs/authorize` | Enregistrer la validation Vision/Shizune puis exécuter |
@@ -482,6 +487,33 @@ authentifiées existantes exposent :
   provenance `vision` ou `shizune`, puis demander l’exécution à Agent ;
 - `POST /v1/incidents/{incident_id}/experience` pour confirmer manuellement
   une réparation connue après succès vérifié.
+
+### Journaux par composant
+
+Chaque anomalie de journaux du contexte d'un incident porte `component` et
+`component_label`, lus dans sa signature (logger `custom_components.tapo_control`,
+`homeassistant.components.shelly`, unité `ohana-agent[...]`, add-on
+`teleinfo2mqtt`) : rien n'est deviné, une signature sans nom de composant
+est classée « Autre ». `GET /v1/incidents` ajoute `log_components` : pour chaque
+source, les composants du dernier contrôle avec `occurrences`, `signatures`,
+`severity` et `accepted`. Accepter un composant couvre toutes ses variantes
+de texte, présentes et futures, mais jamais une ligne `critical`. Une
+bibliothèque et son intégration Home Assistant sont un seul composant
+(`aioshelly` → `shelly`).
+
+### Statistiques et classement des réparations
+
+`GET /v1/repairs/statistics` renvoie `periods` (`7d`, `30d`, `all`),
+`by_repair`, `by_equipment`, `by_capability` et `ranking`. Le taux de réussite
+compte les issues vérifiées ; `reliable_rate` est la borne basse de Wilson à
+95 %. Le classement des réparations connues suit cette borne ; la
+proposition essaie la plus fiable en premier.
+
+### Maintenance préventive entre équipements
+
+`GET /v1/preventive` relie des dérives de deux équipements uniquement par
+un `depends_on` déclaré entre services de nœuds différents
+(`correlated_upstream`, `correlated_downstream`, `upstream_incident`).
 
 Un simple enregistrement d'action documente une décision mais ne l'exécute
 jamais. La phase initiale des réparations accepte uniquement

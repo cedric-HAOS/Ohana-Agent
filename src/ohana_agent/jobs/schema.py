@@ -135,6 +135,23 @@ class DistributedJobSchema:
                 )
             self._connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS distributed_worker_power_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    worker_id TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    detail_json TEXT NOT NULL
+                )
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_worker_power_events_worker
+                ON distributed_worker_power_events(worker_id, event_id)
+                """
+            )
+            self._connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS distributed_worker_pairings (
                     pairing_id TEXT PRIMARY KEY,
                     worker_id TEXT NOT NULL,

@@ -17,6 +17,9 @@ from ohana_agent.contracts.administration import (
     DistributedWorkerCollection,
     DistributedWorkerDocument,
     DistributedWorkerHost,
+    DistributedWorkerPowerEvent,
+    DistributedWorkerPowerEventKind,
+    DistributedWorkerPowerReport,
     DistributedWorkerRegistration,
     DistributedWorkerRuntime,
     DistributedWorkerRuntimeReport,
@@ -28,6 +31,9 @@ from ohana_agent.jobs.job_types import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+POWER_EVENT_RETENTION = 200
+POWER_EVENTS_SHOWN = 30
 
 
 class DistributedWorkerRegistry:
@@ -115,6 +121,12 @@ class DistributedWorkerRegistry:
                     normalized.wake_on_lan_mac_address,
                 ),
             )
+            if woken_by_ohana and wake_requested_at:
+                self._record_worker_online_locked(
+                    normalized.worker_id,
+                    self._parse_timestamp(wake_requested_at),
+                    now,
+                )
         LOGGER.info(
             "Katsuyu worker %s registered (%s)",
             normalized.worker_id,
@@ -193,6 +205,10 @@ class DistributedWorkerRegistry:
                 "SELECT * FROM distributed_workers ORDER BY worker_id"
             ).fetchall()
             activity = {row["worker_id"]: self._activity_locked(row) for row in rows}
+            power_events = {
+                row["worker_id"]: self._power_events_locked(row["worker_id"])
+                for row in rows
+            }
         now = self._now()
         return DistributedWorkerCollection(
             workers=[
@@ -210,6 +226,7 @@ class DistributedWorkerRegistry:
                         else None
                     ),
                     activity=activity[row["worker_id"]],
+                    power_events=power_events[row["worker_id"]],
                     host=(
                         DistributedWorkerHost.model_validate_json(row["host_json"])
                         if row["host_json"]
@@ -271,8 +288,13 @@ class DistributedWorkerRegistry:
         worker_id: str,
         *,
         timeout_seconds: int,
+        trigger: str = "manual",
     ) -> DistributedWorkerDocument:
-        """Persist that Ohana sent WOL for a known, currently unavailable worker."""
+        """Persist that Ohana sent WOL for a known, currently unavailable worker.
+
+        ``trigger`` is why Ohana woke it: ``queued_jobs`` (work was waiting) or
+        ``manual`` (an explicit test from Vision).
+        """
         if timeout_seconds < 10 or timeout_seconds > 1800:
             raise ValueError("wake timeout must be between 10 and 1800 seconds")
         now = self._now()
@@ -294,6 +316,16 @@ class DistributedWorkerRegistry:
                 WHERE worker_id = ?
                 """,
                 (self._timestamp(now), self._timestamp(deadline), worker_id),
+            )
+            self._power_event_locked(
+                worker_id,
+                DistributedWorkerPowerEventKind.WAKE_SENT,
+                now,
+                {
+                    "trigger": trigger,
+                    "pending_jobs": self._pending_jobs_locked(row),
+                    "timeout_seconds": timeout_seconds,
+                },
             )
             updated = self._connection.execute(
                 "SELECT * FROM distributed_workers WHERE worker_id = ?",
@@ -488,12 +520,155 @@ class DistributedWorkerRegistry:
         ).fetchone()
         if pending is not None:
             return False
+        self._power_event_locked(
+            worker_id,
+            DistributedWorkerPowerEventKind.SHUTDOWN_GRANTED,
+            now,
+            self._executed_since_locked(row),
+        )
         self._connection.execute(
             """UPDATE distributed_workers SET woken_by_ohana=0,
             wake_requested_at=NULL, wake_deadline_at=NULL WHERE worker_id=?""",
             (worker_id,),
         )
         return True
+
+    def report_worker_power(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Record what Katsuyu did with the shutdown Agent granted it."""
+        report = DistributedWorkerPowerReport.model_validate(payload)
+        now = self._now()
+        detail: dict[str, Any] = {}
+        if report.reason is not None:
+            detail["reason"] = report.reason
+        if report.sessions is not None:
+            detail["sessions"] = report.sessions
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT worker_id FROM distributed_workers WHERE worker_id = ?",
+                (report.worker_id,),
+            ).fetchone()
+            if row is None:
+                raise LookupError(f"distributed worker not found: {report.worker_id}")
+            self._power_event_locked(
+                report.worker_id,
+                DistributedWorkerPowerEventKind(report.outcome),
+                now,
+                detail,
+            )
+        LOGGER.info(
+            "Katsuyu worker %s: %s%s",
+            report.worker_id,
+            report.outcome,
+            f" ({report.reason})" if report.reason else "",
+        )
+        return {
+            "protocol_version": 1,
+            "worker_id": report.worker_id,
+            "outcome": report.outcome,
+            "recorded_at": now.isoformat(),
+        }
+
+    def record_wake_failure(self, worker_id: str, error: str, *, trigger: str) -> None:
+        """Keep a trace of a Wake-on-LAN that could not even be sent."""
+        with self._lock, self._connection:
+            self._power_event_locked(
+                worker_id,
+                DistributedWorkerPowerEventKind.WAKE_FAILED,
+                self._now(),
+                {"trigger": trigger, "error": error[:200]},
+            )
+
+    def _pending_jobs_locked(self, worker: sqlite3.Row) -> dict[str, int]:
+        """Jobs waiting for this worker's capabilities, per type."""
+        rows = self._connection.execute(
+            """SELECT type, COUNT(*) AS total FROM distributed_jobs
+            WHERE status IN (?, ?) AND type IN (SELECT value FROM json_each(?))
+            GROUP BY type ORDER BY type""",
+            (
+                DistributedJobStatus.QUEUED.value,
+                DistributedJobStatus.WAITING_WORKER.value,
+                worker["capabilities_json"],
+            ),
+        ).fetchall()
+        return {row["type"]: int(row["total"]) for row in rows}
+
+    def _executed_since_locked(self, worker: sqlite3.Row) -> dict[str, Any]:
+        """What the worker ran since Ohana woke it (its whole cycle)."""
+        if not worker["wake_requested_at"]:
+            return {"executed": {}, "failed": 0}
+        rows = self._connection.execute(
+            """SELECT type, status, COUNT(*) AS total FROM distributed_jobs
+            WHERE worker_id = ? AND started_at IS NOT NULL
+              AND julianday(started_at) >= julianday(?)
+            GROUP BY type, status ORDER BY type""",
+            (worker["worker_id"], worker["wake_requested_at"]),
+        ).fetchall()
+        executed: dict[str, int] = {}
+        failed = 0
+        for row in rows:
+            executed[row["type"]] = executed.get(row["type"], 0) + int(row["total"])
+            if row["status"] in {
+                DistributedJobStatus.FAILED.value,
+                DistributedJobStatus.TIMEOUT.value,
+            }:
+                failed += int(row["total"])
+        return {"executed": executed, "failed": failed}
+
+    def _record_worker_online_locked(
+        self, worker_id: str, requested_at: datetime, now: datetime
+    ) -> None:
+        """Note the first registration after a wake (later ones are restarts)."""
+        last = self._connection.execute(
+            """SELECT kind FROM distributed_worker_power_events
+            WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+            (worker_id,),
+        ).fetchone()
+        if last is None or last["kind"] != DistributedWorkerPowerEventKind.WAKE_SENT:
+            return
+        self._power_event_locked(
+            worker_id,
+            DistributedWorkerPowerEventKind.WORKER_ONLINE,
+            now,
+            {"after_seconds": max(0, round((now - requested_at).total_seconds()))},
+        )
+
+    def _power_event_locked(
+        self,
+        worker_id: str,
+        kind: DistributedWorkerPowerEventKind,
+        now: datetime,
+        detail: dict[str, Any],
+    ) -> None:
+        self._connection.execute(
+            """INSERT INTO distributed_worker_power_events
+            (worker_id, occurred_at, kind, detail_json) VALUES (?, ?, ?, ?)""",
+            (worker_id, self._timestamp(now), kind.value, self._json(detail)),
+        )
+        self._connection.execute(
+            """DELETE FROM distributed_worker_power_events
+            WHERE worker_id = ? AND event_id NOT IN (
+                SELECT event_id FROM distributed_worker_power_events
+                WHERE worker_id = ? ORDER BY event_id DESC LIMIT ?)""",
+            (worker_id, worker_id, POWER_EVENT_RETENTION),
+        )
+
+    def _power_events_locked(
+        self, worker_id: str, limit: int = POWER_EVENTS_SHOWN
+    ) -> list[DistributedWorkerPowerEvent]:
+        rows = self._connection.execute(
+            """SELECT occurred_at, kind, detail_json
+            FROM distributed_worker_power_events
+            WHERE worker_id = ? ORDER BY event_id DESC LIMIT ?""",
+            (worker_id, limit),
+        ).fetchall()
+        return [
+            DistributedWorkerPowerEvent(
+                occurred_at=self._parse_timestamp(row["occurred_at"]),
+                kind=DistributedWorkerPowerEventKind(row["kind"]),
+                detail=json.loads(row["detail_json"]),
+            )
+            for row in rows
+        ]
 
     def _migrate_worker_identity_locked(
         self,

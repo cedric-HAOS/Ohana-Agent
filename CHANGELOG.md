@@ -2,6 +2,17 @@
 
 ## Non publié
 
+### Ajouté
+
+- Phase 6, lot 1 : journal des réveils et arrêts de Katsuyu
+  (`distributed_worker_power_events`, 200 événements par worker). Chaque cycle
+  garde la raison du réveil (travaux en attente par type, ou test manuel), le
+  délai de connexion, ce que le worker a exécuté (et ce qui a échoué) à
+  l'autorisation d'arrêt, et l'issue rapportée par Katsuyu : arrêt lancé ou
+  arrêt refusé avec sa raison. Un Wake-on-LAN impossible à envoyer est aussi
+  journalisé. `GET /v1/jobs/workers` ajoute `power_events` (30 derniers, Paris) ;
+  route worker `POST /v1/jobs/workers/power` (Katsuyu 0.13.0).
+
 ### Corrigé
 
 - Journaux par composant : la bibliothèque et l'intégration Home Assistant d'un

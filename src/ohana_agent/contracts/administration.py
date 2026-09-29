@@ -467,6 +467,35 @@ class DistributedWorkerCapabilityActivity(AdministrationModel):
     last_failure_message: str | None = None
 
 
+class DistributedWorkerPowerEventKind(StrEnum):
+    """What happened to the power state of a worker Ohana wakes and stops."""
+
+    WAKE_SENT = "wake_sent"
+    WAKE_FAILED = "wake_failed"
+    WORKER_ONLINE = "worker_online"
+    SHUTDOWN_GRANTED = "shutdown_granted"
+    SHUTDOWN_STARTED = "shutdown_started"
+    SHUTDOWN_VETOED = "shutdown_vetoed"
+
+
+class DistributedWorkerPowerEvent(AdministrationModel):
+    """One step of a wake/work/shutdown cycle, with the reason Ohana had for it."""
+
+    occurred_at: datetime
+    kind: DistributedWorkerPowerEventKind
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class DistributedWorkerPowerReport(AdministrationModel):
+    """Katsuyu's own account of the shutdown Agent granted it."""
+
+    protocol_version: Literal[1] = 1
+    worker_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.:-]+$")
+    outcome: Literal["shutdown_started", "shutdown_vetoed"]
+    reason: str | None = Field(default=None, max_length=80)
+    sessions: int | None = Field(default=None, ge=0, le=64)
+
+
 class DistributedWorkerStatusDocument(DistributedWorkerDocument):
     """Administration view of a worker: registration plus Phase 5 vitals.
 
@@ -478,6 +507,7 @@ class DistributedWorkerStatusDocument(DistributedWorkerDocument):
     runtimes_reported_at: datetime | None = None
     activity: list[DistributedWorkerCapabilityActivity] = Field(default_factory=list)
     host: DistributedWorkerHost | None = None
+    power_events: list[DistributedWorkerPowerEvent] = Field(default_factory=list)
 
 
 class DistributedWorkerCollection(AdministrationModel):

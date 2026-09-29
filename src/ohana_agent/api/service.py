@@ -1544,12 +1544,16 @@ class AdministrationService:
             self.job_repository.mark_worker_waking(
                 worker.worker_id,
                 timeout_seconds=self.wake_timeout_seconds,
+                trigger="queued_jobs",
             )
             return True
-        except (OSError, ValueError):
+        except (OSError, ValueError) as error:
             LOGGER.exception(
                 "Unable to send Wake-on-LAN for Katsuyu worker %s",
                 worker.worker_id,
+            )
+            self.job_repository.record_wake_failure(
+                worker.worker_id, str(error), trigger="queued_jobs"
             )
             return False
 
@@ -1616,6 +1620,12 @@ class AdministrationService:
         if self.job_repository is None:
             raise LookupError("Distributed jobs are unavailable")
         return self.job_repository.report_worker_runtimes(payload)
+
+    def report_worker_power(self, payload: dict[str, Any]) -> object:
+        """Record whether Katsuyu shut its PC down or kept it on (Phase 6)."""
+        if self.job_repository is None:
+            raise LookupError("Distributed jobs are unavailable")
+        return self.job_repository.report_worker_power(payload)
 
     def list_workers(self) -> object:
         """List the worker registrations visible to Tsunade."""
@@ -1700,10 +1710,17 @@ class AdministrationService:
             )
         if worker.availability.value == "WAKING":
             return worker
-        self._send_wake_on_lan(mac_address)
+        try:
+            self._send_wake_on_lan(mac_address)
+        except (OSError, ValueError) as error:
+            self.job_repository.record_wake_failure(
+                worker.worker_id, str(error), trigger="manual"
+            )
+            raise
         self.job_repository.mark_worker_waking(
             worker.worker_id,
             timeout_seconds=self.wake_timeout_seconds,
+            trigger="manual",
         )
         return self.job_repository.worker_availability(worker.worker_id)
 

@@ -27,8 +27,26 @@ _DISPLAY_NAMES = {
     "tapo_control": "Tapo",
     "template": "Modèles Home Assistant",
     "iaqualink": "iAquaLink",
+    "iaqualinkrobots": "iAquaLink",
     "rte_tempo": "RTE Tempo",
     "zwave_js": "Z-Wave JS",
+    "hass_nabucasa": "Home Assistant Cloud",
+    "async_upnp_client": "UPnP",
+    "pysmartthings": "SmartThings",
+    "co2signal": "CO2 Signal",
+    "tplink": "TP-Link",
+    "meteo_france": "Météo-France",
+    "zeroconf": "Zeroconf",
+}
+# A library and its Home Assistant integration are one component for the user:
+# "aioshelly" and "homeassistant.components.shelly" both name Shelly.
+_ALIASES = {
+    "aioesphomeapi": "esphome",
+    "aioshelly": "shelly",
+    "paho": "mqtt",
+    "roombapy": "roomba",
+    "snitun": "hass_nabucasa",
+    "tapo": "tapo_control",
 }
 _OHANA_UNITS = {
     "ohana-agent": "Ohana Agent",
@@ -41,6 +59,19 @@ _BRACKETED = re.compile(r"\[([a-z][a-z0-9_.\-]*)\]")
 _SYSTEMD_UNIT = re.compile(r"\b(ohana-[a-z]+)\[")
 _ADDON = re.compile(r"\b(teleinfo2mqtt)\b")
 OTHER = ("other", "Autre")
+
+
+def canonical_component(component: str) -> str:
+    """The component id an accepted or displayed id stands for today."""
+    return _ALIASES.get(component, component)
+
+
+def component_label(component: str, fallback: str | None = None) -> str:
+    """Display name of a component id; ``fallback`` for ids without a rule."""
+    known = _DISPLAY_NAMES.get(canonical_component(component))
+    if known:
+        return known
+    return fallback or _title(component)
 
 
 def _title(name: str) -> str:
@@ -57,15 +88,18 @@ def log_component(finding: dict[str, Any]) -> tuple[str, str]:
     if logger_match is not None:
         parts = logger_match.group(1).split(".")
         if parts[0] == "custom_components" and len(parts) > 1:
-            return parts[1], _title(parts[1])
+            root = _ALIASES.get(parts[1], parts[1])
+            return root, _title(root)
         if parts[0] == "homeassistant" and len(parts) > 2 and parts[1] == "components":
             if parts[2] == "automation" and len(parts) > 3:
                 # One automation is one thing the user wrote and can fix.
                 return f"automation.{parts[3]}", f"Automatisation {_title(parts[3])}"
-            return parts[2], _title(parts[2])
+            root = _ALIASES.get(parts[2], parts[2])
+            return root, _title(root)
         if parts[0] == "homeassistant":
             return "homeassistant", "Home Assistant"
-        return parts[0], _title(parts[0])
+        root = _ALIASES.get(parts[0], parts[0])
+        return root, _title(root)
     if _ADDON.search(signature):
         return "teleinfo2mqtt", "teleinfo2mqtt"
     if "cntrlr" in signature:

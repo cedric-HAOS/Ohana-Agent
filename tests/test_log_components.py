@@ -15,7 +15,7 @@ SIGNATURES = {
         "Kasa",
     ),
     "<timestamp> error (mainthread) [aioshelly.rpc_device.wsrpc] invalid message": (
-        "aioshelly",
+        "shelly",
         "Shelly",
     ),
     "<timestamp> error (mainthread) [homeassistant.components.shelly] error "
@@ -28,7 +28,7 @@ SIGNATURES = {
         "Automatisation Gestion Camera",
     ),
     "<timestamp> warning (paho-mqtt-client-<value>) [roombapy.roomba] "
-    "unexpectedly disconnected": ("roombapy", "Roomba"),
+    "unexpectedly disconnected": ("roomba", "Roomba"),
     "<timestamp> infra-<value> ohana-agent[<value>]: <timestamp> warning "
     "ohana_agent.observation": ("ohana-agent", "Ohana Agent"),
     "<timestamp> warn teleinfo2mqtt: unable to publish frame": (
@@ -164,3 +164,53 @@ def test_overview_names_each_component_with_its_worst_severity(tmp_path):
         assert (kasa["label"], kasa["accepted"]) == ("Kasa", True)
     finally:
         repository.close()
+
+
+def test_ids_accepted_before_two_names_were_merged_keep_working(tmp_path):
+    # 29 September: Shelly was listed twice (aioshelly and shelly) and the user
+    # had accepted both, plus Roomba under its library name.
+    repository = TsunadeIncidentRepository(tmp_path / "incidents.db")
+    try:
+        for component in ("aioshelly", "shelly", "roombapy"):
+            repository._connection.execute(
+                "INSERT INTO tsunade_accepted_log_components VALUES "
+                "('ha-01', ?, 'ancien nom', '2026-09-29T15:00:00+02:00')",
+                (component,),
+            )
+        repository._connection.commit()
+
+        listed = repository.accepted_log_components()
+        assert [(item["component"], item["label"]) for item in listed] == [
+            ("roomba", "Roomba"),
+            ("shelly", "Shelly"),
+        ]
+        roomba = _finding(
+            "<timestamp> warning (mainthread) [roombapy.roomba] disconnected",
+            "error",
+            4,
+        )
+        [source] = repository.log_component_overview(_result([roomba]))
+        assert source["components"][0]["accepted"] is True
+
+        assert repository.revoke_log_component("ha-01", "shelly") is True
+        assert [item["component"] for item in repository.accepted_log_components()] == [
+            "roomba"
+        ]
+    finally:
+        repository.close()
+
+
+def test_display_names_of_the_integrations_seen_on_ha_01():
+    names = {
+        "[hass_nabucasa.remote]": "Home Assistant Cloud",
+        "[snitun.client]": "Home Assistant Cloud",
+        "[pysmartthings]": "SmartThings",
+        "[async_upnp_client.ssdp]": "UPnP",
+        "[homeassistant.components.tplink]": "TP-Link",
+        "[homeassistant.components.meteo_france]": "Météo-France",
+        "[homeassistant.components.iaqualinkrobots]": "iAquaLink",
+    }
+    for logger, label in names.items():
+        assert (
+            log_component({"signature": f"error (mainthread) {logger} x"})[1] == label
+        )

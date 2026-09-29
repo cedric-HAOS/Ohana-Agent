@@ -2,6 +2,19 @@
 
 ## Non publié
 
+### Corrigé
+
+- Journaux par composant : la bibliothèque et l'intégration Home Assistant d'un
+  même composant ne font plus deux lignes (Shelly apparaissait deux fois :
+  `aioshelly` et `homeassistant.components.shelly`). Alias : `aioshelly`,
+  `aioesphomeapi`, `roombapy`, `paho`, `snitun`, `tapo`. Les composants déjà
+  acceptés sous l'ancien nom restent acceptés (Roomba, Shelly) : les ids sont
+  ramenés à leur nom actuel à la lecture, et « Compter à nouveau » retire
+  toutes les variantes.
+- Journaux par composant : noms lisibles pour les intégrations vues sur HA-01
+  (Home Assistant Cloud, SmartThings, UPnP, TP-Link, Météo-France, iAquaLink,
+  CO2 Signal).
+
 ## [1.42.0] — 2026-09-29 — Journaux par composant, statistiques et classement des réparations
 
 Publiée le jour même de 1.41.0, à la demande de l'utilisateur.

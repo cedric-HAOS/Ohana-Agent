@@ -16,6 +16,8 @@ from ohana_agent.tsunade.incident_models import (
 from ohana_agent.tsunade.local_time import paris_now
 from ohana_agent.tsunade.log_components import (
     annotate_log_finding,
+    canonical_component,
+    component_label,
     component_overview,
 )
 
@@ -267,7 +269,8 @@ class TsunadeLogHealthIncidents:
         for source, component in self._connection.execute(
             "SELECT source, component FROM tsunade_accepted_log_components"
         ):
-            accepted.setdefault(source, set()).add(component)
+            # Ids accepted before two names were merged (aioshelly, shelly).
+            accepted.setdefault(source, set()).add(canonical_component(component))
         return accepted
 
     def accepted_log_components(self) -> list[dict[str, str]]:
@@ -277,15 +280,19 @@ class TsunadeLogHealthIncidents:
                 """SELECT source, component, label, accepted_at
                 FROM tsunade_accepted_log_components ORDER BY source, label"""
             ).fetchall()
-        return [
-            {
-                "source": row[0],
-                "component": row[1],
-                "label": row[2],
-                "accepted_at": row[3],
-            }
-            for row in rows
-        ]
+        merged: dict[tuple[str, str], dict[str, str]] = {}
+        for source, component, label, accepted_at in rows:
+            canonical = canonical_component(component)
+            merged.setdefault(
+                (source, canonical),
+                {
+                    "source": source,
+                    "component": canonical,
+                    "label": component_label(canonical, label),
+                    "accepted_at": accepted_at,
+                },
+            )
+        return sorted(merged.values(), key=lambda item: (item["source"], item["label"]))
 
     def log_component_overview(self, result: Any) -> list[dict[str, Any]]:
         """Read the last review by component, with what the user accepted."""
@@ -298,11 +305,17 @@ class TsunadeLogHealthIncidents:
     def accept_log_component(self, source: str, component: str, label: str) -> None:
         """Stop counting the non-critical anomalies of one component."""
         now = paris_now()
+        component = canonical_component(component)
         with self._lock, self._connection:
             self._connection.execute(
                 """INSERT OR REPLACE INTO tsunade_accepted_log_components
                 (source, component, label, accepted_at) VALUES (?,?,?,?)""",
-                (source, component, label[:120], now.isoformat()),
+                (
+                    source,
+                    component,
+                    component_label(component, label)[:120],
+                    now.isoformat(),
+                ),
             )
             current = self._active(
                 (
@@ -344,13 +357,24 @@ class TsunadeLogHealthIncidents:
 
     def revoke_log_component(self, source: str, component: str) -> bool:
         """Count one accepted component again from the next review."""
+        canonical = canonical_component(component)
         with self._lock, self._connection:
-            cursor = self._connection.execute(
-                "DELETE FROM tsunade_accepted_log_components "
-                "WHERE source=? AND component=?",
-                (source, component),
-            )
-        return cursor.rowcount > 0
+            stored = [
+                row[0]
+                for row in self._connection.execute(
+                    "SELECT component FROM tsunade_accepted_log_components "
+                    "WHERE source=?",
+                    (source,),
+                )
+                if canonical_component(row[0]) == canonical
+            ]
+            for name in stored:
+                self._connection.execute(
+                    "DELETE FROM tsunade_accepted_log_components "
+                    "WHERE source=? AND component=?",
+                    (source, name),
+                )
+        return bool(stored)
 
     def accepted_log_signatures(self) -> list[dict[str, str]]:
         """Return the signatures the user accepted as known noise."""

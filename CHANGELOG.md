@@ -12,6 +12,18 @@
   arrêt refusé avec sa raison. Un Wake-on-LAN impossible à envoyer est aussi
   journalisé. `GET /v1/jobs/workers` ajoute `power_events` (30 derniers, Paris) ;
   route worker `POST /v1/jobs/workers/power` (Katsuyu 0.13.0).
+- Phase 6, lot 2 : Wake-on-LAN mesuré et fiabilisé. Un réveil dont l'attente
+  (180 s) s'écoule sans connexion est journalisé (`wake_timeout`, daté à
+  l'échéance). Tant que du travail attend, le PC est réveillé de nouveau
+  10 minutes après (`wake_sent` avec `trigger: retry`), jusqu'à trois
+  tentatives ; la troisième sans réponse écrit `wake_abandoned` et les travaux
+  suivent leur propre délai. Une connexion peu après l'échéance est notée
+  `late`, une connexion bien plus tard (plus de 30 min) `manual` : un PC
+  démarré à la main n'est ni compté comme réponse ni arrêté par Ohana.
+  `wake_stats` (tentatives, à l'heure, en retard, sans réponse, abandons,
+  envois impossibles, délai médian et maximal) accompagne chaque worker de
+  `GET /v1/jobs/workers`. Réglages du service : `wake_unanswered_retry_seconds`
+  (600) et `wake_max_unanswered_attempts` (3), sans option YAML pour l'instant.
 
 ### Corrigé
 

@@ -472,6 +472,8 @@ class DistributedWorkerPowerEventKind(StrEnum):
 
     WAKE_SENT = "wake_sent"
     WAKE_FAILED = "wake_failed"
+    WAKE_TIMEOUT = "wake_timeout"
+    WAKE_ABANDONED = "wake_abandoned"
     WORKER_ONLINE = "worker_online"
     SHUTDOWN_GRANTED = "shutdown_granted"
     SHUTDOWN_STARTED = "shutdown_started"
@@ -484,6 +486,20 @@ class DistributedWorkerPowerEvent(AdministrationModel):
     occurred_at: datetime
     kind: DistributedWorkerPowerEventKind
     detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class DistributedWorkerWakeStats(AdministrationModel):
+    """How reliable Wake-on-LAN has been, from the retained power journal."""
+
+    attempts: int = 0
+    on_time: int = 0
+    late: int = 0
+    unanswered: int = 0
+    abandoned: int = 0
+    send_failures: int = 0
+    median_seconds: int | None = None
+    max_seconds: int | None = None
+    since: datetime | None = None
 
 
 class DistributedWorkerPowerReport(AdministrationModel):
@@ -508,6 +524,9 @@ class DistributedWorkerStatusDocument(DistributedWorkerDocument):
     activity: list[DistributedWorkerCapabilityActivity] = Field(default_factory=list)
     host: DistributedWorkerHost | None = None
     power_events: list[DistributedWorkerPowerEvent] = Field(default_factory=list)
+    wake_stats: DistributedWorkerWakeStats = Field(
+        default_factory=DistributedWorkerWakeStats
+    )
 
 
 class DistributedWorkerCollection(AdministrationModel):

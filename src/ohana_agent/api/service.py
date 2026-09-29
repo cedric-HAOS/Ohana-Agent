@@ -111,6 +111,8 @@ class AdministrationService:
         wake_planned_window_end_hour: int = 5,
         wake_schedule_timezone: str = "Europe/Paris",
         wake_minimum_interval_seconds: int = 7200,
+        wake_unanswered_retry_seconds: int = 600,
+        wake_max_unanswered_attempts: int = 3,
         wake_shutdown_after_completion: bool = True,
         wake_worker_id: str | None = None,
         wake_mac_address: str | None = None,
@@ -192,6 +194,8 @@ class AdministrationService:
             raise ValueError("invalid Wake-on-LAN schedule timezone") from error
         self.wake_schedule_timezone_name = wake_schedule_timezone
         self.wake_minimum_interval_seconds = wake_minimum_interval_seconds
+        self.wake_unanswered_retry_seconds = wake_unanswered_retry_seconds
+        self.wake_max_unanswered_attempts = wake_max_unanswered_attempts
         self.wake_shutdown_after_completion = wake_shutdown_after_completion
         self.wake_worker_id = wake_worker_id
         self.wake_mac_address = wake_mac_address
@@ -1503,6 +1507,7 @@ class AdministrationService:
         """Wake one worker at the local daily Katsuyu batch boundary."""
         if self.job_repository is None:
             return
+        self._retry_unanswered_wake()
         current = (now or self.job_repository.now()).astimezone(
             self.wake_schedule_timezone
         )
@@ -1523,6 +1528,52 @@ class AdministrationService:
         if woke_worker:
             self._last_planned_wake_date = batch_date
 
+    def _retry_unanswered_wake(self) -> None:
+        """Wake again a PC that stayed silent, a few times, while work waits."""
+        if (
+            self.job_repository is None
+            or not self.wake_enabled
+            or self.wake_sender is None
+        ):
+            if self.job_repository is not None:
+                self.job_repository.settle_unanswered_wakes(
+                    max_attempts=self.wake_max_unanswered_attempts
+                )
+            return
+        worker = self.job_repository.unanswered_wake_retry(
+            retry_delay_seconds=self.wake_unanswered_retry_seconds,
+            max_attempts=self.wake_max_unanswered_attempts,
+        )
+        if worker is None:
+            return
+        mac_address = worker.wake_on_lan_mac_address or (
+            self.wake_mac_address if worker.worker_id == self.wake_worker_id else None
+        )
+        if mac_address is not None:
+            self._send_and_mark_wake(worker.worker_id, mac_address, trigger="retry")
+
+    def _send_and_mark_wake(
+        self, worker_id: str, mac_address: str, *, trigger: str
+    ) -> bool:
+        """Send one Wake-on-LAN and journal it, or journal why it was not sent."""
+        assert self.job_repository is not None  # noqa: S101
+        try:
+            self._send_wake_on_lan(mac_address)
+        except (OSError, ValueError) as error:
+            LOGGER.exception(
+                "Unable to send Wake-on-LAN for Katsuyu worker %s", worker_id
+            )
+            self.job_repository.record_wake_failure(
+                worker_id, str(error), trigger=trigger
+            )
+            return False
+        self.job_repository.mark_worker_waking(
+            worker_id,
+            timeout_seconds=self.wake_timeout_seconds,
+            trigger=trigger,
+        )
+        return True
+
     def _wake_compatible_worker(self, job_type: str) -> bool:
         """Wake one unavailable compatible worker using its advertised WOL MAC."""
         if (
@@ -1539,23 +1590,11 @@ class AdministrationService:
         )
         if worker is None or worker.wake_on_lan_mac_address is None:
             return False
-        try:
-            self._send_wake_on_lan(worker.wake_on_lan_mac_address)
-            self.job_repository.mark_worker_waking(
-                worker.worker_id,
-                timeout_seconds=self.wake_timeout_seconds,
-                trigger="queued_jobs",
-            )
-            return True
-        except (OSError, ValueError) as error:
-            LOGGER.exception(
-                "Unable to send Wake-on-LAN for Katsuyu worker %s",
-                worker.worker_id,
-            )
-            self.job_repository.record_wake_failure(
-                worker.worker_id, str(error), trigger="queued_jobs"
-            )
-            return False
+        return self._send_and_mark_wake(
+            worker.worker_id,
+            worker.wake_on_lan_mac_address,
+            trigger="queued_jobs",
+        )
 
     def read_job(self, job_id: str) -> object:
         """Read the current durable state of one job."""

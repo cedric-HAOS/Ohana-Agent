@@ -16,6 +16,7 @@ from ohana_agent.infrastructure.repository import InfrastructureConfigurationRep
 from ohana_agent.jobs.repository import DistributedJobRepository
 
 WORKER = "katsuyu-bubule"
+MAC = "AA:BB:CC:DD:EE:FF"
 REGISTRATION: dict[str, object] = {
     "protocol_version": 1,
     "worker_id": WORKER,
@@ -148,6 +149,7 @@ def test_a_full_cycle_keeps_reason_delay_work_and_shutdown(
     wake, online, granted, started = _events(repository)
     assert wake.detail == {
         "trigger": "queued_jobs",
+        "attempt": 1,
         "pending_jobs": {"system.health": 2},
         "timeout_seconds": 180,
     }
@@ -356,3 +358,191 @@ def test_worker_route_records_power_and_admin_list_exposes_it(
         "reason": "interactive_session",
         "sessions": 2,
     }
+
+
+def _service(
+    tmp_path: Path, repository: DistributedJobRepository, wakes: list[str], **options
+) -> AdministrationService:
+    infrastructure_path = tmp_path / "infrastructure.yaml"
+    infrastructure_path.write_text(
+        "infrastructure:\n  id: ohana-house\n  name: Ohana House\n"
+        "  environment: production\nnodes: []\nservices: []\n",
+        encoding="utf-8",
+    )
+    return AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            infrastructure_path
+        ),
+        job_repository=repository,
+        wake_enabled=True,
+        wake_sender=wakes.append,
+        wake_minimum_interval_seconds=0,
+        **options,
+    )
+
+
+def _off_with_waiting_jobs(
+    repository: DistributedJobRepository, clock: Clock, *, jobs: int = 1
+) -> None:
+    repository.register_worker(REGISTRATION)
+    clock.now += timedelta(hours=1)
+    for number in range(jobs):
+        _queue(repository, clock, f"20000000-0000-4000-8000-{number:012d}")
+
+
+def test_an_unanswered_wake_is_recorded_with_its_attempt(
+    repository: DistributedJobRepository, clock: Clock
+) -> None:
+    _off_with_waiting_jobs(repository, clock)
+    repository.mark_worker_waking(WORKER, timeout_seconds=180, trigger="queued_jobs")
+    clock.now += timedelta(seconds=181)
+
+    workers = repository.list_workers().workers
+
+    timeout = workers[0].power_events[0]
+    assert timeout.kind.value == "wake_timeout"
+    assert timeout.detail == {"attempt": 1}
+    # Dated when the wait ran out, not when someone happened to look.
+    assert timeout.occurred_at == clock.now - timedelta(seconds=1)
+    assert workers[0].wake_stats.attempts == 1
+    assert workers[0].wake_stats.unanswered == 1
+    assert repository.list_workers().workers[0].power_events[0] == timeout
+
+
+def test_a_silent_pc_is_woken_again_then_abandoned_explicitly(
+    tmp_path: Path, repository: DistributedJobRepository, clock: Clock
+) -> None:
+    wakes: list[str] = []
+    service = _service(tmp_path, repository, wakes)
+    _off_with_waiting_jobs(repository, clock)
+    assert service._wake_compatible_worker("system.health")  # noqa: SLF001
+
+    for _ in range(3):
+        clock.now += timedelta(seconds=181)
+        service.dispatch_due_wake_requests()  # settles, too early to retry
+        assert len(wakes) <= 3
+        clock.now += timedelta(seconds=600)
+        service.dispatch_due_wake_requests()
+
+    assert wakes == [MAC, MAC, MAC]
+    kinds = [event.kind.value for event in _events(repository)]
+    assert kinds == [
+        "wake_sent",
+        "wake_timeout",
+        "wake_sent",
+        "wake_timeout",
+        "wake_sent",
+        "wake_timeout",
+        "wake_abandoned",
+    ]
+    sent = [e for e in _events(repository) if e.kind.value == "wake_sent"]
+    assert [e.detail["trigger"] for e in sent] == [
+        "queued_jobs",
+        "retry",
+        "retry",
+    ]
+    assert [e.detail["attempt"] for e in sent] == [1, 2, 3]
+    abandoned = _events(repository)[-1]
+    assert abandoned.detail["attempts"] == 3
+    assert abandoned.detail["pending_jobs"] == {"system.health": 1}
+
+    # No fourth try: the cycle is over, the jobs follow their own timeout.
+    clock.now += timedelta(hours=1)
+    service.dispatch_due_wake_requests()
+    assert len(wakes) == 3
+    stats = repository.list_workers().workers[0].wake_stats
+    assert (stats.attempts, stats.unanswered, stats.abandoned) == (3, 3, 1)
+
+
+def test_the_next_batch_starts_a_new_series_after_an_abandonment(
+    tmp_path: Path, repository: DistributedJobRepository, clock: Clock
+) -> None:
+    wakes: list[str] = []
+    service = _service(tmp_path, repository, wakes)
+    _off_with_waiting_jobs(repository, clock)
+    service._wake_compatible_worker("system.health")  # noqa: SLF001
+    for _ in range(3):
+        clock.now += timedelta(seconds=781)
+        service.dispatch_due_wake_requests()
+
+    clock.now += timedelta(days=1)
+    assert service._wake_compatible_worker("system.health")  # noqa: SLF001
+
+    newest = repository.list_workers().workers[0].power_events[0]
+    assert newest.kind.value == "wake_sent"
+    assert newest.detail["attempt"] == 1
+
+
+def test_no_retry_without_waiting_work_or_when_wake_is_disabled(
+    tmp_path: Path, repository: DistributedJobRepository, clock: Clock
+) -> None:
+    wakes: list[str] = []
+    service = _service(tmp_path, repository, wakes)
+    repository.register_worker(REGISTRATION)
+    clock.now += timedelta(hours=1)
+    repository.mark_worker_waking(WORKER, timeout_seconds=180)  # manual test
+    clock.now += timedelta(seconds=800)
+
+    service.dispatch_due_wake_requests()
+
+    assert wakes == []
+    assert repository.list_workers().workers[0].power_events[0].kind.value == (
+        "wake_timeout"
+    )
+
+    quiet = _service(tmp_path, repository, wakes)
+    quiet.wake_enabled = False
+    _queue(repository, clock, "30000000-0000-4000-8000-000000000001")
+    quiet.dispatch_due_wake_requests()
+    assert wakes == []
+
+
+def test_a_late_answer_is_kept_but_a_manual_start_is_not_counted(
+    repository: DistributedJobRepository, clock: Clock
+) -> None:
+    _off_with_waiting_jobs(repository, clock)
+    repository.mark_worker_waking(WORKER, timeout_seconds=180, trigger="queued_jobs")
+    clock.now += timedelta(seconds=240)
+    repository.register_worker(REGISTRATION)
+
+    late = repository.list_workers().workers[0].power_events[0]
+    assert late.kind.value == "worker_online"
+    assert late.detail == {"late": True, "after_seconds": 240}
+    stats = repository.list_workers().workers[0].wake_stats
+    assert (stats.on_time, stats.late, stats.unanswered) == (0, 1, 0)
+    assert stats.median_seconds == 240
+
+    clock.now += timedelta(days=1)
+    repository.mark_worker_waking(WORKER, timeout_seconds=180)
+    clock.now += timedelta(days=2)
+    repository.settle_unanswered_wakes()
+    repository.register_worker(REGISTRATION)
+
+    manual = repository.list_workers().workers[0].power_events[0]
+    assert manual.kind.value == "worker_online"
+    assert manual.detail == {"manual": True}
+    stats = repository.list_workers().workers[0].wake_stats
+    assert (stats.attempts, stats.late, stats.unanswered) == (2, 1, 1)
+    assert stats.max_seconds == 240
+
+
+def test_wake_statistics_summarize_answers(
+    repository: DistributedJobRepository, clock: Clock
+) -> None:
+    repository.register_worker(REGISTRATION)
+    for delay in (40, 60, 200):
+        clock.now += timedelta(hours=2)
+        repository.mark_worker_waking(WORKER, timeout_seconds=300)
+        clock.now += timedelta(seconds=delay)
+        repository.register_worker(REGISTRATION)
+
+    stats = repository.list_workers().workers[0].wake_stats
+
+    assert (stats.attempts, stats.on_time, stats.late, stats.unanswered) == (
+        3,
+        3,
+        0,
+        0,
+    )
+    assert (stats.median_seconds, stats.max_seconds) == (60, 200)
+    assert stats.since is not None

@@ -24,6 +24,7 @@ from ohana_agent.contracts.administration import (
     DistributedWorkerRuntime,
     DistributedWorkerRuntimeReport,
     DistributedWorkerStatusDocument,
+    DistributedWorkerWakeStats,
 )
 from ohana_agent.jobs.job_types import (
     JOB_TYPE_MODELS,
@@ -32,6 +33,7 @@ from ohana_agent.jobs.job_types import (
 
 LOGGER = logging.getLogger(__name__)
 
+LATE_ANSWER_SECONDS = 1800
 POWER_EVENT_RETENTION = 200
 POWER_EVENTS_SHOWN = 30
 
@@ -121,11 +123,19 @@ class DistributedWorkerRegistry:
                     normalized.wake_on_lan_mac_address,
                 ),
             )
-            if woken_by_ohana and wake_requested_at:
+            requested = wake_requested_at or (
+                existing["wake_requested_at"] if existing else None
+            )
+            if requested:
                 self._record_worker_online_locked(
                     normalized.worker_id,
-                    self._parse_timestamp(wake_requested_at),
+                    self._parse_timestamp(requested),
                     now,
+                    expired=bool(
+                        existing
+                        and existing["wake_deadline_at"]
+                        and self._parse_timestamp(existing["wake_deadline_at"]) < now
+                    ),
                 )
         LOGGER.info(
             "Katsuyu worker %s registered (%s)",
@@ -200,6 +210,7 @@ class DistributedWorkerRegistry:
 
     def list_workers(self) -> DistributedWorkerCollection:
         """Return the latest authenticated registrations to Tsunade."""
+        self.settle_unanswered_wakes()
         with self._lock:
             rows = self._connection.execute(
                 "SELECT * FROM distributed_workers ORDER BY worker_id"
@@ -207,6 +218,10 @@ class DistributedWorkerRegistry:
             activity = {row["worker_id"]: self._activity_locked(row) for row in rows}
             power_events = {
                 row["worker_id"]: self._power_events_locked(row["worker_id"])
+                for row in rows
+            }
+            wake_stats = {
+                row["worker_id"]: self._wake_stats_locked(row["worker_id"])
                 for row in rows
             }
         now = self._now()
@@ -227,6 +242,7 @@ class DistributedWorkerRegistry:
                     ),
                     activity=activity[row["worker_id"]],
                     power_events=power_events[row["worker_id"]],
+                    wake_stats=wake_stats[row["worker_id"]],
                     host=(
                         DistributedWorkerHost.model_validate_json(row["host_json"])
                         if row["host_json"]
@@ -292,8 +308,9 @@ class DistributedWorkerRegistry:
     ) -> DistributedWorkerDocument:
         """Persist that Ohana sent WOL for a known, currently unavailable worker.
 
-        ``trigger`` is why Ohana woke it: ``queued_jobs`` (work was waiting) or
-        ``manual`` (an explicit test from Vision).
+        ``trigger`` is why Ohana woke it: ``queued_jobs`` (work was waiting),
+        ``retry`` (an earlier wake got no answer) or ``manual`` (an explicit
+        test from Vision).
         """
         if timeout_seconds < 10 or timeout_seconds > 1800:
             raise ValueError("wake timeout must be between 10 and 1800 seconds")
@@ -323,6 +340,7 @@ class DistributedWorkerRegistry:
                 now,
                 {
                     "trigger": trigger,
+                    "attempt": self._unanswered_wakes_locked(worker_id) + 1,
                     "pending_jobs": self._pending_jobs_locked(row),
                     "timeout_seconds": timeout_seconds,
                 },
@@ -568,6 +586,143 @@ class DistributedWorkerRegistry:
             "recorded_at": now.isoformat(),
         }
 
+    def settle_unanswered_wakes(self, *, max_attempts: int = 3) -> None:
+        """Record the wakes whose wait ran out without the worker connecting.
+
+        After ``max_attempts`` unanswered wakes in a row the cycle is abandoned
+        explicitly while work still waits; the jobs then follow their own timeout.
+        """
+        now = self._now()
+        with self._lock, self._connection:
+            for row in self._connection.execute(
+                "SELECT * FROM distributed_workers WHERE wake_deadline_at IS NOT NULL"
+            ).fetchall():
+                last = self._connection.execute(
+                    """SELECT kind FROM distributed_worker_power_events
+                    WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+                    (row["worker_id"],),
+                ).fetchone()
+                deadline = self._parse_timestamp(row["wake_deadline_at"])
+                if (
+                    last is None
+                    or last["kind"] != DistributedWorkerPowerEventKind.WAKE_SENT
+                    or deadline >= now
+                    or self._worker_document(row, now).availability
+                    == DistributedWorkerAvailability.AVAILABLE
+                ):
+                    continue
+                attempt = self._unanswered_wakes_locked(row["worker_id"]) + 1
+                pending = self._pending_jobs_locked(row)
+                self._power_event_locked(
+                    row["worker_id"],
+                    DistributedWorkerPowerEventKind.WAKE_TIMEOUT,
+                    deadline,
+                    {"attempt": attempt},
+                )
+                if attempt >= max_attempts and pending:
+                    self._power_event_locked(
+                        row["worker_id"],
+                        DistributedWorkerPowerEventKind.WAKE_ABANDONED,
+                        now,
+                        {"attempts": attempt, "pending_jobs": pending},
+                    )
+                LOGGER.warning(
+                    "Katsuyu worker %s did not answer wake attempt %s",
+                    row["worker_id"],
+                    attempt,
+                )
+
+    def unanswered_wake_retry(
+        self, *, retry_delay_seconds: int, max_attempts: int = 3
+    ) -> DistributedWorkerDocument | None:
+        """A worker that stayed silent after a wake while work still waits."""
+        self.settle_unanswered_wakes(max_attempts=max_attempts)
+        now = self._now()
+        with self._lock:
+            for row in self._connection.execute(
+                "SELECT * FROM distributed_workers"
+            ).fetchall():
+                last = self._connection.execute(
+                    """SELECT kind, occurred_at FROM distributed_worker_power_events
+                    WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+                    (row["worker_id"],),
+                ).fetchone()
+                if (
+                    last is None
+                    or last["kind"] != DistributedWorkerPowerEventKind.WAKE_TIMEOUT
+                    or self._parse_timestamp(last["occurred_at"])
+                    + timedelta(seconds=retry_delay_seconds)
+                    > now
+                    or self._unanswered_wakes_locked(row["worker_id"]) >= max_attempts
+                    or not self._pending_jobs_locked(row)
+                ):
+                    continue
+                document = self._worker_document(row, now)
+                if document.availability == DistributedWorkerAvailability.UNAVAILABLE:
+                    return document
+        return None
+
+    def _unanswered_wakes_locked(self, worker_id: str) -> int:
+        """Wake attempts left unanswered since the last connection or abandonment."""
+        rows = self._connection.execute(
+            """SELECT kind FROM distributed_worker_power_events
+            WHERE worker_id = ? ORDER BY event_id DESC""",
+            (worker_id,),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            if row["kind"] in {
+                DistributedWorkerPowerEventKind.WORKER_ONLINE,
+                DistributedWorkerPowerEventKind.WAKE_ABANDONED,
+            }:
+                break
+            if row["kind"] == DistributedWorkerPowerEventKind.WAKE_TIMEOUT:
+                count += 1
+        return count
+
+    def _wake_stats_locked(self, worker_id: str) -> DistributedWorkerWakeStats:
+        rows = self._connection.execute(
+            """SELECT occurred_at, kind, detail_json
+            FROM distributed_worker_power_events
+            WHERE worker_id = ? ORDER BY event_id""",
+            (worker_id,),
+        ).fetchall()
+        stats = DistributedWorkerWakeStats()
+        delays: list[int] = []
+        timed_out_since_answer = False
+        for row in rows:
+            kind = row["kind"]
+            detail = json.loads(row["detail_json"])
+            if stats.since is None:
+                stats.since = self._parse_timestamp(row["occurred_at"])
+            if kind == DistributedWorkerPowerEventKind.WAKE_SENT:
+                stats.attempts += 1
+            elif kind == DistributedWorkerPowerEventKind.WAKE_FAILED:
+                stats.send_failures += 1
+            elif kind == DistributedWorkerPowerEventKind.WAKE_TIMEOUT:
+                stats.unanswered += 1
+                timed_out_since_answer = True
+            elif kind == DistributedWorkerPowerEventKind.WAKE_ABANDONED:
+                stats.abandoned += 1
+            elif kind == DistributedWorkerPowerEventKind.WORKER_ONLINE:
+                answered_after_timeout = timed_out_since_answer
+                timed_out_since_answer = False
+                if detail.get("manual"):
+                    continue
+                delays.append(int(detail.get("after_seconds", 0)))
+                if detail.get("late"):
+                    stats.late += 1
+                    # A late answer settles an attempt counted as unanswered.
+                    if answered_after_timeout:
+                        stats.unanswered -= 1
+                else:
+                    stats.on_time += 1
+        if delays:
+            ordered = sorted(delays)
+            stats.median_seconds = ordered[len(ordered) // 2]
+            stats.max_seconds = ordered[-1]
+        return stats
+
     def record_wake_failure(self, worker_id: str, error: str, *, trigger: str) -> None:
         """Keep a trace of a Wake-on-LAN that could not even be sent."""
         with self._lock, self._connection:
@@ -615,21 +770,43 @@ class DistributedWorkerRegistry:
         return {"executed": executed, "failed": failed}
 
     def _record_worker_online_locked(
-        self, worker_id: str, requested_at: datetime, now: datetime
+        self,
+        worker_id: str,
+        requested_at: datetime,
+        now: datetime,
+        *,
+        expired: bool = False,
     ) -> None:
-        """Note the first registration after a wake (later ones are restarts)."""
+        """Note the first registration after a wake (later ones are restarts).
+
+        A registration after the wait ran out is a late answer: it is kept, but
+        Ohana no longer owns the cycle, so the PC is not stopped afterwards.
+        """
         last = self._connection.execute(
             """SELECT kind FROM distributed_worker_power_events
             WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
             (worker_id,),
         ).fetchone()
-        if last is None or last["kind"] != DistributedWorkerPowerEventKind.WAKE_SENT:
+        if last is None or last["kind"] not in {
+            DistributedWorkerPowerEventKind.WAKE_SENT,
+            DistributedWorkerPowerEventKind.WAKE_TIMEOUT,
+            DistributedWorkerPowerEventKind.WAKE_ABANDONED,
+        }:
             return
+        elapsed = max(0, round((now - requested_at).total_seconds()))
+        detail: dict[str, Any] = {"after_seconds": elapsed}
+        if expired or last["kind"] != DistributedWorkerPowerEventKind.WAKE_SENT:
+            # Long after the wait: someone started the PC, Ohana did not.
+            detail = (
+                {"late": True, "after_seconds": elapsed}
+                if elapsed <= LATE_ANSWER_SECONDS
+                else {"manual": True}
+            )
         self._power_event_locked(
             worker_id,
             DistributedWorkerPowerEventKind.WORKER_ONLINE,
             now,
-            {"after_seconds": max(0, round((now - requested_at).total_seconds()))},
+            detail,
         )
 
     def _power_event_locked(

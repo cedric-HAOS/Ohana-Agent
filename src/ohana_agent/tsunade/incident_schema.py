@@ -170,6 +170,13 @@ class TsunadeIncidentSchema:
                 accepted_at TEXT NOT NULL,
                 PRIMARY KEY(source, signature)
             );
+            CREATE TABLE IF NOT EXISTS tsunade_accepted_log_components (
+                source TEXT NOT NULL,
+                component TEXT NOT NULL,
+                label TEXT NOT NULL,
+                accepted_at TEXT NOT NULL,
+                PRIMARY KEY(source, component)
+            );
             """
         )
         repair_columns = {

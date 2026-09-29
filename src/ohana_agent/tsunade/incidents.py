@@ -29,6 +29,7 @@ from ohana_agent.tsunade.incident_repairs import TsunadeRepairs
 from ohana_agent.tsunade.incident_schema import TsunadeIncidentSchema
 from ohana_agent.tsunade.incident_user_requests import TsunadeUserRequests
 from ohana_agent.tsunade.local_time import paris_iso, paris_now
+from ohana_agent.tsunade.repair_statistics import TsunadeRepairStatistics
 
 
 class TsunadeIncidentRepository(
@@ -36,6 +37,7 @@ class TsunadeIncidentRepository(
     TsunadeIncidentHistory,
     TsunadeLogHealthIncidents,
     TsunadeRepairs,
+    TsunadeRepairStatistics,
     TsunadeManualResolutions,
     TsunadeUserRequests,
     FollowupPersistence,

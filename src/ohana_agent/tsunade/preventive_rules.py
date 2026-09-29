@@ -382,6 +382,58 @@ def _newly_unavailable(
     return sorted(entity for entity in latest if entity not in before)
 
 
+def correlate_declared(
+    items: list[dict[str, Any]],
+    dependencies: dict[str, dict[str, list[str]]],
+    upstream_incidents: dict[str, list[str]] | None = None,
+) -> list[dict[str, Any]]:
+    """Drifts on two equipments the owner declared as dependent; never a cause.
+
+    ``dependencies`` maps a downstream equipment to its declared upstream ones
+    (with the declaration). A downstream drift is also tied to an open incident
+    of its upstream equipment. Nothing is inferred: without a declaration two
+    simultaneous drifts on different equipments stay unrelated.
+    """
+    correlations: list[dict[str, Any]] = []
+    by_equipment: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        by_equipment.setdefault(str(item.get("equipment_id")), []).append(item)
+    for downstream, upstreams in sorted(dependencies.items()):
+        for upstream, reasons in sorted(upstreams.items()):
+            low = by_equipment.get(downstream, [])
+            high = by_equipment.get(upstream, [])
+            if low and high:
+                for item in low:
+                    item.setdefault("correlated_upstream", []).extend(
+                        f"{other['title']} ({', '.join(reasons)})" for other in high
+                    )
+                for item in high:
+                    item.setdefault("correlated_downstream", []).extend(
+                        f"{other['title']} ({', '.join(reasons)})" for other in low
+                    )
+                correlations.append(
+                    {
+                        "equipment_id": downstream,
+                        "upstream_equipment_id": upstream,
+                        "rules": sorted({i["rule"] for i in (*low, *high)}),
+                        "titles": [i["title"] for i in (*low, *high)],
+                        "declared": reasons,
+                        "note": (
+                            "Dérives simultanées sur deux équipements dont la "
+                            "dépendance est déclarée : un lien est possible, "
+                            "la simultanéité ne prouve aucune cause."
+                        ),
+                    }
+                )
+            elif low and upstream in (upstream_incidents or {}):
+                for item in low:
+                    item.setdefault("upstream_incident", []).extend(
+                        f"{capability} sur {upstream} ({', '.join(reasons)})"
+                        for capability in upstream_incidents[upstream]
+                    )
+    return correlations
+
+
 def correlate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drifts on the same equipment at the same time; never a cause."""
     by_equipment: dict[str, list[dict[str, Any]]] = {}

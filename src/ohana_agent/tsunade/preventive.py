@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -96,7 +97,15 @@ class _Day:
 class TsunadePreventiveMonitor:
     """Record the few daily values the rules need and evaluate them on demand."""
 
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(
+        self,
+        database_path: Path | str,
+        *,
+        dependency_reader: Callable[[], dict[str, dict[str, list[str]]]] | None = None,
+    ) -> None:
+        # Declared dependencies between equipments (read again at each summary:
+        # the owner edits the infrastructure while the Agent runs).
+        self._dependency_reader = dependency_reader
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
@@ -530,6 +539,16 @@ class TsunadePreventiveMonitor:
         ]
         watch = [item for item in found if item not in muted and item not in covered]
         correlations = preventive_rules.correlate(watch)
+        try:
+            dependencies = self._dependency_reader() if self._dependency_reader else {}
+        except Exception:  # noqa: BLE001 - a broken infrastructure file must not stop the synthesis
+            dependencies = {}
+        upstream_incidents: dict[str, list[str]] = {}
+        for equipment, capability in sorted(followed):
+            upstream_incidents.setdefault(equipment, []).append(capability)
+        correlations += preventive_rules.correlate_declared(
+            watch, dependencies, upstream_incidents
+        )
         for item in muted:
             item["muted_until"] = mutes[(item["rule"], item["subject"])]
         urgent = [item for item in watch if item.get("urgent")]

@@ -2,6 +2,33 @@
 
 ## Non publié
 
+### Ajouté
+
+- Journaux : chaque anomalie est rattachée à un composant lu dans sa
+  signature (Tapo, Kasa, Shelly, Roomba, ESPHome, modèles Home Assistant,
+  automatisation, unité Ohana...). `component` et `component_label`
+  accompagnent chaque anomalie du contexte de l'incident ; `log_components`
+  de `GET /v1/incidents` donne, par source, les composants du dernier
+  contrôle avec leurs occurrences et leur gravité.
+- Composants acceptés comme connus : `POST /v1/incidents/logs/accepted-components`
+  et `.../revoke` (table `tsunade_accepted_log_components`). Un composant
+  accepté couvre toutes ses variantes de texte, présentes et futures, sauf les
+  lignes critiques ; `GET /v1/incidents/logs/accepted` ajoute `components`.
+- Réparations : `GET /v1/repairs/statistics` (par période 7 j / 30 j / depuis
+  le début, par réparation, par équipement et par capacité : proposées,
+  refusées, exécutées, réussies, échecs, non vérifiées, taux sur les issues
+  vérifiées et borne basse à 95 %, délais de décision et de retour à la normale
+  médians, causes d'échec).
+- Réparations connues classées : `rank`, `score`, `success_rate`,
+  `reliability` (jamais éprouvée, à confirmer, fiable, mitigée, instable, peu
+  fiable) dans `GET /v1/experiences`. Le rang suit la borne basse de Wilson :
+  1 réussite sur 1 ne dépasse pas 19 sur 20. La proposition essaie d'abord la
+  réparation connue la plus fiable et signale une réparation instable.
+- Maintenance préventive : corrélation entre équipements par dépendance
+  déclarée (`depends_on` de deux services de nœuds différents) : dérives
+  simultanées reliées (`correlated_upstream`, `correlated_downstream`) et
+  incident ouvert en amont (`upstream_incident`), sans cause affirmée.
+
 ## [1.41.0] — 2026-09-29 — Durcissement des phases 1 à 5
 
 Déployer avec Vision 1.32.0 (Platform 1.0.134), puis Katsuyu 0.12.0 : un

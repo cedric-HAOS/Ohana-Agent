@@ -72,6 +72,29 @@ def declared_dependencies(
     return tuple(dependencies)[:MAXIMUM_DEPENDENCIES]
 
 
+def equipment_dependencies(
+    infrastructure: InfrastructureConfig,
+) -> dict[str, dict[str, list[str]]]:
+    """Declared links between equipments: downstream -> upstream -> reasons.
+
+    Built only from ``depends_on`` declarations of services hosted on two
+    different nodes ("Z-Wave JS on ZWAVE-01 depends on MQTT on HA-01"): what
+    the owner wrote down, never an inference from timing.
+    """
+    by_id = {service.id: service for service in infrastructure.services}
+    links: dict[str, dict[str, list[str]]] = {}
+    for service in infrastructure.services:
+        for upstream_id in declared_dependencies(infrastructure, service.id):
+            upstream = by_id.get(upstream_id)
+            if upstream is None or upstream.node == service.node:
+                continue
+            reasons = links.setdefault(service.node, {}).setdefault(upstream.node, [])
+            reason = f"{service.name} dépend de {upstream.name}"
+            if reason not in reasons:
+                reasons.append(reason)
+    return links
+
+
 def active_upstream_incident(
     incident: TsunadeIncident,
     dependencies: Iterable[str],

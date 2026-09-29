@@ -537,6 +537,7 @@ def _administration_routes(
             _route("/v1/preventive", _call(service.read_preventive_summary)),
             _route("/v1/vitals", _call(service.read_agent_vitals)),
             _route("/v1/incidents/timeline", _call(service.read_incident_timeline)),
+            _route("/v1/repairs/statistics", _call(service.read_repair_statistics)),
             _route(
                 "/v1/equipment/{equipment_id}/history",
                 _call(service.read_equipment_history),
@@ -603,6 +604,14 @@ def _administration_routes(
             _route(
                 "/v1/incidents/logs/accepted/revoke",
                 _call_with_body(service.revoke_log_signature),
+            ),
+            _route(
+                "/v1/incidents/logs/accepted-components",
+                _call_with_body(service.accept_log_component),
+            ),
+            _route(
+                "/v1/incidents/logs/accepted-components/revoke",
+                _call_with_body(service.revoke_log_component),
             ),
             _route(
                 "/v1/incidents/{incident_id}/logs/investigate",

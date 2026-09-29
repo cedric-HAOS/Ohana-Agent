@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -516,6 +517,9 @@ class AdministrationService:
             "state": state,
             "summary": summary,
             "log_health": latest_log_health,
+            "log_components": self.incident_repository.log_component_overview(
+                latest_log_health["result"] if latest_log_health else None
+            ),
             "incidents": [
                 {
                     **incident.model_dump(mode="json"),
@@ -1149,10 +1153,14 @@ class AdministrationService:
         return {
             "schema_version": 1,
             "experiences": [
-                experience.model_dump(mode="json")
-                for experience in self.incident_repository.list_experiences()
+                {**experience.model_dump(mode="json"), **ranking}
+                for experience, ranking in self.incident_repository.ranked_experiences()
             ],
         }
+
+    def read_repair_statistics(self) -> object:
+        """Detailed success statistics and ranking of supervised repairs."""
+        return self._require_incidents().repair_statistics()
 
     def set_experience_state(
         self, experience_id: str, payload: dict[str, Any]
@@ -1274,6 +1282,7 @@ class AdministrationService:
         return {
             "schema_version": 1,
             "signatures": self.incident_repository.accepted_log_signatures(),
+            "components": self.incident_repository.accepted_log_components(),
         }
 
     def accept_log_signature(self, payload: dict[str, Any]) -> object:
@@ -1292,6 +1301,38 @@ class AdministrationService:
         if not self.incident_repository.revoke_log_signature(source, signature):
             raise LookupError("Signature acceptée introuvable")
         return self.list_accepted_log_signatures()
+
+    def accept_log_component(self, payload: dict[str, Any]) -> object:
+        """Stop counting the non-critical anomalies of one component."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        source, component = self._log_component_payload(payload)
+        label = payload.get("label")
+        self.incident_repository.accept_log_component(
+            source, component, label if isinstance(label, str) and label else component
+        )
+        return self.list_accepted_log_signatures()
+
+    def revoke_log_component(self, payload: dict[str, Any]) -> object:
+        """Count one accepted component again from the next review."""
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incidents are unavailable")
+        source, component = self._log_component_payload(payload)
+        if not self.incident_repository.revoke_log_component(source, component):
+            raise LookupError("Composant accepté introuvable")
+        return self.list_accepted_log_signatures()
+
+    @staticmethod
+    def _log_component_payload(payload: dict[str, Any]) -> tuple[str, str]:
+        source = payload.get("source")
+        component = payload.get("component")
+        if source not in {"infra-01", "ha-01", "linky-01", "zwave-01"}:
+            raise ValueError("Source de journaux inconnue")
+        if not isinstance(component, str) or not re.fullmatch(
+            r"[a-z0-9][a-z0-9_.\-]{0,79}", component
+        ):
+            raise ValueError("Composant de journaux invalide")
+        return source, component
 
     @staticmethod
     def _log_signature_payload(payload: dict[str, Any]) -> tuple[str, str]:

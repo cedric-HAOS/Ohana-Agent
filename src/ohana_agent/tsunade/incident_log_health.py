@@ -14,6 +14,10 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
 )
 from ohana_agent.tsunade.local_time import paris_now
+from ohana_agent.tsunade.log_components import (
+    annotate_log_finding,
+    component_overview,
+)
 
 
 def log_check_summary(result: dict[str, Any]) -> str:
@@ -236,6 +240,7 @@ class TsunadeLogHealthIncidents:
                 (source_id,),
             )
         }
+        accepted_components = self._accepted_components().get(source_id, set())
         split: dict[str, list[dict[str, Any]]] = {
             "findings": [],
             "background_findings": [],
@@ -244,13 +249,108 @@ class TsunadeLogHealthIncidents:
         for finding in findings:
             if not isinstance(finding, dict):
                 continue
-            if finding.get("signature") in accepted:
+            finding = annotate_log_finding(finding)
+            if finding.get("signature") in accepted or (
+                # Accepting a component never hides a critical line.
+                finding["component"] in accepted_components
+                and finding.get("severity") != "critical"
+            ):
                 split["accepted_findings"].append(finding)
             elif is_significant_log_finding(finding):
                 split["findings"].append(finding)
             else:
                 split["background_findings"].append(finding)
         return split
+
+    def _accepted_components(self) -> dict[str, set[str]]:
+        accepted: dict[str, set[str]] = {}
+        for source, component in self._connection.execute(
+            "SELECT source, component FROM tsunade_accepted_log_components"
+        ):
+            accepted.setdefault(source, set()).add(component)
+        return accepted
+
+    def accepted_log_components(self) -> list[dict[str, str]]:
+        """Return the components the user accepted as known noise."""
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT source, component, label, accepted_at
+                FROM tsunade_accepted_log_components ORDER BY source, label"""
+            ).fetchall()
+        return [
+            {
+                "source": row[0],
+                "component": row[1],
+                "label": row[2],
+                "accepted_at": row[3],
+            }
+            for row in rows
+        ]
+
+    def log_component_overview(self, result: Any) -> list[dict[str, Any]]:
+        """Read the last review by component, with what the user accepted."""
+        if not isinstance(result, dict):
+            return []
+        with self._lock:
+            accepted = self._accepted_components()
+        return component_overview(result.get("sources") or [], accepted)
+
+    def accept_log_component(self, source: str, component: str, label: str) -> None:
+        """Stop counting the non-critical anomalies of one component."""
+        now = paris_now()
+        with self._lock, self._connection:
+            self._connection.execute(
+                """INSERT OR REPLACE INTO tsunade_accepted_log_components
+                (source, component, label, accepted_at) VALUES (?,?,?,?)""",
+                (source, component, label[:120], now.isoformat()),
+            )
+            current = self._active(
+                (
+                    source,
+                    "system-journal" if source == "infra-01" else "home-assistant",
+                    "logs.health",
+                )
+            )
+            if current is None:
+                return
+            known = [
+                *current.context.get("findings", []),
+                *current.context.get("background_findings", []),
+                *current.context.get("accepted_findings", []),
+            ]
+            context = {**current.context, **self._split_log_findings(source, known)}
+            if not context["findings"]:
+                self._resolve_log_incident(
+                    current, current.last_observation_id, now, context
+                )
+                return
+            self._connection.execute(
+                "UPDATE tsunade_incidents SET context_json=?,message=? "
+                "WHERE incident_id=?",
+                (
+                    json.dumps(context, ensure_ascii=False, default=str),
+                    f"{source} : {len(context['findings'])} anomalie(s) "
+                    "significative(s) dans les journaux",
+                    str(current.incident_id),
+                ),
+            )
+            self._event(
+                current.incident_id,
+                kind="investigation",
+                occurred_at=now,
+                summary=f"Composant accepté comme connu : {label[:120]}",
+                payload={"accepted_component": component},
+            )
+
+    def revoke_log_component(self, source: str, component: str) -> bool:
+        """Count one accepted component again from the next review."""
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM tsunade_accepted_log_components "
+                "WHERE source=? AND component=?",
+                (source, component),
+            )
+        return cursor.rowcount > 0
 
     def accepted_log_signatures(self) -> list[dict[str, str]]:
         """Return the signatures the user accepted as known noise."""

@@ -28,6 +28,7 @@ from ohana_agent.tsunade.incident_models import (
 from ohana_agent.tsunade.incident_similarity import compare, fingerprint
 from ohana_agent.tsunade.local_time import paris_iso, paris_now
 from ohana_agent.tsunade.repair_catalog import RepairSpec, repair_spec
+from ohana_agent.tsunade.repair_ranking import rank_rows, reliability
 
 # Shikamaru must confirm an executed repair before its deadline; otherwise the
 # repair ends ``unverified`` instead of waiting indefinitely in ``verifying``.
@@ -622,6 +623,8 @@ class TsunadeRepairs:
                 spec.target,
             ),
         ).fetchall()
+        # Several known repairs can fit: try the most reliable one first.
+        rows = rank_rows(rows)
         current = fingerprint(
             equipment_id=incident.equipment_id,
             capability_id=incident.capability_id,
@@ -668,11 +671,20 @@ class TsunadeRepairs:
             + (f" ({spec.probe_operation})" if spec.probe_operation else ""),
             f"Même action : {spec.action}",
         ]
-        caution = (
-            "Cette réparation a plus souvent échoué que réussi."
-            if experience.failure_count > experience.success_count
-            else None
+        kind = reliability(
+            experience.success_count,
+            experience.failure_count,
+            experience.last_success_at,
+            experience.last_failure_at,
         )
+        caution = None
+        if experience.failure_count > experience.success_count:
+            caution = "Cette réparation a plus souvent échoué que réussi."
+        elif kind == "unstable":
+            caution = (
+                "Cette réparation a échoué lors de sa dernière exécution, "
+                "après des réussites."
+            )
         return TsunadeKnownRepairMatch(
             experience_id=experience.experience_id,
             attempt_count=experience.attempt_count,

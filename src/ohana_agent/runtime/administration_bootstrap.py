@@ -75,6 +75,7 @@ from ohana_agent.tsunade.home_assistant_availability import (
 from ohana_agent.tsunade.incident_correlation import (
     NAME_RESOLUTION_SERVICE_TYPES,
     correlated_upstream_id,
+    equipment_dependencies,
     is_name_resolution_failure,
 )
 from ohana_agent.tsunade.incident_repairs import (
@@ -219,8 +220,14 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         ),
     )
     incident_repository = _build_incident_repository(context, administration_config)
+    infrastructure_repository = InfrastructureConfigurationRepository(
+        context.infrastructure_config_path
+    )
     preventive_monitor = TsunadePreventiveMonitor(
-        administration_config.control_database_path
+        administration_config.control_database_path,
+        dependency_reader=lambda: equipment_dependencies(
+            infrastructure_repository.read()
+        ),
     )
     release_check = ReleaseCheck()
     release_check.start()

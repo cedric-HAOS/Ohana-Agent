@@ -546,3 +546,54 @@ def test_wake_statistics_summarize_answers(
     )
     assert (stats.median_seconds, stats.max_seconds) == (60, 200)
     assert stats.since is not None
+
+
+def test_a_shutdown_grant_lost_on_the_wire_is_granted_again(
+    repository: DistributedJobRepository, clock: Clock
+) -> None:
+    repository.register_worker(REGISTRATION)
+    clock.now += timedelta(hours=1)
+    repository.mark_worker_waking(WORKER, timeout_seconds=180)
+    repository.register_worker(REGISTRATION)
+
+    # Katsuyu's client timed out: it never saw these answers.
+    assert _settle(repository).shutdown_requested is True
+    assert _settle(repository).shutdown_requested is True
+
+    granted = [e for e in _events(repository) if e.kind.value == "shutdown_granted"]
+    assert len(granted) == 1
+    repository.report_worker_power(
+        {"protocol_version": 1, "worker_id": WORKER, "outcome": "shutdown_started"}
+    )
+    # Reported: the permission is spent, an old instruction never stops the PC.
+    assert _settle(repository).shutdown_requested is False
+
+
+def test_a_control_asked_from_vision_wakes_katsuyu_immediately(
+    tmp_path: Path, repository: DistributedJobRepository, clock: Clock
+) -> None:
+    wakes: list[str] = []
+    real_now = datetime.now(UTC)  # the service stamps its jobs with real time
+    clock.now = real_now - timedelta(hours=2)
+    service = _service(
+        tmp_path,
+        repository,
+        wakes,
+        log_analysis_enabled=True,
+        log_sources=("ha-01",),
+    )
+    repository.register_worker(
+        REGISTRATION | {"capabilities": ["system.health", "logs.health_check"]}
+    )
+    # A wake sent shortly before (minimum interval) must not hold a user request.
+    clock.now = real_now - timedelta(minutes=10)
+    repository.mark_worker_waking(WORKER, timeout_seconds=180)
+    clock.now = real_now
+
+    service.request_manual_log_health_check()
+
+    assert wakes == [MAC]
+    newest = repository.list_workers().workers[0].power_events[0]
+    assert newest.kind.value == "wake_sent"
+    assert newest.detail["trigger"] == "manual_check"
+    assert newest.detail["pending_jobs"] == {"logs.health_check": 1}

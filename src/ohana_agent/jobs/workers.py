@@ -538,17 +538,24 @@ class DistributedWorkerRegistry:
         ).fetchone()
         if pending is not None:
             return False
-        self._power_event_locked(
-            worker_id,
-            DistributedWorkerPowerEventKind.SHUTDOWN_GRANTED,
-            now,
-            self._executed_since_locked(row),
-        )
-        self._connection.execute(
-            """UPDATE distributed_workers SET woken_by_ohana=0,
-            wake_requested_at=NULL, wake_deadline_at=NULL WHERE worker_id=?""",
+        # The permission stays until Katsuyu reports what it did with it: a
+        # grant whose answer was lost (Agent busy, client timeout) is granted
+        # again to the next poll, and the journal keeps a single entry.
+        last = self._connection.execute(
+            """SELECT kind FROM distributed_worker_power_events
+            WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
             (worker_id,),
-        )
+        ).fetchone()
+        if (
+            last is None
+            or last["kind"] != DistributedWorkerPowerEventKind.SHUTDOWN_GRANTED
+        ):
+            self._power_event_locked(
+                worker_id,
+                DistributedWorkerPowerEventKind.SHUTDOWN_GRANTED,
+                now,
+                self._executed_since_locked(row),
+            )
         return True
 
     def report_worker_power(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -572,6 +579,12 @@ class DistributedWorkerRegistry:
                 DistributedWorkerPowerEventKind(report.outcome),
                 now,
                 detail,
+            )
+            # Started or vetoed, the cycle is over: no more shutdown permission.
+            self._connection.execute(
+                """UPDATE distributed_workers SET woken_by_ohana=0,
+                wake_requested_at=NULL, wake_deadline_at=NULL WHERE worker_id=?""",
+                (report.worker_id,),
             )
         LOGGER.info(
             "Katsuyu worker %s: %s%s",

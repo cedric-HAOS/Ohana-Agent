@@ -378,7 +378,15 @@ def test_changed_logs_enqueue_only_required_ai_before_shutdown(cycle, crash):
         == "ai_failed"
     )
     assert poll(service).shutdown_requested
-    assert not poll(service).shutdown_requested  # grant consumed
+    assert poll(service).shutdown_requested  # answer lost: granted again
+    service.report_worker_power(
+        {
+            "protocol_version": 1,
+            "worker_id": "katsuyu-test",
+            "outcome": "shutdown_started",
+        }
+    )
+    assert not poll(service).shutdown_requested  # reported: grant consumed
 
 
 def test_stable_logs_refresh_without_ai(cycle):

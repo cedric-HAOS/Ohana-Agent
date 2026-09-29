@@ -23,9 +23,13 @@ donne jamais une permission d’arrêt à appliquer plus tard.
 
 L’autorisation nécessite à la fois `shutdown_after_completion` activé dans la
 configuration et un worker marqué comme réveillé par Ohana. Un démarrage manuel
-ne donne pas cette permission. La permission de réveil est consommée lors de
-l’autorisation d’arrêt. Une réponse perdue peut laisser le PC allumé ; elle ne
-doit pas provoquer un arrêt sur la base d’une ancienne consigne.
+ne donne pas cette permission. La permission de réveil reste valable jusqu'au rapport de Katsuyu
+(`POST /v1/jobs/workers/power` : arrêt lancé ou refusé) : une réponse perdue
+(Agent occupé, délai dépassé côté worker) est accordée de nouveau au sondage
+suivant, sans doubler l'entrée du journal. Une fois le rapport reçu, la
+permission est épuisée : une ancienne consigne ne peut plus arrêter le PC. Un
+contrôle demandé depuis Vision réveille Katsuyu immédiatement, sans attendre la
+fenêtre de 05:00.
 
 La colonne SQLite `completion_processed` conserve les résultats en attente de
 traitement. Elle est ajoutée automatiquement, sans réexécuter l’ancien historique.

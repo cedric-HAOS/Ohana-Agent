@@ -1574,7 +1574,21 @@ class AdministrationService:
         )
         return True
 
-    def _wake_compatible_worker(self, job_type: str) -> bool:
+    def request_manual_log_health_check(self) -> object:
+        """A control asked from Vision wakes Katsuyu now, not at 05:00."""
+        job = self.request_log_health_check()
+        self._wake_compatible_worker(
+            "logs.health_check", trigger="manual_check", ignore_interval=True
+        )
+        return job
+
+    def _wake_compatible_worker(
+        self,
+        job_type: str,
+        *,
+        trigger: str = "queued_jobs",
+        ignore_interval: bool = False,
+    ) -> bool:
         """Wake one unavailable compatible worker using its advertised WOL MAC."""
         if (
             self.job_repository is None
@@ -1584,7 +1598,9 @@ class AdministrationService:
             return False
         worker = self.job_repository.wake_candidate(
             job_type,
-            minimum_interval_seconds=self.wake_minimum_interval_seconds,
+            minimum_interval_seconds=(
+                0 if ignore_interval else self.wake_minimum_interval_seconds
+            ),
             fallback_worker_id=self.wake_worker_id,
             fallback_mac_address=self.wake_mac_address,
         )
@@ -1593,7 +1609,7 @@ class AdministrationService:
         return self._send_and_mark_wake(
             worker.worker_id,
             worker.wake_on_lan_mac_address,
-            trigger="queued_jobs",
+            trigger=trigger,
         )
 
     def read_job(self, job_id: str) -> object:

@@ -589,7 +589,7 @@ def _administration_routes(
             ),
             _route(
                 "/v1/incidents/logs/check",
-                _call(service.request_log_health_check),
+                _call(service.request_manual_log_health_check),
             ),
             _route(
                 "/v1/preventive/backfill",

@@ -2,6 +2,18 @@
 
 ## Non publié
 
+### Corrigé
+
+- Arrêt de Katsuyu : la permission d'arrêt n'est plus consommée à l'octroi mais
+  au rapport de Katsuyu (`shutdown_started` ou `shutdown_vetoed`). Constaté le
+  29 septembre : le worker n'avait pas reçu la réponse (Agent occupé à traiter le
+  résultat du contrôle, délai dépassé côté Katsuyu) alors que l'Agent avait
+  déjà consommé la permission, et Bubule est resté allumé. Une réponse perdue
+  est désormais accordée de nouveau au sondage suivant, sans doubler l'entrée du
+  journal ; une fois le rapport reçu, la permission est épuisée.
+- Le « contrôle manuel des journaux » lancé depuis Vision réveille Katsuyu tout
+  de suite (`trigger: manual_check`, sans l'intervalle minimal de réveil) au lieu
+  d'attendre la fenêtre de 05:00 : le job restait en attente d'un worker.
 ## [1.43.0] — 2026-09-29 — Cycles de réveil de Katsuyu expliqués, réveil fiabilisé, reprise bornée des travaux
 
 Publiée le jour même de 1.42.0, à la demande de l'utilisateur.

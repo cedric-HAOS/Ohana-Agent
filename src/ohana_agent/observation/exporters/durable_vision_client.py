@@ -44,6 +44,8 @@ class DurableVisionClient:
         # commits can wait seconds on a slow SD card.
         self._incoming: deque[dict[str, Any]] = deque()
         self._incoming_lock = Lock()
+        # One warning per outage: Katsuyu counts every line of the journal.
+        self._failed_attempts = 0
 
     @property
     def pending_count(self) -> int:
@@ -102,7 +104,11 @@ class DurableVisionClient:
                     self.client.send_observation(entry.payload)
                 except VisionClientError as error:
                     self.outbox.mark_failed(entry.observation_id, str(error))
-                    LOGGER.warning(
+                    self._failed_attempts += 1
+                    LOGGER.log(
+                        logging.WARNING
+                        if self._failed_attempts == 1
+                        else logging.DEBUG,
                         "Unable to deliver observation %s to Ohana-Vision: %s",
                         entry.observation_id,
                         error,
@@ -111,6 +117,12 @@ class DurableVisionClient:
 
                 self.outbox.mark_delivered(entry.observation_id)
                 delivered += 1
+                if self._failed_attempts:
+                    LOGGER.info(
+                        "Delivery to Ohana-Vision restored after %d failed attempt(s).",
+                        self._failed_attempts,
+                    )
+                    self._failed_attempts = 0
 
         if (delivered or drained) and self.on_progress is not None:
             self.on_progress()
@@ -126,7 +138,11 @@ class DurableVisionClient:
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
-            self._wake_event.wait(self.retry_seconds)
+            if self._failed_attempts:
+                # Vision is down: new observations must not trigger a retry each.
+                self._stop_event.wait(self.retry_seconds)
+            else:
+                self._wake_event.wait(self.retry_seconds)
             self._wake_event.clear()
             if not self._stop_event.is_set():
                 self.flush()

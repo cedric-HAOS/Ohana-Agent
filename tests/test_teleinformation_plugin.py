@@ -1,5 +1,6 @@
 """Tests for the Linky Téléinformation observation plugin."""
 
+from ohana_agent.observation.health.monitor import HealthStatus
 from ohana_agent.plugins.teleinformation.config import (
     TeleinformationConfig,
 )
@@ -81,3 +82,38 @@ def test_teleinformation_plugin_returns_service_observation() -> None:
     assert result.metadata["active_index"]["value"] == 6931422.0
     assert "1392 VA" in (result.message or "")
     assert "HP Bleue" in (result.message or "")
+
+
+def direct_plugin() -> TeleinformationPlugin:
+    return TeleinformationPlugin(
+        config=TeleinformationConfig(mode="direct_http", maximum_age_seconds=60),
+    )
+
+
+def execute_direct(plugin: TeleinformationPlugin):
+    return plugin.execute(
+        service_id="tic-linky",
+        service_name="TIC Linky",
+        node_id="linky-01",
+        meter_id="041964385922",
+        maximum_age_seconds=60,
+    )
+
+
+def test_missing_first_frame_after_agent_start_is_unknown() -> None:
+    # 29 September: each Agent restart opened a critical Linky incident for
+    # the minute teleinfo2mqtt needed to send its next frame.
+    result = execute_direct(direct_plugin())
+
+    assert result.health is HealthStatus.UNKNOWN
+    assert "en attente de la première trame" in result.message
+
+
+def test_missing_frame_after_the_freshness_window_is_a_failure() -> None:
+    plugin = direct_plugin()
+    plugin._started_at -= 61
+
+    result = execute_direct(plugin)
+
+    assert result.health is None
+    assert result.success is False

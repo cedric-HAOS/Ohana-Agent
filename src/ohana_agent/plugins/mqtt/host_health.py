@@ -19,6 +19,7 @@ from typing import Any
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.runtime.vision_probe import vision_failures
 from ohana_agent.runtime.vitals import AgentVitals, stale_components
+from ohana_agent.tsunade.local_time import to_paris
 
 LOGGER = logging.getLogger(__name__)
 
@@ -431,7 +432,7 @@ class HostHealthMonitor:
         return HostHealthSnapshot(
             state=state,
             reasons=tuple(reason for _severity, reason in active),
-            updated_at=self._utc_now().isoformat(),
+            updated_at=to_paris(self._utc_now()).isoformat(),
             **asdict(metrics),
             agent_components=components,
             stale_agent_components=stale,

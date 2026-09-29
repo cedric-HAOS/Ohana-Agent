@@ -252,6 +252,29 @@ def test_production_agent_keeps_observing_when_a_refresh_fails() -> None:
     assert scheduler.tick_calls == 3
 
 
+def test_production_agent_warns_once_per_refresh_outage(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # 29 September: Vision stopped 6 min wrote one warning every 10 s.
+    client = FakeVisionClient(
+        outcomes=[VisionClientError("Vision down")] * 3 + [None],
+    )
+    agent = ProductionAgent(
+        scheduler=FakeScheduler(),  # type: ignore[arg-type]
+        vision_client=client,
+        infrastructure_payload={"schema_version": 1},
+    )
+    caplog.set_level("DEBUG", logger="ohana_agent.runtime.agent")
+
+    for _ in range(4):
+        agent._refresh_infrastructure()
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "restored after 3 failed attempt(s)" in caplog.text
+    assert agent.infrastructure_synchronized is True
+
+
 def test_production_agent_propagates_unexpected_sync_error() -> None:
     scheduler = FakeScheduler()
     client = FakeVisionClient(

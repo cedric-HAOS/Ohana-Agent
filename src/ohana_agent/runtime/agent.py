@@ -113,6 +113,11 @@ class ProductionAgent:
         init=False,
         repr=False,
     )
+    _infrastructure_refresh_failures: int = field(
+        default=0,
+        init=False,
+        repr=False,
+    )
     _runtime_lock: RLock = field(
         default_factory=RLock,
         init=False,
@@ -403,13 +408,25 @@ class ProductionAgent:
             self._next_infrastructure_refresh_at = (
                 self.monotonic_clock() + self.infrastructure_retry_seconds
             )
-            LOGGER.warning(
+            self._infrastructure_refresh_failures += 1
+            # One warning per outage; retries every few seconds stay in DEBUG.
+            LOGGER.log(
+                logging.WARNING
+                if self._infrastructure_refresh_failures == 1
+                else logging.DEBUG,
                 "Unable to refresh infrastructure in Ohana-Vision; "
                 "observations continue: %s",
                 error,
             )
             return
 
+        if self._infrastructure_refresh_failures:
+            LOGGER.info(
+                "Infrastructure refresh in Ohana-Vision restored after "
+                "%d failed attempt(s).",
+                self._infrastructure_refresh_failures,
+            )
+            self._infrastructure_refresh_failures = 0
         if not self._infrastructure_synchronized:
             LOGGER.info("Infrastructure synchronized with Ohana-Vision.")
         self._infrastructure_synchronized = True

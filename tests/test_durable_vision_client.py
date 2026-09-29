@@ -6,11 +6,15 @@ from time import monotonic, sleep
 from typing import Any
 from uuid import uuid4
 
+import pytest
+
 from ohana_agent.observation.exporters import (
     DurableVisionClient,
     VisionClientError,
     VisionObservationOutbox,
 )
+
+DURABLE_LOGGER = "ohana_agent.observation.exporters.durable_vision_client"
 
 
 class FakeVisionClient:
@@ -184,3 +188,55 @@ def test_stop_persists_observations_not_yet_written(tmp_path: Path) -> None:
     reopened = VisionObservationOutbox(tmp_path / "outbox.db")
     assert reopened.pending_count == 1
     reopened.close()
+
+
+def test_outage_warns_once_and_logs_recovery(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # 28 September: Vision starting for 50 s produced 37 warnings.
+    target = FakeVisionClient()
+    target.available = False
+    client = durable_client(tmp_path, target)
+    caplog.set_level("DEBUG", logger=DURABLE_LOGGER)
+
+    for _ in range(3):
+        client.send_observation(payload())
+        client.flush()
+    target.available = True
+    client.flush()
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "restored after 3 failed attempt(s)" in caplog.text
+    assert client.pending_count == 0
+    client.stop()
+
+
+def test_new_observations_do_not_trigger_retries_during_outage(
+    tmp_path: Path,
+) -> None:
+    class CountingVisionClient(FakeVisionClient):
+        attempts = 0
+
+        def send_observation(self, observation: dict[str, Any]) -> None:
+            self.attempts += 1
+            super().send_observation(observation)
+
+    target = CountingVisionClient()
+    target.available = False
+    client = DurableVisionClient(
+        target, VisionObservationOutbox(tmp_path / "outbox.db"), retry_seconds=0.5
+    )
+    client.start()
+    deadline = monotonic() + 1.0
+    client.send_observation(payload())
+    while target.attempts == 0 and monotonic() < deadline:
+        sleep(0.01)
+
+    for _ in range(20):
+        client.send_observation(payload())
+        sleep(0.005)
+
+    # Only the retry timer may attempt again while Vision stays down.
+    assert target.attempts == 1
+    client.stop()

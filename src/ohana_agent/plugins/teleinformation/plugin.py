@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from time import perf_counter
+from time import monotonic, perf_counter
 from typing import TYPE_CHECKING, Any
 
+from ohana_agent.observation.health.monitor import HealthStatus
 from ohana_agent.plugins.runtime.plugin import Plugin
 from ohana_agent.plugins.runtime.plugin_context import PluginContext
 from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
@@ -44,6 +45,8 @@ class TeleinformationPlugin(Plugin):
         self._state = PluginState.LOADED
         self._check = check or TeleinformationCheck()
         self.config = config or TeleinformationConfig()
+        # The frame store lives in memory: it is empty after each Agent start.
+        self._started_at = monotonic()
 
     @property
     def name(self) -> str:
@@ -138,10 +141,21 @@ class TeleinformationPlugin(Plugin):
             )
 
         elapsed_ms = (perf_counter() - started_at) * 1000
+        message = self._message(result)
+        health = None
+        if self._awaiting_first_frame(result, maximum_age_seconds):
+            # teleinfo2mqtt was refused while the Agent restarted: no frame yet
+            # proves nothing until a full freshness window has passed.
+            health = HealthStatus.UNKNOWN
+            message = (
+                f"{message} Agent démarré depuis moins de "
+                f"{maximum_age_seconds} s : en attente de la première trame."
+            )
         return ObserverResult(
             success=result.healthy,
             latency=elapsed_ms,
-            message=self._message(result),
+            message=message,
+            health=health,
             check="teleinformation.freshness",
             description=(
                 "Vérifie la réception des trames Linky directement depuis "
@@ -185,6 +199,14 @@ class TeleinformationPlugin(Plugin):
                 "verify_tls": self.config.verify_tls,
                 "error": result.error,
             },
+        )
+
+    def _awaiting_first_frame(self, result: Any, maximum_age_seconds: int) -> bool:
+        return (
+            result.mode == "direct_http"
+            and not result.healthy
+            and result.apparent_power.reported_at is None
+            and monotonic() - self._started_at < maximum_age_seconds
         )
 
     def reconfigure(self, config: TeleinformationConfig) -> None:

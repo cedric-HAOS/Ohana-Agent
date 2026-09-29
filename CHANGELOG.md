@@ -2,6 +2,21 @@
 
 ## Non publié
 
+Défauts relevés pendant les validations réelles de la Phase 5 (29 septembre ;
+scénario Sandbox `agent-restart-quiet`, l'Agent 1.40.0 échoue).
+
+- Vision indisponible : un seul avertissement par panne pour la livraison des
+  observations et pour le rafraîchissement de l'infrastructure (les essais
+  suivants passent en `DEBUG`), une ligne `INFO` au rétablissement avec le
+  nombre d'essais refusés. Pendant la panne, une nouvelle observation ne
+  relance plus un envoi : un essai toutes les 10 s (37 avertissements en 50 s
+  au démarrage de Vision, un toutes les 10 s pendant un arrêt de 6 min).
+- Téléinformation directe : juste après le démarrage de l'Agent, l'absence de
+  trame est une observation inconnue tant qu'une fenêtre de fraîcheur ne
+  s'est pas écoulée. Le magasin de trames est en mémoire : chaque
+  redémarrage ouvrait un incident Linky critique d'une minute.
+- `host.health` : `updated_at` à l'heure de Paris (UTC jusqu'ici).
+
 ## [1.40.0] — 2026-09-28 — Ohana supervise Ohana
 
 Publiée le jour même de 1.39.0, à la demande de l'utilisateur.

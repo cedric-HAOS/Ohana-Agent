@@ -201,6 +201,15 @@ def test_host_health_reports_immediate_critical_conditions() -> None:
     )
 
 
+def test_host_health_update_time_is_expressed_in_paris() -> None:
+    snapshot = HostHealthMonitor(
+        FakeHostProbe(make_metrics()),
+        utc_now=lambda: datetime(2026, 9, 29, 6, 30, tzinfo=UTC),
+    ).collect()
+
+    assert snapshot.updated_at == "2026-09-29T08:30:00+02:00"
+
+
 def test_host_health_recovers_after_pressure_clears() -> None:
     probe = FakeHostProbe(make_metrics(memory_percent=90.0))
     monitor = HostHealthMonitor(probe, required_samples=2)

@@ -2,6 +2,19 @@
 
 ## Non publié
 
+### Ajouté
+
+- Résumé compagnon : `services` donne une tuile par service essentiel configuré
+  (DNS, DHCP, MQTT, Home Assistant, Z-Wave, Téléinformation) avec son état
+  (sain, dégradé, critique, inconnu) et sa durée mesurée (« 4,6 ms ») ; le pire
+  contrôle du type décide. Un service sans mesure de moins de 48 h est
+  « inconnu », jamais sain.
+- Résumé compagnon : `logs` donne le dernier contrôle des journaux et, par
+  équipement (INFRA-01, LINKY-01, ZWAVE-01, HA-01), l'état : attente de
+  décision, analyse en cours, à examiner, bruit connu accepté ou rien à signaler.
+- `tsunade_capability_state.latency_ms` (migration additive) : dernière durée
+  mesurée de chaque contrôle.
+
 ## [1.43.1] — 2026-09-29 — La permission d'arrêt survit à une réponse perdue, le contrôle manuel réveille Katsuyu
 
 Publiée le jour même de 1.43.0, à la demande de l'utilisateur.

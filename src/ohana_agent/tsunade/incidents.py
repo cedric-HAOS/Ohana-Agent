@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.observation.events import ObservationPublished
+from ohana_agent.tsunade.capability_overview import TsunadeCapabilityOverview
 from ohana_agent.tsunade.evidence_privacy import (
     redact_sensitive_text,
     redact_sensitive_value,
@@ -34,6 +35,7 @@ from ohana_agent.tsunade.repair_statistics import TsunadeRepairStatistics
 
 class TsunadeIncidentRepository(
     TsunadeIncidentSchema,
+    TsunadeCapabilityOverview,
     TsunadeIncidentHistory,
     TsunadeLogHealthIncidents,
     TsunadeRepairs,
@@ -454,10 +456,11 @@ class TsunadeIncidentRepository(
 
     def _write_state(self, observation: Observation) -> None:
         self._connection.execute(
-            """INSERT INTO tsunade_capability_state VALUES (?,?,?,?,?,?)
+            """INSERT INTO tsunade_capability_state(node_id,service_id,capability_id,
+            status,observed_at,observation_id,latency_ms) VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(node_id,service_id,capability_id) DO UPDATE SET
             status=excluded.status,observed_at=excluded.observed_at,
-            observation_id=excluded.observation_id""",
+            observation_id=excluded.observation_id,latency_ms=excluded.latency_ms""",
             (
                 observation.node,
                 observation.service,
@@ -465,6 +468,7 @@ class TsunadeIncidentRepository(
                 observation.status.value,
                 paris_iso(observation.timestamp),
                 str(observation.id),
+                observation.latency_ms,
             ),
         )
 

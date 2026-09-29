@@ -198,6 +198,17 @@ class TsunadeIncidentSchema:
             self._connection.execute(
                 "ALTER TABLE tsunade_repairs ADD COLUMN experience_id TEXT"
             )
+        state_columns = {
+            row[1]
+            for row in self._connection.execute(
+                "PRAGMA table_info(tsunade_capability_state)"
+            )
+        }
+        if "latency_ms" not in state_columns:
+            # Phase 7: the latest measured duration, shown as "test DNS OK 4,6 ms".
+            self._connection.execute(
+                "ALTER TABLE tsunade_capability_state ADD COLUMN latency_ms REAL"
+            )
         self._migrate_experience_history()
         self.initialize_followups()
         self._connection.commit()

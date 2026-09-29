@@ -42,6 +42,7 @@ from ohana_agent.jobs.job_types import (
 from ohana_agent.jobs.log_sources import LogSourceBroker
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
+from ohana_agent.tsunade.companion_overview import logs_overview, services_overview
 from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
@@ -604,7 +605,43 @@ class AdministrationService:
             "active_count": active_count,
             "attention_truncated": active_count > len(attention),
             "preventive": self._companion_preventive(),
+            "services": self._companion_services(),
+            "logs": logs_overview(
+                incidents,
+                {str(request.incident_id) for request in requests},
+                self._accepted_log_counts(),
+                latest_log_health.finished_at
+                if latest_log_health is not None
+                and latest_log_health.status.value == "SUCCEEDED"
+                else None,
+            ),
         }
+
+    def _companion_services(self) -> dict[str, Any]:
+        """The essential services at a glance, from Agent's own latest checks."""
+        try:
+            configuration = self.infrastructure_repository.read()
+            service_types = {
+                service.id: service.type
+                for service in configuration.services
+                if service.enabled
+            }
+        except Exception:  # noqa: BLE001 - incidents stay readable without it.
+            LOGGER.exception("Unable to read the services for the companion")
+            service_types = {}
+        return services_overview(
+            self.incident_repository.capability_states(), service_types
+        )
+
+    def _accepted_log_counts(self) -> dict[str, int]:
+        """Known-noise entries the user accepted, per log source."""
+        counts: dict[str, int] = {}
+        for entry in (
+            *self.incident_repository.accepted_log_components(),
+            *self.incident_repository.accepted_log_signatures(),
+        ):
+            counts[entry["source"]] = counts.get(entry["source"], 0) + 1
+        return counts
 
     def _companion_preventive(self) -> dict[str, Any] | None:
         """The essential of the preventive synthesis; Vision has the detail."""

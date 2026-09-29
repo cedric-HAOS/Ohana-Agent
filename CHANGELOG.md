@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## [1.43.0] — 2026-09-29 — Cycles de réveil de Katsuyu expliqués, réveil fiabilisé, reprise bornée des travaux
+
+Publiée le jour même de 1.42.0, à la demande de l'utilisateur.
+
 ### Ajouté
 
 - Phase 6, lot 1 : journal des réveils et arrêts de Katsuyu

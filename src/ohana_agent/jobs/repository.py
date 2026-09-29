@@ -63,6 +63,7 @@ class DistributedJobRepository(
         pairing_ttl_seconds: int = 600,
         max_pending_pairings: int = 10,
         worker_available_seconds: int = 30,
+        max_attempts: int = 3,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if lease_seconds < 10:
@@ -79,6 +80,8 @@ class DistributedJobRepository(
             raise ValueError("max_pending_pairings must be between 1 and 100")
         if worker_available_seconds < 10 or worker_available_seconds > 600:
             raise ValueError("worker_available_seconds must be between 10 and 600")
+        if max_attempts < 1 or max_attempts > 10:
+            raise ValueError("max_attempts must be between 1 and 10")
 
         self.path = path
         self.lease_seconds = lease_seconds
@@ -88,6 +91,7 @@ class DistributedJobRepository(
         self.pairing_ttl_seconds = pairing_ttl_seconds
         self.max_pending_pairings = max_pending_pairings
         self.worker_available_seconds = worker_available_seconds
+        self.max_attempts = max_attempts
         self._clock = clock or (lambda: datetime.now(LOCAL_TIMEZONE))
         self._lock = Lock()
         if path != Path(":memory:"):
@@ -651,11 +655,37 @@ class DistributedJobRepository(
                 and row["lease_expires_at"] is not None
                 and self._parse_timestamp(row["lease_expires_at"]) <= now
             ):
+                attempt = int(row["attempt"])
+                if attempt >= self.max_attempts:
+                    # Interrupted every time: stop replaying it, say why.
+                    self._transition_locked(
+                        row,
+                        DistributedJobStatus.FAILED,
+                        now,
+                        detail=(
+                            f"worker lease expired on attempt {attempt}; giving up"
+                        ),
+                        finished_at=now,
+                        clear_lease=True,
+                        error={
+                            "code": "worker.interrupted",
+                            "message": (
+                                f"Katsuyu s'est arrêté {attempt} fois pendant ce "
+                                "travail (PC éteint, redémarré ou worker arrêté) : "
+                                "abandon."
+                            ),
+                            "retryable": False,
+                        },
+                    )
+                    continue
                 self._transition_locked(
                     row,
                     DistributedJobStatus.QUEUED,
                     now,
-                    detail="worker lease expired; queued for retry",
+                    detail=(
+                        "worker lease expired; queued for retry "
+                        f"(attempt {attempt}/{self.max_attempts})"
+                    ),
                     clear_lease=True,
                     clear_owner=True,
                 )
@@ -712,6 +742,7 @@ class DistributedJobRepository(
         finished_at: datetime | None = None,
         clear_lease: bool = False,
         clear_owner: bool = False,
+        error: dict[str, Any] | None = None,
     ) -> None:
         self._connection.execute(
             """
@@ -719,6 +750,7 @@ class DistributedJobRepository(
             SET status = ?, finished_at = COALESCE(?, finished_at),
                 worker_id = CASE WHEN ? THEN NULL ELSE worker_id END,
                 lease_expires_at = CASE WHEN ? THEN NULL ELSE lease_expires_at END,
+                error_json = COALESCE(?, error_json),
                 updated_at = ?
             WHERE job_id = ?
             """,
@@ -727,6 +759,7 @@ class DistributedJobRepository(
                 self._timestamp(finished_at) if finished_at else None,
                 clear_owner,
                 clear_lease,
+                self._json(error) if error is not None else None,
                 self._timestamp(now),
                 row["job_id"],
             ),

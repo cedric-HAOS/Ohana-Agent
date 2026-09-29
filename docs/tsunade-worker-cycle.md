@@ -33,6 +33,15 @@ Le prochain polling reprend un résultat reçu avant un redémarrage d’Agent.
 Les contrôles rejoués ne doivent pas augmenter les occurrences des incidents.
 Les diagnostics IA conservent leur délai maximal de 900 secondes.
 
+## Travail interrompu
+
+Si Katsuyu cesse de battre pendant un travail (PC éteint ou redémarré, worker
+arrêté), le bail de 60 secondes expire et le travail retourne en file pour une
+nouvelle tentative. Après trois tentatives interrompues (`max_attempts`), il passe
+en `FAILED` avec l'erreur `worker.interrupted` : il n'est plus rejoué et sa cause
+reste visible dans l'activité du worker. Un travail IA ainsi abandonné suit le
+repli habituel de Tsunade (aucune conclusion, surveillance maintenue).
+
 ## Mise à jour progressive
 
 Installer Agent avant Katsuyu est recommandé. Un ancien Katsuyu utilise encore

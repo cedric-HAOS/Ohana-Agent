@@ -24,6 +24,15 @@
   envois impossibles, délai médian et maximal) accompagne chaque worker de
   `GET /v1/jobs/workers`. Réglages du service : `wake_unanswered_retry_seconds`
   (600) et `wake_max_unanswered_attempts` (3), sans option YAML pour l'instant.
+- Phase 6, lot 3 : un travail interrompu (PC éteint, redémarré, worker arrêté :
+  le bail de 60 s expire) est repris comme avant, mais au plus trois fois
+  (`max_attempts` du dépôt de jobs, 3 par défaut). À la troisième
+  interruption il passe en `FAILED` avec l'erreur `worker.interrupted` (« Katsuyu
+  s'est arrêté 3 fois pendant ce travail ») au lieu d'être rejoué jusqu'à son
+  délai maximal ; pour un travail IA, Tsunade consigne alors le repli déterministe
+  habituel, sans conclusion. L'événement de reprise indique la tentative
+  (« attempt 1/3 »). La cause reste dans l'activité du worker
+  (`last_failure_message`).
 
 ### Corrigé
 

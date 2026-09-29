@@ -17,6 +17,7 @@ from ohana_agent.tsunade.evidence_privacy import (
     redact_sensitive_value,
 )
 from ohana_agent.tsunade.followup_store import FollowupPersistence
+from ohana_agent.tsunade.incident_history import TsunadeIncidentHistory
 from ohana_agent.tsunade.incident_log_health import TsunadeLogHealthIncidents
 from ohana_agent.tsunade.incident_manual import TsunadeManualResolutions
 from ohana_agent.tsunade.incident_models import (
@@ -32,6 +33,7 @@ from ohana_agent.tsunade.local_time import paris_iso, paris_now
 
 class TsunadeIncidentRepository(
     TsunadeIncidentSchema,
+    TsunadeIncidentHistory,
     TsunadeLogHealthIncidents,
     TsunadeRepairs,
     TsunadeManualResolutions,

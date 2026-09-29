@@ -321,6 +321,7 @@ class AdministrationService:
             operations.extend(
                 [
                     "incidents.summary.read",
+                    "incidents.history.read",
                     "incidents.requests.read",
                     "incidents.requests.respond",
                     "incidents.activity.read",
@@ -976,6 +977,24 @@ class AdministrationService:
                 # The scheduled observation and the deadline still apply.
                 LOGGER.exception("Unable to request the manual action verification")
         return action
+
+    def search_incident_history(self, payload: dict[str, Any]) -> object:
+        """Phase 3: past and open incidents by equipment, capability, period."""
+        return self._require_incidents().history(payload)
+
+    def read_equipment_history(self, equipment_id: str) -> object:
+        return self._require_incidents().equipment_history(equipment_id)
+
+    def read_incident_timeline(self) -> object:
+        return self._require_incidents().timeline(days=30)
+
+    def read_similar_incidents(self, incident_id: str) -> object:
+        return self._require_incidents().similar_incidents(incident_id)
+
+    def _require_incidents(self) -> Any:
+        if self.incident_repository is None:
+            raise LookupError("Tsunade incident history is unavailable")
+        return self.incident_repository
 
     def read_agent_vitals(self) -> object:
         """Phase 5: scheduler, queues, storage, retention and versions."""

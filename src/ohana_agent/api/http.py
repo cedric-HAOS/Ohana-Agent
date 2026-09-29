@@ -536,6 +536,15 @@ def _administration_routes(
             _route("/v1/experiences", _call(service.list_experiences)),
             _route("/v1/preventive", _call(service.read_preventive_summary)),
             _route("/v1/vitals", _call(service.read_agent_vitals)),
+            _route("/v1/incidents/timeline", _call(service.read_incident_timeline)),
+            _route(
+                "/v1/equipment/{equipment_id}/history",
+                _call(service.read_equipment_history),
+            ),
+            _route(
+                "/v1/incidents/{incident_id}/similar",
+                _call(service.read_similar_incidents),
+            ),
             _route("/v1/plugins/{identifier}", _call(service.read_plugin)),
             _route("/v1/jobs/{job_id}", _call(service.read_job)),
             _route("/v1/incidents/{incident_id}", _call(service.read_incident)),
@@ -582,6 +591,10 @@ def _administration_routes(
                 _call(service.request_preventive_backfill),
             ),
             _route("/v1/preventive/mute", _call_with_body(service.mute_preventive)),
+            _route(
+                "/v1/incidents/history",
+                _call_with_body(service.search_incident_history),
+            ),
             _route("/v1/preventive/unmute", _call_with_body(service.unmute_preventive)),
             _route(
                 "/v1/incidents/logs/accepted",

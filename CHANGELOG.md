@@ -51,6 +51,18 @@ scénario Sandbox `agent-restart-quiet`, l'Agent 1.40.0 échoue).
   affirmée. Moins d'alertes inutiles : une dérive peut être ignorée 1 à 90
   jours (`POST /v1/preventive/mute`, `/unmute`, opération `preventive.mute`)
   et une dérive déjà suivie par un incident ouvert est listée à part.
+- Comparaison plus fine entre incidents (durcissement de la Phase 3) :
+  empreinte d'un incident (raisons, message d'ouverture sans les nombres,
+  service, anomalies de journaux) et score expliqué. Une réparation connue
+  mémorisée pour une autre nature de panne (raisons sans rien en commun)
+  n'est plus citée ; la même nature s'ajoute aux critères affichés. La
+  proximité dans le temps n'est jamais un critère.
+- Historique pour Vision : `POST /v1/incidents/history` (filtres équipement,
+  capacité, période, issue : en cours, réparé, action manuelle, revenu seul),
+  `GET /v1/equipment/{id}/history` (incidents par capacité, durée cumulée,
+  réparations et taux de réussite, actions manuelles, réparations connues),
+  `GET /v1/incidents/timeline` (30 jours) et
+  `GET /v1/incidents/{id}/similar` ; opération `incidents.history.read`.
 
 ## [1.40.0] — 2026-09-28 — Ohana supervise Ohana
 

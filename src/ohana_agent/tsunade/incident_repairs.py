@@ -25,6 +25,7 @@ from ohana_agent.tsunade.incident_models import (
     TsunadeRepairAuthorizationRequest,
     ValidationSource,
 )
+from ohana_agent.tsunade.incident_similarity import compare, fingerprint
 from ohana_agent.tsunade.local_time import paris_iso, paris_now
 from ohana_agent.tsunade.repair_catalog import RepairSpec, repair_spec
 
@@ -608,25 +609,56 @@ class TsunadeRepairs:
         evidence = (incident.latest_decision or {}).get("epistemic_status")
         if evidence not in {"confirmed_by_probe", "confirmed_by_supervisor"}:
             return None
-        row = self._connection.execute(
+        rows = self._connection.execute(
             """SELECT * FROM tsunade_experiences
             WHERE equipment_id=? AND capability_id=? AND state='active'
             AND json_extract(action_json,'$.operation')=?
             AND json_extract(action_json,'$.target')=?
-            ORDER BY julianday(last_used_at) DESC LIMIT 1""",
+            ORDER BY julianday(last_used_at) DESC LIMIT 10""",
             (
                 incident.equipment_id,
                 incident.capability_id,
                 spec.operation,
                 spec.target,
             ),
-        ).fetchone()
-        if row is None:
+        ).fetchall()
+        current = fingerprint(
+            equipment_id=incident.equipment_id,
+            capability_id=incident.capability_id,
+            service_id=None,
+            message="",
+            context=incident.context,
+        )
+        # Finer comparison: same capability can hide another failure mode
+        # (host.health: a stopped Vision is not a full disk).
+        for row in rows:
+            try:
+                remembered = json.loads(row["context_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                remembered = {}
+            comparison = compare(
+                current,
+                fingerprint(
+                    equipment_id=row["equipment_id"],
+                    capability_id=row["capability_id"],
+                    service_id=None,
+                    message="",
+                    context=remembered,
+                ),
+            )
+            if not comparison["different_nature"]:
+                break
+        else:
             return None
         experience = self._experience(row)
         criteria = [
             f"Même symptôme : {incident.capability_id} en échec sur "
             f"{incident.equipment_id}",
+            *(
+                f"Même nature : {item[len('Mêmes raisons : ') :]}"
+                for item in comparison["matched"]
+                if item.startswith("Mêmes raisons : ")
+            ),
             "Même preuve : diagnostic confirmé "
             + (
                 "par une sonde déterministe"

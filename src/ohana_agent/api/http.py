@@ -581,6 +581,8 @@ def _administration_routes(
                 "/v1/preventive/backfill",
                 _call(service.request_preventive_backfill),
             ),
+            _route("/v1/preventive/mute", _call_with_body(service.mute_preventive)),
+            _route("/v1/preventive/unmute", _call_with_body(service.unmute_preventive)),
             _route(
                 "/v1/incidents/logs/accepted",
                 _call_with_body(service.accept_log_signature),

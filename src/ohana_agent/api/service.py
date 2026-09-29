@@ -329,7 +329,7 @@ class AdministrationService:
         if self.self_report is not None:
             operations.append("agent.vitals.read")
         if self.preventive_monitor is not None:
-            operations.append("preventive.read")
+            operations.extend(["preventive.read", "preventive.mute"])
             if self._preventive_backfill_available():
                 operations.append("preventive.backfill")
         if self.companion_repository is not None:
@@ -982,6 +982,27 @@ class AdministrationService:
         if self.self_report is None:
             raise LookupError("Le détail des vitaux de l'Agent est indisponible")
         return self.self_report()
+
+    def mute_preventive(self, payload: dict[str, Any]) -> object:
+        """Fewer useless alerts: set one drift aside for a number of days."""
+        if self.preventive_monitor is None:
+            raise LookupError("La maintenance préventive est indisponible")
+        days = payload.get("days", 30)
+        if isinstance(days, bool) or not isinstance(days, int):
+            raise ValueError("days must be an integer")
+        return self.preventive_monitor.mute(
+            str(payload.get("rule", "")),
+            str(payload.get("subject", "")),
+            days=days,
+            title=str(payload.get("title", "")),
+        )
+
+    def unmute_preventive(self, payload: dict[str, Any]) -> object:
+        if self.preventive_monitor is None:
+            raise LookupError("La maintenance préventive est indisponible")
+        return self.preventive_monitor.unmute(
+            str(payload.get("rule", "")), str(payload.get("subject", ""))
+        )
 
     def read_preventive_summary(self) -> object:
         """Phase 4: the short synthesis and the detail of each drift rule."""

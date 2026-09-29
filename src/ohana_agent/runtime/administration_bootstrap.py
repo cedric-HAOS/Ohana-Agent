@@ -68,6 +68,10 @@ from ohana_agent.tsunade.configuration_inspection import (
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
 )
+from ohana_agent.tsunade.home_assistant_availability import (
+    HomeAssistantAvailabilitySampler,
+    telemetry_token,
+)
 from ohana_agent.tsunade.incident_correlation import (
     NAME_RESOLUTION_SERVICE_TYPES,
     correlated_upstream_id,
@@ -328,6 +332,10 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
     context.event_bus.subscribe(ObservationPublished, tsunade_handler)
     context.event_bus.subscribe(HostHealthObserved, tsunade_handler)
     context.event_bus.subscribe(HostHealthObserved, preventive_monitor.handle)
+    context.event_bus.subscribe(
+        ObservationPublished, preventive_monitor.handle_observation
+    )
+    _start_home_assistant_availability(context, preventive_monitor)
     if (
         job_repository is not None
         and context.plugins["backup"].config.infra_01.use_katsuyu
@@ -345,6 +353,23 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         heartbeat=_vital(context.vitals, "administration", "API d’administration", 60),
     )
     return administration_service
+
+
+def _start_home_assistant_availability(
+    context: AdministrationContext, monitor: TsunadePreventiveMonitor
+) -> None:
+    """Phase 4: hourly count of unavailable entities on HA-01."""
+    try:
+        config = context.plugins["home_assistant_telemetry"].config
+    except KeyError:
+        return
+    HomeAssistantAvailabilitySampler(
+        url=config.home_assistant_url,
+        token=telemetry_token(config),
+        record_metric=monitor.record_metric,
+        record_snapshot=monitor.record_snapshot,
+        verify_tls=config.verify_tls,
+    ).start()
 
 
 def _agent_version() -> str:

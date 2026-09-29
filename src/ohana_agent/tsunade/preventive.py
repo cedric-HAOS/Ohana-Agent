@@ -21,6 +21,8 @@ from threading import RLock
 from typing import Any
 
 from ohana_agent.observation.observation import Observation
+from ohana_agent.observation.observation_status import ObservationStatus
+from ohana_agent.tsunade import preventive_rules
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 
 LOGGER = logging.getLogger(__name__)
@@ -39,6 +41,12 @@ INTERRUPTION_THRESHOLD = 3
 NETWORK_CAPABILITY = "network.reachable"
 BOOT_TOLERANCE = timedelta(minutes=3)
 FLUSH_INTERVAL = timedelta(minutes=15)
+MAX_MUTE_DAYS = 90
+# Drifts an open incident already follows: listed apart, not as a new alert.
+COVERED_BY_INCIDENT = {
+    "network_interruptions": ("network.reachable",),
+    "response_time": ("dns.resolve", "mqtt.roundtrip", "network.reachable"),
+}
 
 RULES: tuple[dict[str, str], ...] = (
     {
@@ -81,6 +89,7 @@ class _Day:
     maximum: float
     last: float
     samples: int
+    total: float = 0.0
     dirty: bool = True
 
 
@@ -131,6 +140,22 @@ class TsunadePreventiveMonitor:
                 "ALTER TABLE tsunade_trend_daily "
                 "ADD COLUMN source TEXT NOT NULL DEFAULT 'agent'"
             )
+        if "total" not in columns:
+            # Daily sum: response times are compared on their daily mean.
+            self._connection.execute(
+                "ALTER TABLE tsunade_trend_daily "
+                "ADD COLUMN total REAL NOT NULL DEFAULT 0"
+            )
+        self._connection.execute(
+            """CREATE TABLE IF NOT EXISTS tsunade_preventive_mutes (
+                rule TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                title TEXT NOT NULL,
+                muted_until TEXT NOT NULL,
+                muted_at TEXT NOT NULL,
+                PRIMARY KEY (rule, subject)
+            )"""
+        )
         self._connection.commit()
         # Pending daily aggregates: written every FLUSH_INTERVAL, not per
         # sample, because INFRA-01 writes to a slow SD card every minute.
@@ -147,6 +172,62 @@ class TsunadePreventiveMonitor:
             self.record_host_health(event.observation)
         except Exception:  # noqa: BLE001 - the next sample records again.
             LOGGER.exception("Unable to record the preventive host samples")
+
+    def handle_observation(self, event: Any) -> None:
+        """Consume ObservationPublished for response times; never raise."""
+        try:
+            self.record_observation(event.observation)
+        except Exception:  # noqa: BLE001 - the next observation records again.
+            LOGGER.exception("Unable to record the preventive response time")
+
+    def record_observation(self, observation: Observation) -> None:
+        """Daily response time of successful DNS, MQTT and network checks."""
+        latency = observation.latency_ms
+        if (
+            observation.capability not in preventive_rules.LATENCY_CAPABILITIES
+            or observation.status is not ObservationStatus.HEALTHY
+            or not isinstance(latency, int | float)
+            or latency < 0
+        ):
+            return
+        metric = f"latency_ms:{observation.capability}:{observation.service}"
+        self.record_metric(
+            str(observation.node), metric, float(latency), observation.timestamp
+        )
+
+    def record_metric(self, node: str, metric: str, value: float, at: datetime) -> None:
+        observed_at = to_paris(at)
+        with self._lock:
+            self._accumulate(observed_at, node, metric, float(value))
+            self._maybe_flush(observed_at)
+
+    def record_snapshot(
+        self, node: str, kind: str, at: datetime, detail: dict[str, Any]
+    ) -> None:
+        """Keep the day's latest detail (one row per node, kind and day)."""
+        day = to_paris(at).date().isoformat()
+        with self._lock:
+            self._connection.execute(
+                """INSERT INTO tsunade_trend_events
+                (node_id, kind, occurred_at, detail_json) VALUES (?, ?, ?, ?)
+                ON CONFLICT(node_id, kind, occurred_at)
+                DO UPDATE SET detail_json=excluded.detail_json""",
+                (node, kind, day, json.dumps(detail)),
+            )
+            cutoff = (to_paris(at).date() - timedelta(days=90)).isoformat()
+            self._connection.execute(
+                "DELETE FROM tsunade_trend_events WHERE kind=? AND occurred_at < ?",
+                (kind, cutoff),
+            )
+            self._connection.commit()
+
+    def _maybe_flush(self, observed_at: datetime) -> None:
+        if (
+            self._last_flush is None
+            or observed_at - self._last_flush >= FLUSH_INTERVAL
+            or any(key[0] != observed_at.date().isoformat() for key in self._days)
+        ):
+            self._flush(observed_at)
 
     def record_host_health(self, observation: Observation) -> None:
         health = observation.metadata.get("host_health")
@@ -176,12 +257,7 @@ class TsunadePreventiveMonitor:
             restarts = health.get("agent_restarts")
             if isinstance(restarts, int) and restarts >= 0:
                 self._record_agent_restarts(node, observed_at, restarts)
-            if (
-                self._last_flush is None
-                or observed_at - self._last_flush >= FLUSH_INTERVAL
-                or any(key[0] != observed_at.date().isoformat() for key in self._days)
-            ):
-                self._flush(observed_at)
+            self._maybe_flush(observed_at)
 
     def missing_days(
         self, node: str, metric: str, *, now: datetime | None = None
@@ -258,12 +334,14 @@ class TsunadePreventiveMonitor:
         current = self._days.get(key)
         if current is None:
             row = self._connection.execute(
-                """SELECT minimum, maximum, samples FROM tsunade_trend_daily
+                """SELECT minimum, maximum, samples, total FROM tsunade_trend_daily
                 WHERE day=? AND node_id=? AND metric=?""",
                 key,
             ).fetchone()
             current = (
-                _Day(row["minimum"], row["maximum"], value, row["samples"])
+                _Day(
+                    row["minimum"], row["maximum"], value, row["samples"], row["total"]
+                )
                 if row
                 else _Day(value, value, value, 0)
             )
@@ -272,6 +350,7 @@ class TsunadePreventiveMonitor:
         current.maximum = max(current.maximum, value)
         current.last = value
         current.samples += 1
+        current.total += value
         current.dirty = True
 
     def _record_boot(self, node: str, booted_at: datetime) -> None:
@@ -340,11 +419,11 @@ class TsunadePreventiveMonitor:
                 self._connection.execute(
                     """INSERT INTO tsunade_trend_daily
                     (day, node_id, metric, minimum, maximum, last_value,
-                    samples, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    samples, updated_at, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(day, node_id, metric) DO UPDATE SET
                     minimum=excluded.minimum, maximum=excluded.maximum,
                     last_value=excluded.last_value, samples=excluded.samples,
-                    updated_at=excluded.updated_at""",
+                    updated_at=excluded.updated_at, total=excluded.total""",
                     (
                         *key,
                         day.minimum,
@@ -352,6 +431,7 @@ class TsunadePreventiveMonitor:
                         day.last,
                         day.samples,
                         paris_iso(current),
+                        day.total,
                     ),
                 )
                 day.dirty = False
@@ -425,9 +505,33 @@ class TsunadePreventiveMonitor:
                 self._disk_growth(current),
                 self._repeated_reboots(current),
                 self._network_interruptions(current),
+                preventive_rules.memory_growth(self._connection, current),
+                preventive_rules.response_time(self._connection, current),
+                preventive_rules.log_errors_growth(self._connection, current),
+                preventive_rules.ha_unavailable_entities(self._connection, current),
             ]
             active_incidents = self._active_incidents()
-        watch = [item for check in checks for item in check.pop("items")]
+            mutes = self._active_mutes(current)
+            followed = self._followed_by_incidents()
+        found = [item for check in checks for item in check.pop("items")]
+        for item in found:
+            item.setdefault("subject", str(item.get("equipment_id")))
+        # Fewer useless alerts: a drift the user muted, or one an open incident
+        # already follows, is kept apart from the list to watch.
+        muted = [item for item in found if (item["rule"], item["subject"]) in mutes]
+        covered = [
+            item
+            for item in found
+            if item not in muted
+            and any(
+                (item["equipment_id"], capability) in followed
+                for capability in COVERED_BY_INCIDENT.get(item["rule"], ())
+            )
+        ]
+        watch = [item for item in found if item not in muted and item not in covered]
+        correlations = preventive_rules.correlate(watch)
+        for item in muted:
+            item["muted_until"] = mutes[(item["rule"], item["subject"])]
         urgent = [item for item in watch if item.get("urgent")]
         if active_incidents:
             headline = (
@@ -449,11 +553,80 @@ class TsunadePreventiveMonitor:
             "status": "watch" if watch else "stable",
             "headline": headline,
             "watch": watch,
+            "correlations": correlations,
+            "muted": muted,
+            "followed_by_incident": covered,
             "conclusion": conclusion,
             "text": _synthesis(headline, watch, conclusion),
             "checks": checks,
             "automatic_actions": False,
         }
+
+    # Fewer useless alerts ------------------------------------------------
+
+    def mute(
+        self,
+        rule: str,
+        subject: str,
+        *,
+        days: int,
+        title: str = "",
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Hide one drift from the watch list for ``days``; it stays visible."""
+        known = {item["id"] for item in RULES} | {
+            item["id"] for item in preventive_rules.RULES
+        }
+        if rule not in known:
+            raise ValueError(f"unknown preventive rule: {rule}")
+        if not subject.strip() or len(subject) > 400:
+            raise ValueError("a preventive subject is required")
+        if not 1 <= days <= MAX_MUTE_DAYS:
+            raise ValueError(f"days must be between 1 and {MAX_MUTE_DAYS}")
+        current = to_paris(now) if now is not None else paris_now()
+        until = current + timedelta(days=days)
+        with self._lock:
+            self._connection.execute(
+                """INSERT INTO tsunade_preventive_mutes
+                (rule, subject, title, muted_until, muted_at) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(rule, subject) DO UPDATE SET title=excluded.title,
+                muted_until=excluded.muted_until, muted_at=excluded.muted_at""",
+                (rule, subject, title[:300], paris_iso(until), paris_iso(current)),
+            )
+            self._connection.commit()
+        return {"rule": rule, "subject": subject, "muted_until": paris_iso(until)}
+
+    def unmute(self, rule: str, subject: str) -> dict[str, Any]:
+        with self._lock:
+            removed = self._connection.execute(
+                "DELETE FROM tsunade_preventive_mutes WHERE rule=? AND subject=?",
+                (rule, subject),
+            ).rowcount
+            self._connection.commit()
+        if not removed:
+            raise LookupError("this drift is not muted")
+        return {"rule": rule, "subject": subject, "muted_until": None}
+
+    def _active_mutes(self, current: datetime) -> dict[tuple[str, str], str]:
+        return {
+            (row[0], row[1]): paris_iso(row[2])
+            for row in self._connection.execute(
+                "SELECT rule, subject, muted_until FROM tsunade_preventive_mutes"
+            )
+            if datetime.fromisoformat(row[2]) > current
+        }
+
+    def _followed_by_incidents(self) -> set[tuple[str, str]]:
+        try:
+            return {
+                (row[0], row[1])
+                for row in self._connection.execute(
+                    """SELECT equipment_id, capability_id FROM tsunade_incidents
+                    WHERE ended_at IS NULL"""
+                )
+            }
+        except sqlite3.OperationalError:
+            return set()
 
     def _active_incidents(self) -> int:
         try:

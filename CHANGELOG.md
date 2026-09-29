@@ -37,6 +37,20 @@ scénario Sandbox `agent-restart-quiet`, l'Agent 1.40.0 échoue).
   suivant qui en apporte une ; colonne `host_json`.
 - `host.health` : `ohana_data_bytes`. Tsunade enregistre aussi chaque jour la
   mémoire et le swap (tendances de la Phase 4).
+- Maintenance préventive (durcissement de la Phase 4), toujours sans IA ni
+  action : quatre nouvelles règles, mémoire et swap, temps de réponse moyen
+  quotidien des contrôles DNS, MQTT et réseau réussis, anomalies de journaux
+  croissantes sur les contrôles Katsuyu conservés 30 jours (hors anomalies
+  acceptées et collectes incomplètes), entités Home Assistant indisponibles
+  (relevé horaire de `/api/states` de HA-01 avec l'accès de la télémétrie, le
+  minimum quotidien ignore les redémarrages, les entités nouvellement
+  indisponibles sont nommées). Évaluateur commun : fenêtre adaptative (7 à
+  28 jours de référence, seuil suivant la dispersion habituelle), saisonnalité
+  hebdomadaire dès 3 semaines, persistance 4 jours sur 7. Corrélations : deux
+  règles en dérive sur un même équipement sont rapprochées, sans cause
+  affirmée. Moins d'alertes inutiles : une dérive peut être ignorée 1 à 90
+  jours (`POST /v1/preventive/mute`, `/unmute`, opération `preventive.mute`)
+  et une dérive déjà suivie par un incident ouvert est listée à part.
 
 ## [1.40.0] — 2026-09-28 — Ohana supervise Ohana
 

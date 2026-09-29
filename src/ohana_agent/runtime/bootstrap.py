@@ -87,7 +87,7 @@ from ohana_agent.runtime.plugin_catalog import (
 )
 from ohana_agent.runtime.plugin_specs import ProductionPlugins
 from ohana_agent.runtime.vision_probe import VisionVitalsProbe, vitals_url
-from ohana_agent.runtime.vitals import AgentVitals
+from ohana_agent.runtime.vitals import AgentVitals, silent_agent_components
 from ohana_agent.scheduler import (
     DispatcherTaskExecutor,
     Scheduler,
@@ -275,6 +275,7 @@ def build_production_agent(
         )
 
     mqtt_home_assistant_publisher = plugins["mqtt"].plugin.home_assistant_publisher
+    mqtt_home_assistant_publisher.set_liveness(lambda: silent_agent_components(vitals))
     teleinformation_ingestion_runtime = _build_teleinformation_ingestion_runtime(
         configuration=plugins["teleinformation"].plugin_config,
         frame_store=teleinformation_frame_store,

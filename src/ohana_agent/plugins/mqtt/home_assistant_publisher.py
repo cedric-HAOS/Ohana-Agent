@@ -115,6 +115,15 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         self._latest_observations: dict[tuple[str, str, str], Observation] = {}
         self._last_summary_state: tuple[Any, ...] | None = None
         self._next_heartbeat_at: float | None = None
+        # Phase 5: names of silent Agent components. While one is silent the
+        # summary is no longer refreshed and Home Assistant expires it, so a
+        # frozen Agent (alive process, no "offline" will) becomes unavailable.
+        self._silent_components: Callable[[], tuple[str, ...]] | None = None
+        self._suspended_for: tuple[str, ...] = ()
+
+    def set_liveness(self, silent_components: Callable[[], tuple[str, ...]]) -> None:
+        """Suspend the summary heartbeat while these Agent components are silent."""
+        self._silent_components = silent_components
 
     @property
     def enabled(self) -> bool:
@@ -245,7 +254,8 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             if self._next_heartbeat_at is None or now < self._next_heartbeat_at:
                 return
 
-            self._publish_summary(force=False)
+            # Republished even unchanged: each message resets expire_after.
+            self._publish_summary(force=True)
             self._next_heartbeat_at = now + self.config.home_assistant.heartbeat_seconds
 
     def export(self, observation: Observation) -> None:
@@ -482,6 +492,8 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         return (("sensor", "ohana_last_evaluation"),)
 
     def _publish_summary(self, *, force: bool) -> None:
+        if self._heartbeat_suspended():
+            return
         summary = self.build_summary()
         payload = summary.to_json()
         state = self._summary_state(summary)
@@ -491,6 +503,19 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
 
         if self._safe_publish(self._summary_topic(), payload, retain=True):
             self._last_summary_state = state
+
+    def _heartbeat_suspended(self) -> bool:
+        silent = self._silent_components() if self._silent_components else ()
+        if silent and silent != self._suspended_for:
+            LOGGER.warning(
+                "Home Assistant summary suspended, silent Agent components: %s",
+                ", ".join(silent),
+            )
+        elif not silent and self._suspended_for:
+            LOGGER.info("Home Assistant summary resumed.")
+            self._last_summary_state = None
+        self._suspended_for = silent
+        return bool(silent)
 
     def publish_host_health(self, snapshot: HostHealthSnapshot) -> None:
         """Publish the shared host snapshot when MQTT is connected."""
@@ -584,6 +609,8 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
             "availability_topic": availability_topic,
             "payload_available": "online",
             "payload_not_available": "offline",
+            # Five missed heartbeats: a frozen Agent sends no "offline" will.
+            "expire_after": self.config.home_assistant.heartbeat_seconds * 5,
             "device": device,
             "origin": origin,
         }
@@ -604,7 +631,7 @@ class MQTTHomeAssistantPublisher(ObservationExporter):
         }
         icloud_topic = self._icloud_topic()
         icloud_common = {
-            **common,
+            **{key: value for key, value in common.items() if key != "expire_after"},
             "state_topic": icloud_topic,
             "json_attributes_topic": icloud_topic,
             "json_attributes_template": (

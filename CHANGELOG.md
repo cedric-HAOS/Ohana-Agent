@@ -16,6 +16,13 @@ scénario Sandbox `agent-restart-quiet`, l'Agent 1.40.0 échoue).
   s'est pas écoulée. Le magasin de trames est en mémoire : chaque
   redémarrage ouvrait un incident Linky critique d'une minute.
 - `host.health` : `updated_at` à l'heure de Paris (UTC jusqu'ici).
+- Agent figé visible dans Home Assistant (processus vivant, boucle bloquée :
+  le broker n'envoie jamais le message `offline`). Le résumé MQTT est
+  republié à chaque battement (60 s) même inchangé, et ses capteurs portent
+  `expire_after` (5 battements) ; tant qu'un composant de l'Agent est muet
+  (hors livraison à Vision), le résumé n'est plus publié et Home Assistant
+  passe les capteurs Ohana en indisponible. Scénario
+  `agent-frozen-heartbeat` : indisponible 6 min après le blocage.
 
 ## [1.40.0] — 2026-09-28 — Ohana supervise Ohana
 

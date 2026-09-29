@@ -106,3 +106,16 @@ class AgentVitals:
 def stale_components(snapshot: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
     """Return the names of the components past their silence bound."""
     return tuple(item["component"] for item in snapshot if item["state"] == "stale")
+
+
+def silent_agent_components(vitals: AgentVitals) -> tuple[str, ...]:
+    """Silent components that mean the Agent itself no longer works.
+
+    Delivery to Vision is left out: Vision's own outage has its incident and
+    must not make Home Assistant believe the Agent is frozen.
+    """
+    return tuple(
+        name
+        for name in stale_components(vitals.snapshot())
+        if name != "vision_delivery"
+    )

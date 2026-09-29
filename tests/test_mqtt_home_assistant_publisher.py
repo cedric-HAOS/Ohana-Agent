@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
+
 from ohana_agent.configuration.infrastructure import InfrastructureConfig
 from ohana_agent.observation.observation import Observation
 from ohana_agent.observation.observation_status import ObservationStatus
@@ -877,3 +879,88 @@ def test_publisher_announces_and_republishes_icloud_connectivity() -> None:
     payload = json.loads(publications[0][1])
     assert payload["state"] == "session_expired"
     assert payload["connected"] is False
+
+
+def heartbeat_publisher(fake_client: FakePahoClient, clock: list[float]):
+    return MQTTHomeAssistantPublisher(
+        config=MQTTConfig(
+            brokers=[MQTTBrokerConfig(name="mqtt-primary", address="192.168.1.247")],
+            home_assistant=MQTTHomeAssistantConfig(
+                enabled=True, discovery_enabled=True, heartbeat_seconds=60
+            ),
+        ),
+        infrastructure=make_infrastructure(),
+        client_factory=lambda _client_id: fake_client,
+        monotonic_clock=lambda: clock[0],
+    )
+
+
+def summaries(fake_client: FakePahoClient) -> int:
+    return sum(topic == "ohana/health/summary" for topic, *_ in fake_client.published)
+
+
+def test_summary_sensors_expire_without_heartbeat() -> None:
+    # Phase 5: a frozen Agent keeps its MQTT session, so no "offline" will.
+    fake_client = FakePahoClient()
+    heartbeat_publisher(fake_client, [0.0]).start()
+
+    discovery = {
+        topic: json.loads(payload)
+        for topic, payload, _qos, _retain in fake_client.published
+        if topic.endswith("/config") and payload
+    }
+    assert (
+        discovery["homeassistant/sensor/ohana_active_alerts/config"]["expire_after"]
+        == 300
+    )
+    assert (
+        discovery["homeassistant/binary_sensor/ohana_critical_incident/config"][
+            "expire_after"
+        ]
+        == 300
+    )
+    assert (
+        "expire_after"
+        not in discovery["homeassistant/sensor/ohana_host_health_state/config"]
+    )
+
+
+def test_heartbeat_republishes_an_unchanged_summary() -> None:
+    fake_client = FakePahoClient()
+    clock = [0.0]
+    publisher = heartbeat_publisher(fake_client, clock)
+    publisher.start()
+    before = summaries(fake_client)
+
+    clock[0] = 61.0
+    publisher.tick()
+    clock[0] = 122.0
+    publisher.tick()
+
+    assert summaries(fake_client) == before + 2
+
+
+def test_silent_agent_component_suspends_the_summary(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+    fake_client = FakePahoClient()
+    clock = [0.0]
+    silent: list[str] = []
+    publisher = heartbeat_publisher(fake_client, clock)
+    publisher.set_liveness(lambda: tuple(silent))
+    publisher.start()
+    before = summaries(fake_client)
+
+    silent.append("administration")
+    for step in range(1, 6):
+        clock[0] = 61.0 * step
+        publisher.tick()
+    assert summaries(fake_client) == before
+    assert caplog.text.count("summary suspended") == 1
+
+    silent.clear()
+    clock[0] = 61.0 * 6
+    publisher.tick()
+    assert summaries(fake_client) == before + 1
+    assert "summary resumed" in caplog.text

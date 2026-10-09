@@ -18,6 +18,10 @@ from uuid import uuid4
 
 from ohana_agent.contracts.administration import DistributedJobStatus
 from ohana_agent.jobs.repository import DistributedJobRepository
+from ohana_agent.plugins.backup.authorizations import (
+    ARCHIVE_PATH,
+    export_authorizations,
+)
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.coordinator import BackupExecutionError
 from ohana_agent.plugins.backup.infra_backup_coordinator import (
@@ -105,6 +109,10 @@ class DistributedInfraBackupTransfer:
                 )
             current = datetime.strptime(backup_id, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
             descriptor = runtime / "descriptor.json"
+            authorizations = runtime / "authorizations.json"
+            has_authorizations = export_authorizations(
+                self.sources[0] / "shikamaru.yaml", authorizations
+            )
             descriptor.write_bytes(
                 self.local._descriptor(
                     backup_id=backup_id,
@@ -122,6 +130,10 @@ class DistributedInfraBackupTransfer:
                             arcname=source.as_posix().lstrip("/"),
                             recursive=True,
                             filter=self.local._regular_member,
+                        )
+                    if has_authorizations:
+                        archive.add(
+                            authorizations, arcname=ARCHIVE_PATH, recursive=False
                         )
                     if snapshot.is_file():
                         archive.add(

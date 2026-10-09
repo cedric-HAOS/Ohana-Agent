@@ -2,6 +2,13 @@
 
 ## Non publié
 
+# [1.45.1] — Autorisations dans les sauvegardes — 2026-10-09
+
+- Sauvegarde INFRA-01 : export chiffré des autorisations durables Katsuyu,
+  Shizune et des inscriptions push, à partir des bases Agent configurées.
+  Les jobs et demandes d'appairage en attente ne sont pas exportés.
+  Les chemins de sauvegarde local et distribué utilisent le même export.
+
 ## [1.45.0] — 2026-10-09 — Réplication DNS des réservations DHCP
 
 ### Ajouté

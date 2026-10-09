@@ -19,6 +19,10 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from ohana_agent.plugins.backup.authorizations import (
+    ARCHIVE_PATH,
+    export_authorizations,
+)
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.coordinator import BackupExecutionError
 from ohana_agent.plugins.backup.rclone_uploader import RcloneStreamUploader
@@ -32,6 +36,7 @@ INFRA_SOURCES = (
 VISION_DATABASE = Path("/var/lib/ohana-vision/vision.db")
 INFRA_EXCLUDED_MEMBERS = frozenset(
     {
+        ARCHIVE_PATH,
         "etc/ohana-agent/tls/ca.key",
         "etc/ohana-agent/tls/ca.srl",
     }
@@ -264,6 +269,11 @@ class InfraBackupCoordinator:
                         recursive=True,
                         filter=self._regular_member,
                     )
+                authorizations = destination.parent / "authorizations.json"
+                if export_authorizations(
+                    self._sources[0] / "shikamaru.yaml", authorizations
+                ):
+                    archive.add(authorizations, arcname=ARCHIVE_PATH, recursive=False)
                 if snapshot.is_file():
                     archive.add(
                         snapshot,

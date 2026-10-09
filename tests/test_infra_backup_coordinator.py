@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import sqlite3
+import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -184,6 +185,12 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
         directory.mkdir(parents=True)
         (directory / "config.yaml").write_text("enabled: true\n", encoding="utf-8")
     chrony.write_text("pool example.test\n", encoding="utf-8")
+    sync_files = {
+        "adguardhome-sync.yaml": "origin:\n  password: test-only\n",
+        "adguard-reservations-state.json": '{"schema_version": 1, "rewrites": []}',
+    }
+    for name, content in sync_files.items():
+        (agent / name).write_text(content, encoding="utf-8")
     age = tmp_path / "age"
     age.touch()
     identity = tmp_path / "infra-01.agekey"
@@ -238,6 +245,18 @@ def test_infra_backup_publishes_manifest_after_encrypted_archive(
     assert manifest["archive"]["sha256"] == hashlib.sha256(archive_body).hexdigest()
     assert uploader.prunes == [("icloud:Ohana/Backups/infra-01", 3, "20260813T120000Z")]
     assert age_processes[0].input.getvalue().startswith(b"\x1f\x8b")
+    with tarfile.open(
+        fileobj=io.BytesIO(age_processes[0].input.getvalue()), mode="r:gz"
+    ) as archive:
+        for name in sync_files:
+            archive_name = next(
+                member_name
+                for member_name in archive.getnames()
+                if member_name.endswith(f"/etc/ohana-agent/{name}")
+            )
+            member = archive.extractfile(archive_name)
+            assert member is not None
+            assert member.read() == (agent / name).read_bytes()
 
 
 def test_infra_backup_reports_age_error_instead_of_broken_pipe(

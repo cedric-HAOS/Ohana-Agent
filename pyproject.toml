@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ohana-agent"
-version = "1.44.0"
+version = "1.45.0"
 description = "Infrastructure observation agent for the Ohana platform."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -59,6 +59,7 @@ ohana-agent = "ohana_agent.runtime.cli:main"
 ohana-agent-authorize-freebox = "ohana_agent.plugins.wireguard.authorize_freebox:main"
 ohana-agent-dhcp-reload-helper = "ohana_agent.host.dhcp_reload_entrypoint:main"
 ohana-agent-network-helper = "ohana_agent.host.network_helper:main"
+ohana-agent-adguard-reservations = "ohana_agent.host.adguard_reservations:main"
 
 
 [project.optional-dependencies]

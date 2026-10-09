@@ -2,6 +2,29 @@
 
 ## Non publié
 
+## [1.45.0] — 2026-10-09 — Réplication DNS des réservations DHCP
+
+### Ajouté
+
+- Commande `ohana-agent-adguard-reservations` : réutilise le lecteur dnsmasq
+  pour publier uniquement les réservations DHCP dans `ohana.lan` sur AdGuard
+  Home. Les baux dynamiques ne sont jamais lus et aucun wildcard n'est créé.
+- Réconciliation des ajouts, changements d'adresse et suppressions avec un
+  registre atomique permettant la reprise après timeout ; conservation des
+  autres règles et arrêt avant mutation en cas de conflit manuel.
+- Mode `--dry-run` et vérification API des réécritures de la réplique après
+  exécution du service existant `adguardhome-sync`.
+
+### Exploitation
+
+- Les modèles du cycle systemd et la procédure sont publiés dans Ohana-House
+  2.2.0. Leur installation reste explicite après restauration et mise à jour
+  de l'Agent ; aucune activation DHCP ou installation DNS automatique.
+- Configuration et registre sous `/etc/ohana-agent`, couverts par les
+  prochaines sauvegardes iCloud. Le format des anciennes archives est inchangé.
+- Validation locale uniquement ; installation et recette DNS réelle sur
+  INFRA-01 reconstruit restent à effectuer.
+
 ## [1.44.0] — 2026-09-29 — Services essentiels et journaux par équipement pour Shizune
 
 Publiée le jour même de 1.43.1, à la demande de l'utilisateur.

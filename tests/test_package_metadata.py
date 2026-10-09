@@ -28,7 +28,7 @@ def test_package_declares_public_metadata() -> None:
     project = load_pyproject()["project"]
 
     assert project["name"] == "ohana-agent"
-    assert project["version"] == "1.44.0"
+    assert project["version"] == "1.45.0"
     assert project["description"]
     assert project["readme"] == "README.md"
     assert project["requires-python"] == ">=3.13"
@@ -90,6 +90,9 @@ def test_package_declares_console_entry_point() -> None:
             "ohana_agent.host.dhcp_reload_entrypoint:main"
         ),
         "ohana-agent-network-helper": "ohana_agent.host.network_helper:main",
+        "ohana-agent-adguard-reservations": (
+            "ohana_agent.host.adguard_reservations:main"
+        ),
     }
 
 

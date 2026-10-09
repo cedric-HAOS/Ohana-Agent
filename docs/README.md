@@ -17,6 +17,7 @@
 - [Cycle journaux, Tsunade et Katsuyu](tsunade-worker-cycle.md)
 - [Investigations en lecture seule](read-only-investigations.md)
 - [Organisation des fichiers Linux](Deployment/Linux-Filesystem.md)
+- [Réservations DHCP vers AdGuard et restauration INFRA-01](adguard-reservations.md)
 
 ## Contrats et intégrations
 

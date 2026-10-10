@@ -7,6 +7,16 @@
   l'enveloppe conceptuelle ; guides de démarrage Bash/PowerShell corrigés.
 - Clôture du bloc de code de l'ADR de composition, sans modifier sa décision.
 
+## [1.47.0] — 2026-10-10 — Capacité de synchronisation AdGuard
+
+- Administration de la capacité de synchronisation AdGuard : accès masqués,
+  validation en lecture seule des deux API, activation et arrêt du moteur depuis
+  Vision, indépendamment du plugin de surveillance.
+- Helper privilégié limité à deux actions fixes, sauvegarde du choix durable
+  d’activation et coordination des changements d’accès avec l’activation.
+- La première activation n’exige pas encore les réécritures DNS que son premier
+  cycle doit créer. La surveillance conserve ses contrôles de cohérence et DNS.
+
 ## [1.46.1] — 2026-10-10 — Listes AdGuard vides
 
 - Correction d’un défaut constaté sur INFRA-01 : certaines API AdGuard renvoient

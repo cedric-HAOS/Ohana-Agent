@@ -2,6 +2,20 @@
 
 ## Non publié
 
+## [1.46.0] — 2026-10-10 — Supervision de la synchronisation AdGuard
+
+- Mise à jour : préparation automatique du service de supervision AdGuard pour
+  l'administration Vision, sans ajout manuel de service. Synthèse Shizune enrichie
+  d'une tuile « Synchro AdGuard » dans les services essentiels.
+
+- Plugin `adguard_sync.status` : supervision en lecture seule du cycle systemd,
+  de sa fraîcheur, des paramètres AdGuard répliqués et de la résolution DNS sur
+  les deux instances. Intégration au planificateur, à l'administration et aux
+  observations Vision ; configuration absente acceptée avec plugin désactivé.
+- Comparaison limitée aux sections activées, sans compteurs locaux des filtres
+  ni publication de secrets. Cycle en cours et contrôle impossible explicitement
+  inconnus ; aucune action automatique de synchronisation ou de réparation.
+
 # [1.45.1] — Autorisations dans les sauvegardes — 2026-10-09
 
 - Sauvegarde INFRA-01 : export chiffré des autorisations durables Katsuyu,

@@ -2,6 +2,17 @@
 
 ## Non publié
 
+## [1.46.1] — 2026-10-10 — Listes AdGuard vides
+
+- Correction d’un défaut constaté sur INFRA-01 : certaines API AdGuard renvoient
+  `null` pour les listes vides de filtres et de clients. Le plugin les normalise
+  en listes vides au lieu d’échouer avec un état non vérifiable.
+- Les champs absents, les types incorrects et les vraies divergences restent
+  détectés ; aucun secret ni contenu de liste n’est publié.
+- Le code corrigé, exécuté en mémoire sous `ohana-agent` sans modifier la
+  production, a comparé 16 sections sans divergence et validé les deux DNS.
+  Le déploiement du correctif reste à effectuer.
+
 ## [1.46.0] — 2026-10-10 — Supervision de la synchronisation AdGuard
 
 - Mise à jour : préparation automatique du service de supervision AdGuard pour

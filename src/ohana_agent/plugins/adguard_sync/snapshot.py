@@ -47,6 +47,18 @@ def _select(document: Any, fields: tuple[str, ...]) -> dict[str, Any]:
     return {key: document[key] for key in fields}
 
 
+def _response_list(document: Any, field: str) -> list[Any]:
+    """AdGuard encodes an empty Go slice as null on some API versions."""
+    if not isinstance(document, dict) or field not in document:
+        raise ValueError("Missing AdGuard list")
+    value = document[field]
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Invalid AdGuard list")
+    return value
+
+
 def _unordered(items: Any) -> list[Any]:
     if not isinstance(items, list):
         raise ValueError("Expected an AdGuard list")
@@ -243,17 +255,13 @@ class AdGuardSnapshotProbe:
                         sections[f"filters.{flag}"] = _unordered(
                             [
                                 _select(item, ("url", "name", "enabled"))
-                                for item in data[field]
+                                for item in _response_list(data, field)
                             ]
                         )
                 if filters["userRules"]:
-                    sections["filters.user_rules"] = data["user_rules"]
-                    if not isinstance(sections["filters.user_rules"], list):
-                        raise ValueError("Invalid user rules")
+                    sections["filters.user_rules"] = _response_list(data, "user_rules")
             if flags["clientSettings"]:
-                data = _select(get("clients"), ("clients",))["clients"]
-                if not isinstance(data, list):
-                    raise ValueError("Invalid client settings")
+                data = _response_list(get("clients"), "clients")
                 clients = []
                 for item in data:
                     _select(item, ("name", "ids", "use_global_settings"))

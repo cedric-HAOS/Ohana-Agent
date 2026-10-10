@@ -31,7 +31,7 @@ comparaisons API et les deux requêtes DNS doivent également réussir.
 
 ## Administration après la mise à jour
 
-Disponible dans Platform 1.0.142 : Agent 1.46.0, Vision 1.37.0 et Shizune 0.5.0.
+Disponible dans Platform 1.0.143 : Agent 1.46.1, Vision 1.37.0 et Shizune 0.5.0.
 
 Au premier démarrage en production de l'Agent mis à jour, avec son administration activée,
 le service de supervision est ajouté automatiquement à l'infrastructure sur le
@@ -54,6 +54,10 @@ Sans ce nouveau fichier, les installations existantes chargent un plugin
 désactivé. Le formulaire d'administration peut créer son fichier lors du premier
 enregistrement. Les identifiants restent uniquement dans le fichier de
 synchronisation existant ; ils ne sont pas recopiés dans ce formulaire.
+
+Depuis Agent 1.46.1, les listes de filtres et de clients explicitement `null`
+sont interprétées comme vides, conformément au comportement observé des API
+AdGuard installées. Une liste absente ou de type incorrect reste non vérifiable.
 
 ## Interprétation
 

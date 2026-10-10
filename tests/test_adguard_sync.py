@@ -598,3 +598,71 @@ def test_production_dispatch_exports_sync_observation_and_supports_disable(
         repository.write("adguard_sync", {"enabled": True, "configuration": {}})
     assert not plugin_path.exists()
     assert not repository.read("adguard_sync").enabled
+
+
+@pytest.mark.parametrize(
+    "path, field",
+    [
+        ("filtering/status", "filters"),
+        ("filtering/status", "whitelist_filters"),
+        ("filtering/status", "user_rules"),
+        ("clients", "clients"),
+    ],
+)
+def test_empty_api_lists_can_be_null(tmp_path, monkeypatch, path, field):
+    origin = responses()
+    replica = deepcopy(origin)
+    origin[path][field] = None
+    replica[path][field] = []
+    mock_api(monkeypatch, origin, replica)
+    result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
+    assert result["different_sections"] == []
+    assert result["dns_healthy"]
+
+
+@pytest.mark.parametrize(
+    "path, field",
+    [
+        ("filtering/status", "filters"),
+        ("filtering/status", "whitelist_filters"),
+        ("filtering/status", "user_rules"),
+        ("clients", "clients"),
+    ],
+)
+@pytest.mark.parametrize("value", [False, {}, ""])
+def test_malformed_api_lists_are_not_empty_lists(
+    tmp_path, monkeypatch, path, field, value
+):
+    origin = responses()
+    replica = deepcopy(origin)
+    origin[path][field] = value
+    mock_api(monkeypatch, origin, replica)
+    with pytest.raises(ValueError):
+        AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "path, field",
+    [
+        ("filtering/status", "filters"),
+        ("filtering/status", "whitelist_filters"),
+        ("filtering/status", "user_rules"),
+        ("clients", "clients"),
+    ],
+)
+def test_missing_api_lists_are_not_empty_lists(tmp_path, monkeypatch, path, field):
+    origin = responses()
+    replica = deepcopy(origin)
+    del origin[path][field]
+    mock_api(monkeypatch, origin, replica)
+    with pytest.raises(ValueError):
+        AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
+
+
+def test_null_api_list_does_not_hide_replica_entries(tmp_path, monkeypatch):
+    origin = responses()
+    replica = deepcopy(origin)
+    origin["clients"]["clients"] = None
+    mock_api(monkeypatch, origin, replica)
+    result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
+    assert result["different_sections"] == ["clients"]

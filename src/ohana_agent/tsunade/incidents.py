@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -455,12 +456,31 @@ class TsunadeIncidentRepository(
         )
 
     def _write_state(self, observation: Observation) -> None:
+        completed_at = None
+        if observation.capability == "adguard_sync.status":
+            cycle = observation.metadata.get("cycle")
+            if isinstance(cycle, dict):
+                age = cycle.get("last_completed_age_seconds")
+                if (
+                    type(age) in {int, float}
+                    and math.isfinite(age)
+                    and age >= 0
+                    and cycle.get("state") in {"fresh", "stale"}
+                ):
+                    try:
+                        completed_at = paris_iso(
+                            observation.timestamp - timedelta(seconds=age)
+                        )
+                    except OverflowError:
+                        pass
         self._connection.execute(
             """INSERT INTO tsunade_capability_state(node_id,service_id,capability_id,
-            status,observed_at,observation_id,latency_ms) VALUES (?,?,?,?,?,?,?)
+            status,observed_at,observation_id,latency_ms,last_sync_completed_at)
+            VALUES (?,?,?,?,?,?,?,?)
             ON CONFLICT(node_id,service_id,capability_id) DO UPDATE SET
             status=excluded.status,observed_at=excluded.observed_at,
-            observation_id=excluded.observation_id,latency_ms=excluded.latency_ms""",
+            observation_id=excluded.observation_id,latency_ms=excluded.latency_ms,
+            last_sync_completed_at=excluded.last_sync_completed_at""",
             (
                 observation.node,
                 observation.service,
@@ -469,6 +489,7 @@ class TsunadeIncidentRepository(
                 paris_iso(observation.timestamp),
                 str(observation.id),
                 observation.latency_ms,
+                completed_at,
             ),
         )
 

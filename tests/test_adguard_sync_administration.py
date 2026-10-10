@@ -66,7 +66,7 @@ def administration(tmp_path, monkeypatch):
             )
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    probe = SimpleNamespace(validate_access=lambda settings: {"dns_healthy": True})
+    probe = SimpleNamespace(validate_access=lambda settings: None)
     repository = AdGuardSyncAdministration(
         configuration=configuration,
         state=tmp_path / "state.json",
@@ -107,8 +107,7 @@ def test_save_keeps_secrets_and_features_after_read_only_validation(administrati
     request["origin"]["username"] = "new-admin"
     validated = []
     repository.probe.validate_access = lambda settings: (
-        validated.append(yaml.safe_load(settings.sync_config_path.read_text()))
-        or {"dns_healthy": True}
+        validated.append(yaml.safe_load(settings.sync_config_path.read_text())) or None
     )
     response = repository.write(request)
     saved = yaml.safe_load(repository.configuration.read_text())

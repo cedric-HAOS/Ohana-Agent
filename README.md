@@ -862,8 +862,8 @@ la reprise des résultats, l’arrêt différé et les incidents des équipement
 
 ## Synchronisation AdGuard
 
-Agent 1.46.0 contrôle le cycle systemd, la fraîcheur, les sections répliquées
-et le DNS des deux instances. Avec Vision 1.37.0, la supervision est activable
+Agent 1.46.0 contrôle le cycle systemd, la fraîcheur et les sections répliquées
+des deux instances. La disponibilité DNS relève du plugin DNS. Avec Vision 1.37.0, la supervision est activable
 et configurable dans **Configuration → Plugins → Synchronisation AdGuard**.
 Le service local est préparé automatiquement au démarrage en production avec
 l’administration activée. Shizune 0.5.0 affiche **Synchro AdGuard** dans

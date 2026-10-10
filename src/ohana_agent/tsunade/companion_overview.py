@@ -51,6 +51,7 @@ def services_overview(
     """
     items: list[dict[str, Any]] = []
     latest: datetime | None = None
+    now = paris_now()
     for service_type, label in SERVICE_TILES:
         identifiers = sorted(
             identifier
@@ -61,7 +62,7 @@ def services_overview(
             continue
         rows = [state for state in states if state["service"] in identifiers]
         if service_type == "adguard_sync":
-            oldest = paris_now() - timedelta(minutes=15)
+            oldest = now - timedelta(minutes=15)
             rows = [row for row in rows if row["observed_at"] >= oldest]
         rows.sort(
             key=lambda state: (identifiers.index(state["service"]), state["capability"])
@@ -85,6 +86,24 @@ def services_overview(
                 "degraded": "Synchronisation dégradée",
                 "unknown": "Synchronisation non vérifiée",
             }[status]
+            ages = [
+                max(0, (now - completed_at).total_seconds())
+                for row in rows
+                if isinstance(
+                    completed_at := row.get("last_sync_completed_at"), datetime
+                )
+                and completed_at <= row["observed_at"]
+            ]
+            if ages and status == "healthy" and len(ages) == len(rows):
+                age = max(ages)
+                if age < 60:
+                    detail = "Dernière synchro il y a moins d’une minute"
+                elif age < 3600:
+                    detail = f"Dernière synchro il y a {int(age // 60)} min"
+                elif age < 86400:
+                    detail = f"Dernière synchro il y a {int(age // 3600)} h"
+                else:
+                    detail = f"Dernière synchro il y a {int(age // 86400)} j"
         for row in rows:
             if latest is None or row["observed_at"] > latest:
                 latest = row["observed_at"]

@@ -4,7 +4,6 @@ import subprocess
 from time import perf_counter
 from typing import Any
 
-import dns.exception
 import httpx
 import yaml
 
@@ -19,7 +18,10 @@ from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
 from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 
 MESSAGES = {
-    "healthy": "Synchronisation AdGuard vérifiée ; les deux serveurs DNS répondent.",
+    "healthy": (
+        "Synchronisation AdGuard vérifiée ; "
+        "les configurations répliquées correspondent."
+    ),
     "units_missing": "Les unités de synchronisation AdGuard sont absentes.",
     "timer_inactive": "La planification de la synchronisation AdGuard est inactive.",
     "cycle_failed": "Le dernier cycle de synchronisation AdGuard a échoué.",
@@ -27,7 +29,6 @@ MESSAGES = {
     "stale": "La synchronisation AdGuard dépasse le délai configuré.",
     "running": "Synchronisation AdGuard en cours ; comparaison différée.",
     "divergent": "Les configurations AdGuard divergent dans les sections contrôlées.",
-    "dns_failed": "Le contrôle DNS a échoué sur au moins une instance AdGuard.",
     "unverifiable": "Contrôle AdGuard impossible ; vérifier les accès et la config.",
 }
 
@@ -99,11 +100,7 @@ class AdGuardSyncPlugin(Plugin):
                 else:
                     metadata.update(comparison)
                     state = (
-                        "dns_failed"
-                        if not comparison["dns_healthy"]
-                        else "divergent"
-                        if comparison["different_sections"]
-                        else "healthy"
+                        "divergent" if comparison["different_sections"] else "healthy"
                     )
         except (
             OSError,
@@ -114,7 +111,6 @@ class AdGuardSyncPlugin(Plugin):
             subprocess.SubprocessError,
             httpx.HTTPError,
             yaml.YAMLError,
-            dns.exception.DNSException,
         ):
             # Never publish exception text, URLs, configuration or API bodies.
             state = "unverifiable"

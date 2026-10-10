@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Supervision AdGuard recentrée sur le cycle systemd et la cohérence des
+  configurations : suppression des requêtes DNS, laissées au plugin DNS.
+- Tuile Shizune : âge du dernier cycle réussi, conservé en SQLite et recalculé
+  au moment de la synthèse. Les défauts restent prioritaires et les anciennes
+  configurations avec `dns_probe_name` restent acceptées.
+
 - Contrôle documentaire D06/D07/D10 : intégration Vision avec observation
   indépendante et file durable ; contrats REST et MQTT distingués de
   l'enveloppe conceptuelle ; guides de démarrage Bash/PowerShell corrigés.

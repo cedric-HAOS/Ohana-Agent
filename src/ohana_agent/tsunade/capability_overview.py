@@ -23,7 +23,7 @@ class TsunadeCapabilityOverview:
         with self._lock:
             rows = self._connection.execute(
                 """SELECT node_id,service_id,capability_id,status,observed_at,
-                latency_ms FROM tsunade_capability_state
+                latency_ms,last_sync_completed_at FROM tsunade_capability_state
                 ORDER BY node_id,service_id,capability_id"""
             ).fetchall()
         return [
@@ -34,6 +34,11 @@ class TsunadeCapabilityOverview:
                 "status": row["status"],
                 "observed_at": datetime.fromisoformat(row["observed_at"]),
                 "latency_ms": row["latency_ms"],
+                "last_sync_completed_at": (
+                    datetime.fromisoformat(row["last_sync_completed_at"])
+                    if row["last_sync_completed_at"] is not None
+                    else None
+                ),
             }
             for row in rows
             if datetime.fromisoformat(row["observed_at"]) >= oldest

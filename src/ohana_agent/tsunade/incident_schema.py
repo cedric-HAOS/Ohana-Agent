@@ -209,6 +209,11 @@ class TsunadeIncidentSchema:
             self._connection.execute(
                 "ALTER TABLE tsunade_capability_state ADD COLUMN latency_ms REAL"
             )
+        if "last_sync_completed_at" not in state_columns:
+            self._connection.execute(
+                "ALTER TABLE tsunade_capability_state "
+                "ADD COLUMN last_sync_completed_at TEXT"
+            )
         self._migrate_experience_history()
         self.initialize_followups()
         self._connection.commit()

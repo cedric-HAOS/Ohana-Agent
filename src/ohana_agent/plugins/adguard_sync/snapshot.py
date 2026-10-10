@@ -10,8 +10,6 @@ from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit
 
-import dns.exception
-import dns.resolver
 import httpx
 import yaml
 
@@ -151,14 +149,9 @@ class AdGuardSnapshotProbe:
         differences = [
             key for key in snapshots[0] if snapshots[0][key] != snapshots[1][key]
         ]
-        dns_results = [
-            self._dns(instance, settings, deadline) for instance in instances
-        ]
         return {
             "checked_sections": list(snapshots[0]),
             "different_sections": differences,
-            "dns_healthy": all(dns_results),
-            "dns_checks": {"origin": dns_results[0], "replica": dns_results[1]},
         }
 
     @staticmethod
@@ -318,21 +311,3 @@ class AdGuardSnapshotProbe:
                     sections[flag] = get(path)
                     _select(sections[flag], ("enabled",))
         return sections
-
-    def _dns(
-        self,
-        instance: dict[str, Any],
-        settings: AdGuardSyncPluginConfig,
-        deadline: float,
-    ) -> bool:
-        _, host, _ = self._instance(instance)
-        remaining = min(settings.timeout, deadline - monotonic())
-        if remaining <= 0:
-            raise ValueError("AdGuard probe deadline exceeded")
-        resolver = dns.resolver.Resolver(configure=False)
-        resolver.nameservers = [host]
-        try:
-            answers = resolver.resolve(settings.dns_probe_name, "A", lifetime=remaining)
-            return bool(answers)
-        except dns.exception.DNSException:
-            return False

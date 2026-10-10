@@ -136,12 +136,7 @@ def test_comparison_ignores_local_fields_and_filter_download_counters(
     requests, dns_requests = mock_api(monkeypatch, origin, replica)
     result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
     assert result["different_sections"] == []
-    assert result["dns_healthy"]
-    assert len(dns_requests) == 2
-    assert {tuple(item[0]) for item in dns_requests} == {
-        ("192.168.1.11",),
-        ("192.168.1.12",),
-    }
+    assert dns_requests == []
     assert all(
         request.headers.get("authorization", "").startswith("Basic ")
         for request in requests
@@ -203,11 +198,25 @@ def test_disabled_features_are_not_compared(tmp_path, monkeypatch):
     )
 
 
-def test_dns_timeout_is_reported_per_instance(tmp_path, monkeypatch):
-    mock_api(monkeypatch, responses(), responses(), dns_ok=False)
-    result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
-    assert result["dns_checks"] == {"origin": False, "replica": False}
-    assert not result["dns_healthy"]
+@pytest.mark.parametrize("divergent", [False, True])
+def test_dns_failure_does_not_affect_synchronization_health(
+    tmp_path, monkeypatch, divergent
+):
+    replica = responses()
+    if divergent:
+        replica["clients"]["clients"] = []
+    _, dns_requests = mock_api(monkeypatch, responses(), replica, dns_ok=False)
+    result = AdGuardSyncPlugin(
+        config=AdGuardSyncConfig(settings_file(tmp_path)), systemd=FakeCycle()
+    ).execute()
+    assert result.success == (not divergent)
+    assert result.health == (
+        HealthStatus.UNHEALTHY if divergent else HealthStatus.HEALTHY
+    )
+    assert result.metadata["sync_state"] == ("divergent" if divergent else "healthy")
+    assert dns_requests == []
+    assert "dns_checks" not in result.metadata
+    assert "dns_healthy" not in result.metadata
 
 
 @pytest.mark.parametrize("mode", ["unauthorized", "timeout", "malformed", "oversized"])
@@ -290,11 +299,10 @@ class FakeCycle:
 
 
 class FakeSnapshot:
-    def __init__(self, *, differences=None, dns_ok=True, error=None):
+    def __init__(self, *, differences=None, error=None):
         self.result = {
             "different_sections": differences or [],
             "checked_sections": ["dns.rewrites"],
-            "dns_healthy": dns_ok,
         }
         self.error = error
         self.calls = 0
@@ -342,7 +350,6 @@ def test_cycle_faults_cannot_be_hidden_by_equal_configuration(cycle_state):
             "divergent",
             HealthStatus.UNHEALTHY,
         ),
-        (FakeSnapshot(dns_ok=False), "dns_failed", HealthStatus.UNHEALTHY),
         (
             FakeSnapshot(error=ValueError("secret-origin http://credentials.test")),
             "unverifiable",
@@ -350,9 +357,7 @@ def test_cycle_faults_cannot_be_hidden_by_equal_configuration(cycle_state):
         ),
     ],
 )
-def test_observations_distinguish_drift_dns_failure_and_missing_evidence(
-    snapshot, state, health
-):
+def test_observations_distinguish_drift_and_missing_evidence(snapshot, state, health):
     plugin = AdGuardSyncPlugin(
         config=AdGuardSyncConfig(AdGuardSyncPluginConfig()),
         systemd=FakeCycle(),
@@ -454,6 +459,18 @@ def test_absent_configuration_keeps_legacy_installation_disabled(tmp_path):
     assert not AdGuardSyncConfigLoader().load(tmp_path / "absent.yaml").enabled
     with pytest.raises(ValueError):
         AdGuardSyncPluginConfig(timeout=0)
+
+
+def test_legacy_dns_probe_setting_is_ignored_without_relaxing_validation(tmp_path):
+    path = tmp_path / "adguard-sync.yaml"
+    path.write_text(
+        "enabled: true\ndns_probe_name: infra-01.ohana.lan\n", encoding="utf-8"
+    )
+    config = AdGuardSyncConfigLoader().load(path)
+    assert config.enabled
+    assert "dns_probe_name" not in config.model_dump()
+    with pytest.raises(ValueError):
+        AdGuardSyncPluginConfig.model_validate({"unexpected_setting": True})
 
 
 def test_shipped_example_is_valid_and_disabled():
@@ -561,7 +578,7 @@ def test_production_dispatch_exports_sync_observation_and_supports_disable(
         tile for tile in summary["services"]["items"] if tile["id"] == "adguard_sync"
     )
     assert tile["status"] == "healthy"
-    assert tile["detail"] == "Synchronisation vérifiée"
+    assert tile["detail"] == "Dernière synchro il y a 1 min"
     assert any(
         service.type == "adguard_sync"
         for service in InfrastructureLoader().load(infrastructure_path).services
@@ -617,7 +634,6 @@ def test_empty_api_lists_can_be_null(tmp_path, monkeypatch, path, field):
     mock_api(monkeypatch, origin, replica)
     result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
     assert result["different_sections"] == []
-    assert result["dns_healthy"]
 
 
 @pytest.mark.parametrize(

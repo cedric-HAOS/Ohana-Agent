@@ -97,3 +97,19 @@ et [actions de réplication adguardhome-sync](https://github.com/bakito/adguardh
 Les tests locaux utilisent des API et unités systemd simulées. La publication
 ne confirme pas le déploiement : après mise à jour, activer et tester dans Vision,
 puis vérifier la tuile Shizune et les observations des deux instances réelles.
+
+## Moteur administrable (Agent 1.47.0)
+
+Avec Installer 1.16.0 et Vision 1.38.0, la même fiche présente le moteur et sa
+surveillance séparément. Les accès se configurent depuis Vision ; les mots de
+passe restent masqués et un champ vide conserve leur valeur. Agent valide les
+deux API avant de démarrer le timer installé par Installer.
+L’activation initiale ne dépend pas encore des réécritures DNS. La surveillance
+continue de vérifier le DNS et le résultat du cycle après son exécution.
+
+Le choix d’activation du moteur est enregistré dans
+`/etc/ohana-agent/adguard-sync-state.json`, inclus dans les sauvegardes.
+Installer reconstruit le moteur et ses unités lors de la restauration, puis
+réactive uniquement un choix sauvegardé après validation des accès. Une ancienne
+sauvegarde sans ce choix laisse le timer inactif.
+Voir [le guide Installer](https://github.com/cedric-HAOS/Ohana-Installer/blob/main/docs/AdGuard-Sync.md).

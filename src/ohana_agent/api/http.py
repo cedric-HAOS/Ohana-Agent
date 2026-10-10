@@ -520,6 +520,7 @@ def _administration_routes(
             _route("/v1/dhcp", _call(service.read_dhcp)),
             _route("/v1/plugins", _call(service.list_plugins)),
             _route("/v1/system/network", _call(service.read_network)),
+            _route("/v1/system/adguard-sync", _call(service.read_adguard_sync)),
             _route("/v1/jobs/workers", _call(service.list_workers)),
             _route("/v1/jobs/wake-on-lan", _call(service.read_wake_on_lan)),
             _route("/v1/incidents/logs", _call(service.read_log_analysis)),
@@ -559,6 +560,13 @@ def _administration_routes(
             _route("/v1/infrastructure", _call_with_body(service.write_infrastructure)),
             _route("/v1/dhcp", _call_with_body(service.write_dhcp)),
             _route("/v1/system/network", _call_with_body(service.write_network)),
+            _route(
+                "/v1/system/adguard-sync", _call_with_body(service.write_adguard_sync)
+            ),
+            _route(
+                "/v1/system/adguard-sync/activation",
+                _call_with_body(service.activate_adguard_sync),
+            ),
             _route(
                 "/v1/jobs/wake-on-lan",
                 _call_with_body(service.write_wake_on_lan),

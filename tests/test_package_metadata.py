@@ -90,6 +90,7 @@ def test_package_declares_console_entry_point() -> None:
             "ohana_agent.host.dhcp_reload_entrypoint:main"
         ),
         "ohana-agent-network-helper": "ohana_agent.host.network_helper:main",
+        "ohana-agent-adguard-sync-helper": "ohana_agent.host.adguard_sync:main",
         "ohana-agent-adguard-reservations": (
             "ohana_agent.host.adguard_reservations:main"
         ),

@@ -29,6 +29,7 @@ from ohana_agent.contracts.administration import (
     DHCPConfiguration,
     LogsInvestigationAuthorization,
 )
+from ohana_agent.host.adguard_sync import AdGuardSyncAdministration
 from ohana_agent.host.dhcp import DnsmasqDHCPRepository
 from ohana_agent.host.network import (
     NetworkManagerRepository,
@@ -90,6 +91,7 @@ class AdministrationService:
         dhcp_repository: DnsmasqDHCPRepository | None = None,
         plugin_repository: PluginAdministrationRepository | None = None,
         network_repository: NetworkManagerRepository | None = None,
+        adguard_sync_repository: AdGuardSyncAdministration | None = None,
         job_repository: DistributedJobRepository | None = None,
         on_infrastructure_changed: (
             Callable[[InfrastructureConfig], None] | None
@@ -164,6 +166,9 @@ class AdministrationService:
         # Asks for prompt observations of the repaired capability.
         self.repair_verification_requester = repair_verification_requester
         self.plugin_repository = plugin_repository
+        self.adguard_sync_repository = (
+            adguard_sync_repository or AdGuardSyncAdministration()
+        )
         self.network_repository = network_repository
         self.job_repository = job_repository
         self.on_infrastructure_changed = on_infrastructure_changed
@@ -263,6 +268,15 @@ class AdministrationService:
                     "dhcp.read",
                     "dhcp.write",
                     "dhcp.leases.read",
+                ]
+            )
+
+        if self.adguard_sync_repository.helper.is_file():
+            operations.extend(
+                [
+                    "system.adguard_sync.read",
+                    "system.adguard_sync.write",
+                    "system.adguard_sync.activation",
                 ]
             )
 
@@ -420,6 +434,15 @@ class AdministrationService:
 
         configuration = DHCPConfiguration.model_validate(payload)
         return self.dhcp_repository.write(configuration)
+
+    def read_adguard_sync(self) -> object:
+        return self.adguard_sync_repository.read()
+
+    def write_adguard_sync(self, payload: dict[str, Any]) -> object:
+        return self.adguard_sync_repository.write(payload)
+
+    def activate_adguard_sync(self, payload: dict[str, Any]) -> object:
+        return self.adguard_sync_repository.set_enabled(payload)
 
     def read_network(self) -> object:
         """Return the active NetworkManager configuration of the Agent host."""

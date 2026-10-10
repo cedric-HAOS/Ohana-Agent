@@ -839,3 +839,41 @@ def test_administration_server_records_a_manual_resolution(tmp_path: Path) -> No
     finally:
         server.stop()
         incidents.close()
+
+
+def test_adguard_capability_routes_stay_in_authenticated_administration(
+    administration_server,
+):
+    from types import SimpleNamespace
+
+    calls = []
+    repository = SimpleNamespace(
+        read=lambda: {"installed": True, "origin": {"password_configured": True}},
+        write=lambda payload: (
+            calls.append(("configuration", payload)) or {"configured": True}
+        ),
+        set_enabled=lambda payload: (
+            calls.append(("activation", payload)) or {"enabled": payload["enabled"]}
+        ),
+    )
+    administration_server.service.adguard_sync_repository = repository
+    assert request_json(administration_server, "/v1/system/adguard-sync")["installed"]
+    with pytest.raises(HTTPError) as error:
+        request_json(administration_server, "/v1/system/adguard-sync", token="wrong")
+    assert error.value.code == 401
+    assert request_json(
+        administration_server,
+        "/v1/system/adguard-sync",
+        method="PUT",
+        payload={"origin": {}, "replica": {}},
+    )["configured"]
+    assert request_json(
+        administration_server,
+        "/v1/system/adguard-sync/activation",
+        method="PUT",
+        payload={"enabled": True},
+    )["enabled"]
+    assert calls == [
+        ("configuration", {"origin": {}, "replica": {}}),
+        ("activation", {"enabled": True}),
+    ]

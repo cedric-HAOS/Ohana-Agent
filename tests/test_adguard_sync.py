@@ -666,3 +666,18 @@ def test_null_api_list_does_not_hide_replica_entries(tmp_path, monkeypatch):
     mock_api(monkeypatch, origin, replica)
     result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
     assert result["different_sections"] == ["clients"]
+
+
+def test_activation_validates_api_access_before_local_rewrites_exist(
+    tmp_path, monkeypatch
+):
+    origin = responses()
+    replica = deepcopy(origin)
+    replica["clients"]["clients"] = None
+    requests, dns_requests = mock_api(monkeypatch, origin, replica, dns_ok=False)
+    AdGuardSnapshotProbe().validate_access(settings_file(tmp_path))
+    assert {request.url.host for request in requests} == {
+        "192.168.1.11",
+        "192.168.1.12",
+    }
+    assert dns_requests == []

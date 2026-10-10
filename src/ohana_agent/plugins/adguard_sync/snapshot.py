@@ -106,7 +106,9 @@ def _features(document: dict[str, Any]) -> dict[str, Any]:
 
 
 class AdGuardSnapshotProbe:
-    def inspect(self, settings: AdGuardSyncPluginConfig) -> dict[str, Any]:
+    def _configuration(
+        self, settings: AdGuardSyncPluginConfig
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         with settings.sync_config_path.open("rb") as source:
             raw = source.read(65537)
         if len(raw) > 65536:
@@ -121,6 +123,18 @@ class AdGuardSnapshotProbe:
             raise ValueError("Two distinct DNS server addresses are required")
         if any(instance.get("features") is not None for instance in instances):
             raise ValueError("Per-instance feature overrides are unsupported")
+        return flags, instances
+
+    def validate_access(self, settings: AdGuardSyncPluginConfig) -> None:
+        """Read both APIs before the first cycle creates local DNS rewrites."""
+        flags, instances = self._configuration(settings)
+        deadline = monotonic() + 25
+        for instance in instances:
+            if not self._snapshot(instance, flags, settings.timeout, deadline):
+                raise ValueError("No replicated sections selected")
+
+    def inspect(self, settings: AdGuardSyncPluginConfig) -> dict[str, Any]:
+        flags, instances = self._configuration(settings)
         deadline = monotonic() + 25
         snapshots = [
             self._snapshot(instance, flags, settings.timeout, deadline)

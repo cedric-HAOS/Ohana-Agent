@@ -160,6 +160,14 @@ services:
       secondary_entity_id: sensor.shelly_cuisine_energy
       maximum_age_seconds: 900
 
+  - id: adguard-sync
+    name: Synchronisation AdGuard
+    type: adguard_sync
+    node: infra-01
+    implementation: adguardhome-sync
+    enabled: true
+    critical: false
+
 topology:
   metadata:
     description: Architecture physique Ohana-House.

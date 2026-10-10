@@ -47,7 +47,10 @@ def test_builder_builds_services() -> None:
 
     node = next(node for node in infrastructure.nodes if node.name == "infra-01")
 
-    assert len(node.services) == 2
+    assert len(node.services) == 3
+    sync = next(service for service in node.services if service.name == "adguard-sync")
+    assert sync.type == ServiceType.ADGUARD_SYNC
+    assert sync.enabled
     assert node.services[0].name == "dhcp-primary"
     assert node.services[0].type == ServiceType.DHCP
 

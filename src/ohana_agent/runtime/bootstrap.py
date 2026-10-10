@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ohana_agent.api.service import AdministrationService
+from ohana_agent.configuration.adguard_sync_service import ensure_adguard_sync_service
 from ohana_agent.configuration.builders import (
     InfrastructureBuilder,
 )
@@ -186,6 +187,7 @@ def build_production_agent(
     infrastructure_config_path: Path = Path("config/infrastructure.yaml"),
     dhcp_config_path: Path = Path("config/plugins/dhcp.yaml"),
     dns_config_path: Path = Path("config/plugins/dns.yaml"),
+    adguard_sync_config_path: Path | None = None,
     ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
     mqtt_config_path: Path = Path("config/plugins/mqtt.yaml"),
     network_config_path: Path = Path("config/plugins/network.yaml"),
@@ -210,6 +212,14 @@ def build_production_agent(
     configuration = ConfigurationLoader.load(application_config_path)
 
     infrastructure_config = InfrastructureLoader().load(infrastructure_config_path)
+    if (
+        configuration.administration.enabled
+        and configuration.agent.environment == Environment.PRODUCTION
+    ):
+        infrastructure_config = ensure_adguard_sync_service(
+            infrastructure_config_path,
+            node_id=configuration.administration.dhcp.server_node_id,
+        )
     InfrastructureValidator().validate(infrastructure_config)
     infrastructure = InfrastructureBuilder().build(infrastructure_config)
     monitoring_registry = MonitoringScheduleRegistry()
@@ -257,6 +267,10 @@ def build_production_agent(
         {
             "dhcp": dhcp_config_path,
             "dns": dns_config_path,
+            "adguard_sync": (
+                adguard_sync_config_path
+                or dns_config_path.with_name("adguard-sync.yaml")
+            ),
             "ntp": ntp_config_path,
             "mqtt": mqtt_config_path,
             "network": network_config_path,

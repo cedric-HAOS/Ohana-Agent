@@ -18,6 +18,7 @@
 - [Investigations en lecture seule](read-only-investigations.md)
 - [Organisation des fichiers Linux](Deployment/Linux-Filesystem.md)
 - [Réservations DHCP vers AdGuard et restauration INFRA-01](adguard-reservations.md)
+- [Supervision de la synchronisation AdGuard](adguard-sync-supervision.md)
 
 ## Contrats et intégrations
 

@@ -36,7 +36,7 @@ def test_loader_loads_services() -> None:
 
     config = loader.load("config/infrastructure.example.yaml")
 
-    assert len(config.services) == 10
+    assert len(config.services) == 11
 
     assert config.services[0].id == "dhcp-primary"
     assert config.services[0].implementation == "dnsmasq"

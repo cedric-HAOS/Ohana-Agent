@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from ohana_agent.tsunade.incident_models import TsunadeIncident
 from ohana_agent.tsunade.incident_summary import incident_assessment
-from ohana_agent.tsunade.local_time import paris_iso
+from ohana_agent.tsunade.local_time import paris_iso, paris_now
 
 # The services worth a tile, in display order. Only those configured show up.
 SERVICE_TILES = (
@@ -18,6 +18,7 @@ SERVICE_TILES = (
     ("home_assistant", "Home Assistant"),
     ("zwave", "Z-Wave"),
     ("teleinformation", "Téléinformation"),
+    ("adguard_sync", "Synchro AdGuard"),
 )
 # Sources reviewed by the daily log check, in display order.
 LOG_SOURCES = ("infra-01", "linky-01", "zwave-01", "ha-01")
@@ -59,6 +60,9 @@ def services_overview(
         if not identifiers:
             continue
         rows = [state for state in states if state["service"] in identifiers]
+        if service_type == "adguard_sync":
+            oldest = paris_now() - timedelta(minutes=15)
+            rows = [row for row in rows if row["observed_at"] >= oldest]
         rows.sort(
             key=lambda state: (identifiers.index(state["service"]), state["capability"])
         )
@@ -74,6 +78,13 @@ def services_overview(
             if status == "healthy"
             else _DETAIL[status]
         )
+        if service_type == "adguard_sync":
+            detail = {
+                "healthy": "Synchronisation vérifiée",
+                "critical": "Synchronisation en défaut",
+                "degraded": "Synchronisation dégradée",
+                "unknown": "Synchronisation non vérifiée",
+            }[status]
         for row in rows:
             if latest is None or row["observed_at"] > latest:
                 latest = row["observed_at"]

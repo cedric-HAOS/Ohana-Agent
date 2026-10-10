@@ -58,6 +58,12 @@ def parse_arguments() -> argparse.Namespace:
         help="DNS plugin configuration file.",
     )
     parser.add_argument(
+        "--adguard-sync-config",
+        type=Path,
+        default=None,
+        help="AdGuard supervision configuration (defaults beside the DNS plugin file).",
+    )
+    parser.add_argument(
         "--ntp-config",
         type=Path,
         default=Path("config/plugins/ntp.yaml"),
@@ -187,6 +193,7 @@ def main() -> int:
         infrastructure_config_path=arguments.infrastructure,
         dhcp_config_path=arguments.dhcp_config,
         dns_config_path=arguments.dns_config,
+        adguard_sync_config_path=arguments.adguard_sync_config,
         ntp_config_path=arguments.ntp_config,
         mqtt_config_path=arguments.mqtt_config,
         network_config_path=arguments.network_config,

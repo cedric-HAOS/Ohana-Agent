@@ -54,8 +54,11 @@ def test_infrastructure_example_yaml_declares_services() -> None:
 
     services = data["services"]
 
-    assert len(services) == 10
+    assert len(services) == 11
     services_by_id = {service["id"]: service for service in services}
+    assert services_by_id["adguard-sync"]["type"] == "adguard_sync"
+    assert services_by_id["adguard-sync"]["node"] == "infra-01"
+    assert services_by_id["adguard-sync"]["enabled"] is True
     assert services_by_id["dhcp-primary"]["type"] == "dhcp"
     assert services_by_id["dhcp-primary"]["node"] == "infra-01"
     assert services_by_id["dns-primary"]["metadata"]["availability_group"] == "dns"

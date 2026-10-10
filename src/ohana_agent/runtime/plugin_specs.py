@@ -64,6 +64,7 @@ class PluginSpec:
         _reconfigure_plugin
     )
     follows_infrastructure: bool = True
+    optional_configuration: bool = False
 
 
 @dataclass(slots=True)
@@ -242,6 +243,7 @@ class ProductionPlugins:
                 capabilities=managed.spec.capabilities,
                 configuration_path=managed.configuration_path,
                 configuration_model=managed.spec.configuration_model,
+                optional_configuration=managed.spec.optional_configuration,
                 apply_configuration=(
                     lambda config, identifier=managed.identifier: apply_configuration(
                         identifier, config

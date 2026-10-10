@@ -12,7 +12,8 @@ Cette organisation sépare clairement :
 * les journaux ;
 * le service `systemd`.
 
-Elle constitue le contrat de déploiement d’Ohana-Agent pour la version 1.11.1.
+Elle constitue le contrat de déploiement d’Ohana-Agent, complété en version 1.46.0
+pour la supervision AdGuard.
 
 ---
 
@@ -40,6 +41,7 @@ L’installation Linux respecte les principes suivants :
 │   │   ├── infrastructure.yaml
 │   │   └── plugins/
 │   │       ├── dhcp.yaml
+│   │       ├── adguard-sync.yaml
 │   │       ├── dns.yaml
 │   │       ├── ntp.yaml
 │   │       ├── mqtt.yaml
@@ -593,3 +595,13 @@ Ohana-Installer 1.0.13 installe :
 
 Le wrapper et la règle sudoers sont détenus par root. Le répertoire d’état
 contient uniquement les instantanés nécessaires au retour automatique.
+
+## Supervision AdGuard (1.46.0)
+
+`/etc/ohana-agent/plugins/adguard-sync.yaml` contient les paramètres de contrôle,
+sans identifiants AdGuard. L’Installer distribue le modèle désactivé ; si le
+fichier est absent, Vision peut le créer au premier enregistrement. Les accès
+sont lus dans `/etc/ohana-agent/adguardhome-sync.yaml`, déjà utilisé par le
+moteur de synchronisation et qui doit être lisible par `ohana-agent`.
+Le plugin observe les unités existantes ; il ne les installe pas.
+Voir [la procédure d’administration](../adguard-sync-supervision.md).

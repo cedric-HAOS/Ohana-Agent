@@ -629,9 +629,22 @@ class AdministrationService:
         except Exception:  # noqa: BLE001 - incidents stay readable without it.
             LOGGER.exception("Unable to read the services for the companion")
             service_types = {}
-        return services_overview(
-            self.incident_repository.capability_states(), service_types
-        )
+        states = self.incident_repository.capability_states()
+        if (
+            "adguard_sync" in service_types.values()
+            and self.plugin_repository is not None
+        ):
+            try:
+                enabled = self.plugin_repository.read("adguard_sync").enabled
+            except Exception:  # No configuration evidence means no reassuring tile.
+                enabled = False
+            if not enabled:
+                states = [
+                    row
+                    for row in states
+                    if service_types.get(row["service"]) != "adguard_sync"
+                ]
+        return services_overview(states, service_types)
 
     def _accepted_log_counts(self) -> dict[str, int]:
         """Known-noise entries the user accepted, per log source."""

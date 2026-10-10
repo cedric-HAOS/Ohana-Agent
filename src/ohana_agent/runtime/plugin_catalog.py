@@ -1,10 +1,11 @@
-"""The ten production plugins, declared once each."""
+"""Production plugins, declared once each."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from ohana_agent.configuration.adguard_sync import AdGuardSyncPluginConfig
 from ohana_agent.configuration.administration import DHCPAdministrationConfig
 from ohana_agent.configuration.backup import BackupPluginConfig
 from ohana_agent.configuration.builders import (
@@ -18,6 +19,9 @@ from ohana_agent.configuration.builders import (
     TeleinformationConfigurationBuilder,
     WireGuardConfigurationBuilder,
     ZWaveConfigurationBuilder,
+)
+from ohana_agent.configuration.builders.adguard_sync import (
+    AdGuardSyncConfigurationBuilder,
 )
 from ohana_agent.configuration.dhcp import DHCPPluginConfig
 from ohana_agent.configuration.dns import DNSPluginConfig
@@ -37,6 +41,7 @@ from ohana_agent.configuration.loaders import (
     WireGuardConfigLoader,
     ZWaveConfigLoader,
 )
+from ohana_agent.configuration.loaders.adguard_sync import AdGuardSyncConfigLoader
 from ohana_agent.configuration.mqtt_plugin import MQTTPluginConfig
 from ohana_agent.configuration.network import NetworkPluginConfig
 from ohana_agent.configuration.ntp import NTPPluginConfig
@@ -44,6 +49,8 @@ from ohana_agent.configuration.teleinformation import TeleinformationPluginConfi
 from ohana_agent.configuration.wireguard import WireGuardPluginConfig
 from ohana_agent.configuration.zwave import ZWavePluginConfig
 from ohana_agent.observation import ObserverResult
+from ohana_agent.plugins.adguard_sync.config import AdGuardSyncConfig
+from ohana_agent.plugins.adguard_sync.plugin import AdGuardSyncPlugin
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.coordinator import BackupCoordinator
 from ohana_agent.plugins.backup.plugin import BackupPlugin
@@ -85,6 +92,44 @@ from ohana_agent.runtime.plugin_specs import PluginSpec
 from ohana_agent.scheduler import CronTrigger, IntervalTrigger, Task
 
 LOCAL_SCHEDULE_TIMEZONE = ZoneInfo("Europe/Paris")
+
+
+def build_adguard_sync_tasks(
+    config: AdGuardSyncConfig, interval_seconds: int, start_at: datetime
+) -> list[Task]:
+    return [
+        Task(
+            id=f"adguard_sync.status:{service.name}",
+            name="Vérifier la synchronisation AdGuard",
+            command="adguard_sync.status",
+            trigger=IntervalTrigger(
+                interval=timedelta(seconds=interval_seconds),
+                start_at=start_at,
+            ),
+            arguments={
+                "service_id": service.name,
+                "node_id": service.metadata.get("node_id"),
+            },
+            metadata={
+                "managed_by": "adguard_sync",
+                "service_id": service.name,
+                "node_id": service.metadata.get("node_id"),
+            },
+        )
+        for service in config.services
+        if service.enabled
+    ]
+
+
+def test_adguard_sync_plugin(plugin: AdGuardSyncPlugin) -> ObserverResult:
+    services = [service for service in plugin.config.services if service.enabled]
+    if not services:
+        raise ValueError("No enabled AdGuard synchronization service")
+    service = services[0]
+    return plugin.execute(
+        service_id=service.name,
+        node_id=service.metadata.get("node_id"),
+    )
 
 
 def build_dhcp_tasks(
@@ -645,6 +690,24 @@ def production_plugin_specs(
     later infrastructure changes reach it through ``_reconfigure_mqtt``.
     """
     return (
+        PluginSpec(
+            identifier="adguard_sync",
+            display_name="Synchronisation AdGuard",
+            capabilities=("adguard_sync.status",),
+            configuration_model=AdGuardSyncPluginConfig,
+            load_configuration=AdGuardSyncConfigLoader().load,
+            build_config=lambda infrastructure, _, plugin_config: (
+                AdGuardSyncConfigurationBuilder().build(infrastructure, plugin_config)
+            ),
+            create_plugin=lambda config: AdGuardSyncPlugin(config=config),
+            build_tasks=lambda config, plugin_config, now: build_adguard_sync_tasks(
+                config,
+                plugin_config.interval_seconds,
+                now,
+            ),
+            test_plugin=test_adguard_sync_plugin,
+            optional_configuration=True,
+        ),
         PluginSpec(
             identifier="dhcp",
             display_name="DHCP",

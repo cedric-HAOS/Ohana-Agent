@@ -51,7 +51,7 @@ l’infrastructure, le DHCP et la configuration des plugins intégrés.
 
 L’inventaire des plugins est fourni par le `PluginManager`. Les plugins DHCP,
 DNS, NTP, MQTT, Présence réseau, Z-Wave, WireGuard, Télémétrie Home Assistant et
-Téléinformation peuvent être activés, reconfigurés et testés sans redémarrer
+Téléinformation et Synchronisation AdGuard peuvent être activés, reconfigurés et testés sans redémarrer
 l’Agent.
 Les secrets MQTT, Freebox et Home Assistant restent masqués.
 
@@ -859,3 +859,13 @@ Projet distribué sous licence MIT.
 
 Voir [le cycle journaux → Tsunade → Katsuyu](docs/tsunade-worker-cycle.md) pour
 la reprise des résultats, l’arrêt différé et les incidents des équipements retirés.
+
+## Synchronisation AdGuard
+
+Agent 1.46.0 contrôle le cycle systemd, la fraîcheur, les sections répliquées
+et le DNS des deux instances. Avec Vision 1.37.0, la supervision est activable
+et configurable dans **Configuration → Plugins → Synchronisation AdGuard**.
+Le service local est préparé automatiquement au démarrage en production avec
+l’administration activée. Shizune 0.5.0 affiche **Synchro AdGuard** dans
+**Services essentiels** ; une mesure absente, ancienne ou une surveillance
+désactivée reste non vérifiée. Voir le [guide](docs/adguard-sync-supervision.md).

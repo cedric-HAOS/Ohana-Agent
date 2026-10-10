@@ -18,6 +18,7 @@ CONFIGURATION_ASSETS = (
     Path("config/infrastructure.example.yaml"),
     Path("config/shikamaru.example.yaml"),
     Path("config/plugins/backup.example.yaml"),
+    Path("config/plugins/adguard-sync.example.yaml"),
     Path("config/plugins/dhcp.example.yaml"),
     Path("config/plugins/dns.example.yaml"),
     Path("config/plugins/home-assistant-telemetry.example.yaml"),

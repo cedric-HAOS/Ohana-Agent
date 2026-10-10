@@ -1,0 +1,9 @@
+# Activate and configure in Vision: Configuration > Plugins > Synchronisation AdGuard.
+# Production startup provisions the service on the local administration node.
+enabled: false
+interval_seconds: 60
+sync_config_path: /etc/ohana-agent/adguardhome-sync.yaml
+timeout: 2
+maximum_age_seconds: 900
+# A stable name that both AdGuard servers must resolve.
+dns_probe_name: infra-01.ohana.lan

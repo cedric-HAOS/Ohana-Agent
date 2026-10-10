@@ -16,6 +16,7 @@ class ServiceType(StrEnum):
     """Supported infrastructure service types."""
 
     DNS = "dns"
+    ADGUARD_SYNC = "adguard_sync"
     DHCP = "dhcp"
     MQTT = "mqtt"
     HTTP = "http"

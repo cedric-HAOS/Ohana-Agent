@@ -46,6 +46,7 @@ class PluginAdministrationBinding:
     configuration_model: type[BaseModel]
     apply_configuration: Callable[[BaseModel], None]
     test_plugin: Callable[[], ObserverResult]
+    optional_configuration: bool = False
 
 
 class PluginAdministrationRepository:
@@ -174,7 +175,11 @@ class PluginAdministrationRepository:
         ):
             raise ValueError("An enabled DNS plugin must declare at least one query.")
 
-        original_content = binding.configuration_path.read_text(encoding="utf-8")
+        original_content = (
+            binding.configuration_path.read_text(encoding="utf-8")
+            if binding.configuration_path.exists()
+            else None
+        )
         self._write_configuration(
             binding.configuration_path,
             configuration,
@@ -190,7 +195,10 @@ class PluginAdministrationRepository:
                 "restoring previous configuration",
                 identifier,
             )
-            self._write_text(binding.configuration_path, original_content)
+            if original_content is None:
+                binding.configuration_path.unlink(missing_ok=True)
+            else:
+                self._write_text(binding.configuration_path, original_content)
             if identifier == "backup":
                 binding.configuration_path.chmod(0o600)
 
@@ -343,6 +351,8 @@ class PluginAdministrationRepository:
                 or {}
             )
         except OSError as error:
+            if isinstance(error, FileNotFoundError) and binding.optional_configuration:
+                return binding.configuration_model()
             raise OSError(
                 "Unable to read plugin configuration "
                 f"{binding.configuration_path}: {error}"

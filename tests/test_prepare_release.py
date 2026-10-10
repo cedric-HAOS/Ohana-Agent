@@ -12,6 +12,7 @@ def test_configuration_assets_match_deployable_examples() -> None:
         "config/infrastructure.example.yaml",
         "config/shikamaru.example.yaml",
         "config/plugins/backup.example.yaml",
+        "config/plugins/adguard-sync.example.yaml",
         "config/plugins/dhcp.example.yaml",
         "config/plugins/dns.example.yaml",
         "config/plugins/home-assistant-telemetry.example.yaml",

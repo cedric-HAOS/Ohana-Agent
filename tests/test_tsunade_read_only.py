@@ -102,7 +102,7 @@ def test_snapshot_keeps_http_coverage_with_example_service_order(
     assert set(requested) <= set(selected)
     assert set(selected[: len(requested)]) == set(requested)
     omitted = result["omitted_targets"]
-    assert len(omitted) == (2 if with_context else 1)
+    assert len(omitted) == (3 if with_context else 2)
     assert all(item["reason"] == "probe_limit" for item in omitted)
     assert set(selected).isdisjoint(item["target"] for item in omitted)
 

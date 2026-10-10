@@ -1,178 +1,56 @@
-# MQTT Convention
+# Conventions MQTT
 
-## Introduction
+## Publications réellement utilisées par Home Assistant
 
-Ce document définit les conventions d'utilisation de MQTT dans Ohana-Agent.
+Le préfixe est `home_assistant.topic_prefix` dans la configuration du plugin
+MQTT, avec `ohana` dans le modèle livré. Le `topic_prefix` du contrôle roundtrip
+est distinct : il sert aux sondes, pas au résumé Home Assistant.
 
-Le rôle de MQTT est exclusivement de transporter les messages définis dans **Message-Model.md**.
+| Topic avec le préfixe par défaut | Charge utile | Rétention |
+|---|---|---|
+| `ohana/status` | Texte `online` / `offline` ; Last Will `offline` | Oui |
+| `ohana/health/summary` | JSON de synthèse de l'infrastructure | Oui |
+| `ohana/host/health` | JSON des mesures hôte et de leurs vitaux | Oui |
+| `ohana/icloud/connectivity` | JSON de connexion iCloud | Oui |
 
-Aucune structure métier n'est définie dans ce document.
+Le publisher conserve aussi les messages MQTT Discovery nécessaires aux
+entités Home Assistant. Vérifier les préfixes effectifs avant de lire un topic.
+Source : [publisher Home Assistant](../../src/ohana_agent/plugins/mqtt/home_assistant_publisher.py).
 
----
+## Exemple de disponibilité
 
-# Principes
-
-L'interface MQTT respecte les principes suivants :
-
-* transporter les messages du modèle commun ;
-* rester indépendante des plugins ;
-* rester indépendante des implémentations ;
-* rester compatible avec les autres interfaces.
-
----
-
-# Préfixe
-
-Tous les topics commencent par :
+Sur `ohana/status`, la charge utile est du texte brut :
 
 ```text
-ohana/
+online
 ```
 
----
+Elle n'est ni un document JSON ni un message dans l'enveloppe historique.
+La synthèse `health/summary` contient notamment `score`, `state`, `active_alerts`,
+`critical_incidents`, les compteurs de services, `stale_capabilities`,
+`updated_at`, les équipements/capacités affectés et les alertes.
+Contrôler sa date : un message retenu ancien ne prouve pas un Agent actif.
 
-# Hiérarchie
+## Transports du noyau et familles conceptuelles
 
-Les topics reflètent directement les catégories du Message Model.
+Le noyau dispose de modèles spécialisés de disponibilité, statut, commande
+et événement. Les anciennes familles `observations/<capability>`,
+`states/<capability>`, `events/<type>` et `commands/<target>` décrivent une
+architecture possible. Leur présence dans un dessin ou une classe ne garantit
+pas une publication ou une voie d'exécution dans une installation donnée.
 
-```text
-ohana/
+Pour intégrer un consommateur, identifier le publisher réellement configuré,
+son topic, sa charge utile, son QoS et sa rétention. Utiliser
+[Message-Model](Message-Model.md) pour distinguer les contrats REST et MQTT.
+Les commandes restent soumises au contrôle d'autorisation Agent.
 
-    observations/
-    states/
-    events/
-    commands/
-    health/
-```
+## Fiabilité et protection
 
----
+Le Last Will indique une perte de connexion MQTT ; une absence de mesure récente
+peut aussi indiquer un processus figé ou une collecte en retard. Comparer les
+vitaux, les journaux et les dates, puis vérifier la capacité fonctionnelle.
+L'authentification et les accès du broker protègent le transport. Ne pas placer
+de secret ou de jeton dans les topics ni dans les journaux de diagnostic.
 
-# Topics
-
-## Observations
-
-```text
-ohana/observations/<capability>
-```
-
-Exemples :
-
-```text
-ohana/observations/dns
-ohana/observations/dhcp
-ohana/observations/network
-```
-
----
-
-## États
-
-```text
-ohana/states/<capability>
-```
-
----
-
-## Événements
-
-```text
-ohana/events/<type>
-```
-
----
-
-## Commandes
-
-```text
-ohana/commands/<target>
-```
-
----
-
-## Santé
-
-```text
-ohana/status
-ohana/health/summary
-```
-
-`ohana/status` publie la disponibilité d'Ohana-Agent avec un Last Will MQTT.
-
-`ohana/health/summary` publie une synthèse JSON contenant le score global,
-l'état, les alertes, les incidents critiques, la répartition des services et la
-fraîcheur des capacités.
-
----
-
-# Charge utile
-
-Chaque publication contient un message conforme à **Message-Model.md**.
-
-La convention MQTT ne modifie jamais la structure des messages.
-
----
-
-# QoS
-
-Le niveau de QoS est choisi selon le type de message.
-
-Cette décision reste indépendante du contenu métier.
-
----
-
-# Messages retenus
-
-La politique de rétention est définie par catégorie.
-
-Par exemple :
-
-* états : retenus ;
-* observations : non retenues ;
-* événements : non retenus ;
-* santé : retenue.
-
-Cette politique peut évoluer sans modifier le Message Model.
-
----
-
-# Versionnement
-
-Les topics restent stables.
-
-Les évolutions sont portées par le modèle de message.
-
----
-
-# Compatibilité
-
-Les consommateurs MQTT doivent pouvoir ignorer les champs inconnus.
-
-Les producteurs doivent préserver la compatibilité ascendante.
-
----
-
-# Ce qui est interdit
-
-Les topics ne doivent jamais contenir :
-
-* un nom de plugin ;
-* un nom de logiciel ;
-* une adresse IP ;
-* un nom d'hôte ;
-* une technologie.
-
-Les topics représentent exclusivement les concepts métier.
-
----
-
-# Résumé
-
-MQTT transporte.
-
-Le Message Model décrit.
-
-Shikamaru observe et évalue.
-
-Tsunade coordonne et propose.
-
-Ohana-Agent autorise les opérations.
+Shikamaru observe ; Tsunade coordonne ; Agent autorise ; MQTT transporte les
+charges utiles propres à chaque contrat.

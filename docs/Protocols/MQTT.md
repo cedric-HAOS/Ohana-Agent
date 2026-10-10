@@ -2,7 +2,11 @@
 
 ## Introduction
 
-MQTT est une interface de communication d'Ohana-Agent.
+MQTT est une interface de communication d'Ohana-Agent. Ce document décrit
+les principes architecturaux ; les familles génériques ci-dessous ne
+garantissent pas leur activation. Les topics et charges utiles livrés
+sont définis dans [MQTT-Convention](MQTT-Convention.md) et
+[Message-Model](Message-Model.md).
 
 Son rôle est de transporter les informations entre Ohana-Agent et les systèmes externes.
 
@@ -33,7 +37,7 @@ MQTT permet simplement de transporter ces informations.
                  Ohana-Agent
 
                   Shikamaru
-        (Moteur de décision)
+        (Observation et évaluation)
 
                      │
 
@@ -81,7 +85,8 @@ Elle n'est jamais responsable :
 * d'évaluer une capacité ;
 * de coordonner les plugins.
 
-Ces responsabilités appartiennent exclusivement à Shikamaru.
+Shikamaru observe et évalue ; Tsunade coordonne les décisions ; Agent
+valide les autorisations et applique les opérations.
 
 ---
 
@@ -205,9 +210,9 @@ Ce document décrit le rôle architectural de MQTT.
 
 Les aspects techniques sont définis dans des documents dédiés :
 
-* MQTT-Convention.md
-* API-Convention.md
-* Plugin-Convention.md
+* [Conventions MQTT](MQTT-Convention.md)
+* [API et administration](../Administration.md)
+* [Contrat et responsabilités des plugins](../Guides/Plugins.md)
 
 Cette séparation garantit la stabilité de l'architecture tout en permettant aux conventions d'évoluer indépendamment.
 

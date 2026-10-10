@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Contrôle documentaire D06/D07/D10 : intégration Vision avec observation
+  indépendante et file durable ; contrats REST et MQTT distingués de
+  l'enveloppe conceptuelle ; guides de démarrage Bash/PowerShell corrigés.
+- Clôture du bloc de code de l'ADR de composition, sans modifier sa décision.
+
 ## [1.46.1] — 2026-10-10 — Listes AdGuard vides
 
 - Correction d’un défaut constaté sur INFRA-01 : certaines API AdGuard renvoient

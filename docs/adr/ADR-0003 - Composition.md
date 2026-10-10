@@ -39,3 +39,4 @@ self.logger = Logger(config.logging)
 self.plugins = Config(config.plugins)
 self.mqtt = MQTT(config.mqtt)
 self.health = Health(config.health)
+```

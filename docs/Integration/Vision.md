@@ -19,7 +19,8 @@ Ohana-Agent :
 - observe les capacités réelles ;
 - normalise les résultats ;
 - synchronise l'infrastructure avec Ohana-Vision ;
-- transmet les observations uniquement lorsque Vision possède la définition courante.
+- poursuit l'observation locale même sans Vision et met en file durable les
+  observations dont la livraison échoue.
 
 Il ne se limite pas à vérifier qu'un processus est démarré. Il vérifie que la capacité attendue est réellement disponible.
 
@@ -60,15 +61,19 @@ Ohana-Agent
             états, latences et métadonnées
 ```
 
-L'ordre est garanti :
+Depuis la Phase 5, les sondes ne dépendent pas de la disponibilité de Vision :
 
-1. Vision accepte le snapshot d'infrastructure ;
-2. l'Agent démarre les observations ;
-3. l'Agent rafraîchit périodiquement le snapshot ;
-4. en cas de perte de Vision, les observations sont suspendues ;
-5. elles reprennent après resynchronisation.
+1. l'Agent tente de synchroniser le snapshot puis démarre le scheduler, même si
+   cette tentative échoue ;
+2. les sondes et la santé hôte continuent localement ;
+3. les échecs de livraison alimentent la file SQLite durable ;
+4. le snapshot est rafraîchi périodiquement, avec de nouvelles tentatives en cas
+   d'échec, sans arrêter les observations ;
+5. le retour de Vision permet la reprise de livraison et le rattrapage de la file.
 
-Cette règle évite qu'une observation soit reçue sans définition correspondante du nœud ou du service.
+Vision peut recevoir une observation avant le snapshot. Distinguer observation,
+synchronisation de topologie et fraîcheur de livraison dans le diagnostic.
+Voir [le contrat d'intégration Vision](https://github.com/cedric-HAOS/Ohana-Vision/blob/main/INTEGRATION.md).
 
 ---
 

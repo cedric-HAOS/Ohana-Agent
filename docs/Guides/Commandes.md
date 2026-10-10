@@ -2,7 +2,8 @@
 
 ## Introduction
 
-Les commandes permettent à Shikamaru d'agir sur l'infrastructure.
+Les commandes permettent à Agent d'appliquer une opération proposée par
+Tsunade et autorisée selon son contrat ; Shikamaru en vérifie les effets.
 
 Une commande exprime une intention.
 
@@ -69,14 +70,12 @@ Inversement, une commande exécutée avec succès ne garantit pas que la capacit
 
 # Responsabilités
 
-## Shikamaru
+## Tsunade, Agent et Shikamaru
 
-Shikamaru :
-
-* décide de créer une commande ;
-* choisit le plugin destinataire ;
-* suit son exécution ;
-* attend les observations de validation.
+* Tsunade propose et suit une opération justifiée par les preuves.
+* Agent valide son contrat et son autorisation avant de la dispatcher.
+* Le plugin exécute l'action bornée.
+* Shikamaru produit les observations qui permettent de vérifier l'effet.
 
 ---
 

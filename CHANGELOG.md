@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.48.0] — 2026-10-10 — Supervision AdGuard centrée sur la réplication
+
 - Supervision AdGuard recentrée sur le cycle systemd et la cohérence des
   configurations : suppression des requêtes DNS, laissées au plugin DNS.
 - Tuile Shizune : âge du dernier cycle réussi, conservé en SQLite et recalculé

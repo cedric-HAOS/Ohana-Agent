@@ -28,6 +28,10 @@ if TYPE_CHECKING:
 # five minutes. Home Assistant giving no value is degraded this long, then
 # critical; a value that stopped reporting stays critical at once.
 HOME_ASSISTANT_RESTART_GRACE_SECONDS = 600
+# A value that is merely late (it reports again at the next check) is not an
+# incident: 11 of the 14 freshness incidents of October lasted one check, 5 min.
+# The reading must be stale twice in a row to count.
+STALE_CONFIRMATION_READINGS = 2
 
 
 class HomeAssistantTelemetryPlugin(Plugin):
@@ -43,6 +47,7 @@ class HomeAssistantTelemetryPlugin(Plugin):
         self._check = check or HomeAssistantTelemetryCheck()
         self.config = config or HomeAssistantTelemetryConfig()
         self._without_value_since: dict[tuple[str, str], float] = {}
+        self._stale_streak: dict[tuple[str, str], int] = {}
 
     @property
     def name(self) -> str:
@@ -200,9 +205,18 @@ class HomeAssistantTelemetryPlugin(Plugin):
             metadata["power"] = metadata["primary"]
             metadata["energy"] = metadata["secondary"]
 
-        health = self._restart_grace(
-            (node_id.strip(), service_id.strip()), result.healthy, primary, secondary
-        )
+        key = (node_id.strip(), service_id.strip())
+        health = self._restart_grace(key, result.healthy, primary, secondary)
+        if health is None:
+            health = self._stale_confirmation(
+                key, result.healthy, primary, secondary, maximum_age_seconds
+            )
+            if health is HealthStatus.UNKNOWN:
+                metadata["stale_readings"] = self._stale_streak[key]
+                message = (
+                    f"{message} First late reading: confirmed at the next check "
+                    "before it counts."
+                )
         if health is HealthStatus.DEGRADED:
             metadata["restart_grace_seconds"] = HOME_ASSISTANT_RESTART_GRACE_SECONDS
             message = (
@@ -240,6 +254,32 @@ class HomeAssistantTelemetryPlugin(Plugin):
         if monotonic() - since < HOME_ASSISTANT_RESTART_GRACE_SECONDS:
             return HealthStatus.DEGRADED
         return None
+
+    def _stale_confirmation(
+        self,
+        key: tuple[str, str],
+        healthy: bool,
+        primary: HomeAssistantTelemetryValue,
+        secondary: HomeAssistantTelemetryValue | None,
+        maximum_age_seconds: int,
+    ) -> HealthStatus | None:
+        """Unknown, not a fault, for the first late reading of a known value."""
+        values = [value for value in (primary, secondary) if value is not None]
+        late = (
+            not healthy
+            and all(value.value is not None for value in values)
+            and any(
+                value.age_seconds is not None
+                and value.age_seconds > maximum_age_seconds
+                for value in values
+            )
+        )
+        if not late:
+            self._stale_streak.pop(key, None)
+            return None
+        streak = self._stale_streak.get(key, 0) + 1
+        self._stale_streak[key] = streak
+        return HealthStatus.UNKNOWN if streak < STALE_CONFIRMATION_READINGS else None
 
     def test(self, **kwargs: Any) -> ObserverResult:
         return self.execute(**kwargs)

@@ -154,13 +154,71 @@ def test_an_entity_missing_while_home_assistant_restarts_is_degraded_first(
     assert _run(plugin).health is HealthStatus.DEGRADED
 
 
-def test_a_value_that_stopped_reporting_stays_critical_at_once() -> None:
-    plugin = HomeAssistantTelemetryPlugin(
-        check=_failing(
-            12.0, "Entity sensor.sun_01_power has not reported for 900 seconds."
-        )
+def _late(age: float = 1200.0):
+    return HomeAssistantTelemetryCheckResult(
+        service_name="Mesure Puissance",
+        healthy=False,
+        primary=HomeAssistantTelemetryValue(
+            entity_id="sensor.sun_01_power",
+            value=12.0,
+            unit="W",
+            age_seconds=age,
+        ),
+        error=f"Entity sensor.sun_01_power has not reported for {age:.0f} seconds.",
     )
-    result = _run(plugin)
-    assert result.success is False
-    assert result.health is None
-    assert "restart_grace_seconds" not in result.metadata
+
+
+def _fresh():
+    return HomeAssistantTelemetryCheckResult(
+        service_name="Mesure Puissance",
+        healthy=True,
+        primary=HomeAssistantTelemetryValue(
+            entity_id="sensor.sun_01_power", value=10.5, unit="W", age_seconds=30.0
+        ),
+    )
+
+
+def test_a_value_that_stopped_reporting_is_critical_once_confirmed() -> None:
+    from ohana_agent.infrastructure.enums import HealthStatus
+
+    plugin = HomeAssistantTelemetryPlugin(
+        check=FakeHomeAssistantTelemetryCheck(_late())
+    )
+
+    first = _run(plugin)
+    second = _run(plugin)
+
+    # A late reading is not an incident until the next check says the same.
+    assert first.health is HealthStatus.UNKNOWN
+    assert first.metadata["stale_readings"] == 1
+    assert "confirmed at the next check" in first.message
+    assert second.health is None
+    assert second.success is False
+    assert "restart_grace_seconds" not in second.metadata
+
+
+def test_a_single_late_reading_followed_by_a_fresh_one_leaves_no_trace() -> None:
+    from ohana_agent.infrastructure.enums import HealthStatus
+
+    plugin = HomeAssistantTelemetryPlugin(
+        check=FakeHomeAssistantTelemetryCheck(_late())
+    )
+    assert _run(plugin).health is HealthStatus.UNKNOWN
+
+    plugin._check = FakeHomeAssistantTelemetryCheck(_fresh())
+    assert _run(plugin).success is True
+
+    # The streak restarted: the next late reading is a first one again.
+    plugin._check = FakeHomeAssistantTelemetryCheck(_late())
+    assert _run(plugin).health is HealthStatus.UNKNOWN
+
+
+def test_a_missing_value_is_not_confirmed_like_a_late_one() -> None:
+    from ohana_agent.infrastructure.enums import HealthStatus
+
+    plugin = HomeAssistantTelemetryPlugin(
+        check=_failing(None, "Entity sensor.sun_01_power is unavailable.")
+    )
+    # Handled by the restart grace, never by the late-reading confirmation.
+    assert _run(plugin).health is HealthStatus.DEGRADED
+    assert "stale_readings" not in _run(plugin).metadata

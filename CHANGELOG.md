@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Télémétrie Home Assistant : une valeur en retard n'ouvre plus d'incident au
+  premier relevé. Elle doit l'être deux contrôles de suite (état `UNKNOWN` au
+  premier, avec `stale_readings` et un message explicite). 11 des 14 incidents de
+  fraîcheur d'octobre ne duraient qu'un contrôle (5 minutes, une occurrence) ; chacun
+  lançait un contrôle de journaux et une analyse IA. Une valeur absente reste
+  traitée par le délai de grâce de redémarrage de Home Assistant.
 - Changements d'heure : `to_paris()` et `paris_now()` renvoient des heures de Paris à
   décalage fixe, pour que toute somme ou différence de Tsunade soit exacte (une
   différence entre deux heures `ZoneInfo` ignore le changement d'heure ; un jour

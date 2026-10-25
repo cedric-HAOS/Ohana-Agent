@@ -40,6 +40,8 @@ class BackupTargetPluginConfig(Config):
     schedule: str
     verify_tls: bool = True
     timeout: PositiveFloat = 300.0
+    # Complete archives kept in iCloud for this target; 0 keeps them all.
+    remote_retention_count: int = Field(default=0, ge=0, le=365)
     pre_backup_action: BackupActionConfig | None = None
 
     @field_validator(

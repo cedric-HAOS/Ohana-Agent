@@ -30,6 +30,7 @@ class BackupTarget:
     enabled: bool = True
     verify_tls: bool = True
     timeout: float = 300.0
+    remote_retention_count: int = 0
     pre_backup_action: BackupAction | None = None
 
 

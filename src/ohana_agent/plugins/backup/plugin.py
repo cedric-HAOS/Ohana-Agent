@@ -117,6 +117,7 @@ class BackupPlugin(Plugin):
                 size_bytes=result.size_bytes,
                 sha256=result.sha256,
                 deleted_local_backups=result.deleted_local_backups,
+                deleted_remote_backups=result.deleted_remote_backups,
             ),
         )
 

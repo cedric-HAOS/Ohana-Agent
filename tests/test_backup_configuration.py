@@ -57,3 +57,36 @@ def test_backup_configuration_rejects_local_rclone_destination() -> None:
 def test_backup_configuration_rejects_invalid_infra_remote_retention() -> None:
     with pytest.raises(ValueError, match="greater than or equal to 0"):
         BackupPluginConfig.model_validate({"infra_01": {"remote_retention_count": -1}})
+
+
+def _target(**extra: object) -> dict[str, object]:
+    return {
+        "id": "ha-01",
+        "label": "HA-01",
+        "url": "http://ha-01:8123",
+        "schedule": "0 2 * * *",
+        **extra,
+    }
+
+
+def test_target_remote_retention_defaults_to_keeping_everything() -> None:
+    plugin_config = BackupPluginConfig.model_validate(
+        {
+            "targets": [
+                _target(),
+                _target(id="linky-01", label="LINKY-01", remote_retention_count=5),
+            ]
+        }
+    )
+
+    runtime = BackupConfigurationBuilder().build(plugin_config)
+
+    assert [t.remote_retention_count for t in runtime.targets] == [0, 5]
+
+
+@pytest.mark.parametrize("value", [-1, 366])
+def test_target_remote_retention_is_bounded(value: int) -> None:
+    with pytest.raises(ValueError):
+        BackupPluginConfig.model_validate(
+            {"targets": [_target(remote_retention_count=value)]}
+        )

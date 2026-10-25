@@ -168,6 +168,65 @@ class RcloneStreamUploader:
             deleted += 1
         return deleted
 
+    def prune_complete_archives(
+        self,
+        remote_root: str,
+        *,
+        keep_count: int,
+        protected_path: str | None = None,
+    ) -> int:
+        """Keep the newest ``keep_count`` HAOS archives that have their checksum.
+
+        An archive without its ``.sha256`` is incomplete: it is never deleted
+        and never counted. The archive just published is always kept.
+        """
+        if keep_count <= 0:
+            return 0
+        listing = subprocess.run(
+            self._base_command("lsf", remote_root)
+            + ["-R", "--files-only", "--log-level", "ERROR"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if listing.returncode != 0:
+            raise RcloneUploadError(
+                f"rclone could not list backup archives: {listing.stderr[:1000]}"
+            )
+        paths = {line.strip() for line in listing.stdout.splitlines() if line.strip()}
+        complete = sorted(
+            (
+                path
+                for path in paths
+                if path.endswith(".tar") and f"{path}.sha256" in paths
+            ),
+            # Names start with the UTC stamp: the last name is the newest backup.
+            key=lambda path: path.rsplit("/", 1)[-1],
+        )
+        protected = (
+            protected_path.removeprefix(f"{remote_root}/") if protected_path else None
+        )
+        retained = set(complete[-keep_count:])
+        if protected is not None:
+            retained.add(protected)
+        deleted = 0
+        for path in (item for item in complete if item not in retained):
+            for suffix in ("", ".sha256"):
+                result = subprocess.run(
+                    self._base_command("deletefile", f"{remote_root}/{path}{suffix}")
+                    + ["--log-level", "ERROR"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    raise RcloneUploadError(
+                        f"rclone could not delete old backup {path}: "
+                        f"{result.stderr[:1000]}"
+                    )
+            deleted += 1
+        return deleted
+
     def _remote_object_exists(self, remote_path: str) -> bool:
         result = subprocess.run(
             self._base_command("lsjson", remote_path) + ["--stat"],

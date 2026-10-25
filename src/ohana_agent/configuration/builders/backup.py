@@ -29,6 +29,7 @@ class BackupConfigurationBuilder:
                     schedule=target.schedule,
                     verify_tls=target.verify_tls,
                     timeout=target.timeout,
+                    remote_retention_count=target.remote_retention_count,
                     pre_backup_action=(
                         BackupAction(
                             domain=target.pre_backup_action.domain,

@@ -64,6 +64,18 @@ publication du nouveau manifeste, et ne supprime que les plus anciens dossiers
 horodatés qui possèdent eux-mêmes un manifeste. Un dossier incomplet n'est jamais
 pris comme preuve d'une sauvegarde valide et n'est pas supprimé automatiquement.
 
+## Rétention iCloud des sauvegardes HAOS
+
+Chaque cible HAOS (`ha-01`, `linky-01`, `zwave-01`) a son propre
+`remote_retention_count`, comme INFRA-01 : `0` conserve toutes les archives, une
+valeur de 1 à 365 garde les plus récentes. La rotation n'intervient qu'après
+l'envoi et la validation de la nouvelle archive et de son `.sha256`. Elle
+supprime l'archive et son fichier `.sha256` ; une archive sans `.sha256` est
+incomplète : elle n'est ni comptée ni supprimée. Un échec de suppression est
+signalé à l'étape `remote_rotation`, alors que la nouvelle sauvegarde est bien
+publiée. La rétention locale dans HAOS reste indépendante : une seule sauvegarde
+gérée par Ohana y est conservée.
+
 ## Garanties
 
 - la sauvegarde complète est créée sur le Home Assistant OS cible ;
@@ -132,7 +144,8 @@ de Vision permet de modifier sans redémarrage :
 - le script de préparation NVM de ZWAVE-01.
 - l'activation, l'horaire et le destinataire public `age` d'INFRA-01.
 - le nombre de sauvegardes INFRA-01 complètes à conserver dans iCloud (`0` pour
-  une conservation illimitée).
+  une conservation illimitée) ;
+- le même réglage pour chaque cible HAOS (HA-01, LINKY-01, ZWAVE-01).
 
 Vision affiche uniquement si les secrets sont présents sur Agent. Leurs valeurs
 ne sont jamais renvoyées par l'API d'administration. Le bouton de test

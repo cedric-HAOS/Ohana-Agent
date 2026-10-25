@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Sauvegardes HAOS : nombre d'archives conservées dans iCloud réglable par cible
+  (`remote_retention_count`, 0 = toutes, 1 à 365), comme pour INFRA-01. La
+  rotation supprime l'archive et son `.sha256` après validation de la nouvelle,
+  ne touche jamais une archive sans `.sha256` et signale un échec à l'étape
+  `remote_rotation`.
 - Phase 10 : intégrité des archives publiées vérifiée indépendamment de leur
   création. Chaque jour (première passe 30 minutes après le démarrage), l'Agent
   relit en flux, sans rien écrire sur la microSD ni déchiffrer, l'archive la plus

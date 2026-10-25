@@ -35,6 +35,7 @@ class BackupExecutionResult:
     size_bytes: int
     sha256: str
     deleted_local_backups: int
+    deleted_remote_backups: int = 0
 
 
 class BackupClientFactory(Protocol):
@@ -150,6 +151,16 @@ class BackupCoordinator:
         except Exception as error:
             raise BackupExecutionError("rotation", str(error)) from error
 
+        deleted_remote = 0
+        try:
+            deleted_remote = self._uploader.prune_complete_archives(
+                f"{self._config.rclone_remote}/{target.id}",
+                keep_count=target.remote_retention_count,
+                protected_path=remote_path,
+            )
+        except Exception as error:
+            raise BackupExecutionError("remote_rotation", str(error)) from error
+
         return BackupExecutionResult(
             target_id=target.id,
             backup_slug=backup.slug,
@@ -158,6 +169,7 @@ class BackupCoordinator:
             size_bytes=receipt.size_bytes,
             sha256=receipt.sha256,
             deleted_local_backups=deleted,
+            deleted_remote_backups=deleted_remote,
         )
 
     def preflight(self, target: BackupTarget) -> int:

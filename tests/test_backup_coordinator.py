@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from dataclasses import replace
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -50,6 +51,17 @@ class FakeUploader:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
         self.uploads: list[tuple[str, bytes]] = []
+        self.pruned: list[tuple[str, int, str | None]] = []
+        self.prune_deleted = 0
+        self.prune_fails = False
+
+    def prune_complete_archives(
+        self, remote_root: str, *, keep_count: int, protected_path: str | None = None
+    ) -> int:
+        if self.prune_fails:
+            raise RuntimeError("iCloud refused the deletion")
+        self.pruned.append((remote_root, keep_count, protected_path))
+        return self.prune_deleted
 
     def upload(self, stream, *, size_bytes: int, remote_path: str) -> UploadReceipt:
         if self.fail:
@@ -199,3 +211,43 @@ def test_coordinator_reads_secrets_from_environment_file(
     )
 
     assert coordinator.preflight(make_target()) == 2
+
+
+def test_coordinator_applies_the_target_remote_retention(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OHANA_TEST_BACKUP_TOKEN", "secret")
+    monkeypatch.setenv("OHANA_TEST_BACKUP_PASSWORD", "backup-password")
+    uploader = FakeUploader()
+    uploader.prune_deleted = 2
+    target = replace(make_target(), remote_retention_count=4)
+    coordinator = BackupCoordinator(
+        BackupConfig(targets=(target,)),
+        client_factory=lambda target, token: FakeBackupClient(),
+        uploader=uploader,
+    )
+
+    result = coordinator.run(target, now=datetime(2026, 8, 11, 2, 0, tzinfo=UTC))
+
+    assert result.deleted_remote_backups == 2
+    assert uploader.pruned == [("icloud:Ohana/Backups/ha-01", 4, result.remote_path)]
+
+
+def test_coordinator_reports_a_remote_rotation_failure_after_a_good_backup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OHANA_TEST_BACKUP_TOKEN", "secret")
+    monkeypatch.setenv("OHANA_TEST_BACKUP_PASSWORD", "backup-password")
+    uploader = FakeUploader()
+    uploader.prune_fails = True
+    coordinator = BackupCoordinator(
+        BackupConfig(targets=(make_target(),)),
+        client_factory=lambda target, token: FakeBackupClient(),
+        uploader=uploader,
+    )
+
+    with pytest.raises(BackupExecutionError) as raised:
+        coordinator.run(make_target(), now=datetime(2026, 8, 11, 2, 0, tzinfo=UTC))
+
+    assert raised.value.stage == "remote_rotation"
+    assert len(uploader.uploads) == 2

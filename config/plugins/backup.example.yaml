@@ -36,6 +36,8 @@ targets:
     schedule: "0 2 * * *"
     verify_tls: true
     timeout: 900
+    # Complete archives kept in iCloud for this target; 0 keeps them all.
+    remote_retention_count: 0
 
   - id: linky-01
     label: LINKY-01
@@ -46,6 +48,7 @@ targets:
     schedule: "0 3 * * *"
     verify_tls: true
     timeout: 600
+    remote_retention_count: 0
 
   - id: zwave-01
     label: ZWAVE-01
@@ -56,6 +59,7 @@ targets:
     schedule: "0 4 * * *"
     verify_tls: true
     timeout: 600
+    remote_retention_count: 0
     # This action must block until Z-Wave JS UI has written a fresh NVM export
     # into its persistent store. The following script is deployment-specific.
     pre_backup_action:

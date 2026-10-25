@@ -162,3 +162,91 @@ def test_remote_rotation_deletes_only_old_complete_backups(
     assert len(purge_commands) == 1
     assert ids[0] in purge_commands[0][2]
     assert all(ids[1] not in command[2] for command in purge_commands)
+
+
+def _haos_listing(monkeypatch, files, *, fail_delete=False):
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        del kwargs
+        commands.append(command)
+        if command[1] == "lsf":
+            return SimpleNamespace(returncode=0, stdout="\n".join(files), stderr="")
+        if command[1] == "deletefile" and fail_delete:
+            return SimpleNamespace(returncode=1, stdout="", stderr="denied")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "ohana_agent.plugins.backup.rclone_uploader.subprocess.run", fake_run
+    )
+    return commands
+
+
+HAOS_FILES = [
+    "2026/09/20260920T000000Z_aaa.tar",
+    "2026/09/20260920T000000Z_aaa.tar.sha256",
+    "2026/10/20261004T000000Z_bbb.tar",
+    "2026/10/20261004T000000Z_bbb.tar.sha256",
+    "2026/10/20261011T000000Z_ccc.tar",
+    "2026/10/20261011T000000Z_ccc.tar.sha256",
+    "2026/10/20261018T000000Z_ddd.tar",
+]
+
+
+def test_haos_rotation_keeps_the_newest_complete_archives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = _haos_listing(monkeypatch, HAOS_FILES)
+    uploader = RcloneStreamUploader(BackupConfig())
+
+    deleted = uploader.prune_complete_archives(
+        "icloud:Ohana/Backups/ha-01", keep_count=2
+    )
+
+    # ddd has no checksum yet: incomplete, neither counted nor deleted.
+    assert deleted == 1
+    removed = [command[2] for command in commands if command[1] == "deletefile"]
+    assert removed == [
+        "icloud:Ohana/Backups/ha-01/2026/09/20260920T000000Z_aaa.tar",
+        "icloud:Ohana/Backups/ha-01/2026/09/20260920T000000Z_aaa.tar.sha256",
+    ]
+
+
+def test_haos_rotation_never_deletes_the_archive_just_published(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = _haos_listing(monkeypatch, HAOS_FILES)
+    uploader = RcloneStreamUploader(BackupConfig())
+
+    deleted = uploader.prune_complete_archives(
+        "icloud:Ohana/Backups/ha-01",
+        keep_count=1,
+        protected_path="icloud:Ohana/Backups/ha-01/2026/09/20260920T000000Z_aaa.tar",
+    )
+
+    assert deleted == 1
+    removed = " ".join(c[2] for c in commands if c[1] == "deletefile")
+    assert "aaa" not in removed and "bbb" in removed and "ccc" not in removed
+
+
+def test_haos_rotation_zero_keeps_everything_without_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = _haos_listing(monkeypatch, HAOS_FILES)
+
+    assert (
+        RcloneStreamUploader(BackupConfig()).prune_complete_archives(
+            "icloud:Ohana/Backups/ha-01", keep_count=0
+        )
+        == 0
+    )
+    assert commands == []
+
+
+def test_haos_rotation_failure_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    _haos_listing(monkeypatch, HAOS_FILES, fail_delete=True)
+
+    with pytest.raises(RcloneUploadError, match="could not delete"):
+        RcloneStreamUploader(BackupConfig()).prune_complete_archives(
+            "icloud:Ohana/Backups/ha-01", keep_count=1
+        )

@@ -22,6 +22,26 @@ HISTORY_LIMIT = 20
 INTEGRITY_MAX_AGE_DAYS = 14
 INTEGRITY_HISTORY_DAYS = 90
 INCONCLUSIVE = {"unreadable"}
+ICLOUD_WATCH_AFTER = timedelta(hours=3)
+# The session is checked hourly: a reading older than this says nothing.
+ICLOUD_STALE_AFTER = timedelta(hours=3)
+ICLOUD_RULE: dict[str, str] = {
+    "id": "icloud_session",
+    "title": "Session iCloud des sauvegardes",
+    "rule": (
+        "La session iCloud de rclone, contrôlée toutes les heures, doit être "
+        "ouverte : une session expirée est urgente (les prochaines sauvegardes "
+        "échoueront) ; un iCloud injoignable ou en erreur pendant plus de "
+        "3 heures est signalé."
+    ),
+}
+ICLOUD_LABELS = {
+    "connected": "session ouverte",
+    "session_expired": "session expirée",
+    "unreachable": "iCloud injoignable",
+    "not_configured": "non configuré",
+    "error": "erreur rclone",
+}
 RULE: dict[str, str] = {
     "id": "backup_restore",
     "title": "Restauration des sauvegardes",
@@ -52,6 +72,15 @@ CREATE TABLE IF NOT EXISTS tsunade_restore_tests (
 );
 CREATE INDEX IF NOT EXISTS tsunade_restore_tests_target
     ON tsunade_restore_tests (target, tested_at);
+CREATE TABLE IF NOT EXISTS tsunade_icloud_status (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state TEXT NOT NULL,
+    since TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    last_success_at TEXT,
+    remote TEXT NOT NULL,
+    detail TEXT
+);
 CREATE TABLE IF NOT EXISTS tsunade_archive_checks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     target TEXT NOT NULL,
@@ -85,6 +114,117 @@ def record_backup_success(
         (target, paris_iso(at)),
     )
     connection.commit()
+
+
+def record_icloud_status(connection: sqlite3.Connection, status: Any) -> None:
+    """Keep the latest session reading and since when its state has lasted."""
+    previous = connection.execute(
+        "SELECT state, since FROM tsunade_icloud_status"
+    ).fetchone()
+    since = (
+        previous["since"]
+        if previous is not None and previous["state"] == status.state
+        else status.checked_at
+    )
+    connection.execute(
+        """INSERT INTO tsunade_icloud_status
+        (id, state, since, checked_at, last_success_at, remote, detail)
+        VALUES (1, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET state = excluded.state,
+            since = excluded.since, checked_at = excluded.checked_at,
+            last_success_at = excluded.last_success_at, remote = excluded.remote,
+            detail = excluded.detail""",
+        (
+            status.state,
+            since,
+            status.checked_at,
+            status.last_success_at,
+            status.remote,
+            status.detail,
+        ),
+    )
+    connection.commit()
+
+
+def icloud_status(connection: sqlite3.Connection) -> dict[str, Any] | None:
+    row = connection.execute("SELECT * FROM tsunade_icloud_status").fetchone()
+    if row is None:
+        return None
+    return {
+        "state": row["state"],
+        "connected": row["state"] == "connected",
+        "remote": row["remote"],
+        "since": paris_iso(row["since"]),
+        "checked_at": paris_iso(row["checked_at"]),
+        "last_success_at": (
+            paris_iso(row["last_success_at"]) if row["last_success_at"] else None
+        ),
+        "detail": row["detail"],
+    }
+
+
+def icloud_readiness(connection: sqlite3.Connection, current: datetime) -> dict:
+    """Preventive check: the iCloud session the backups depend on."""
+    current = to_paris(current)
+    status = icloud_status(connection)
+    if status is None:
+        return {**ICLOUD_RULE, "state": "insufficient_data", "nodes": [], "items": []}
+    checked = to_paris(datetime.fromisoformat(status["checked_at"]))
+    since = to_paris(datetime.fromisoformat(status["since"]))
+    label = ICLOUD_LABELS.get(status["state"], status["state"])
+    items: list[dict[str, Any]] = []
+    stale = current - checked > ICLOUD_STALE_AFTER
+    expired = status["state"] == "session_expired"
+    if (
+        not stale
+        and status["state"] != "connected"
+        and (expired or current - since >= ICLOUD_WATCH_AFTER)
+    ):
+        last = status["last_success_at"]
+        title = (
+            "iCloud : session expirée, les prochaines sauvegardes échoueront"
+            if expired
+            else f"iCloud : {label} depuis le {since.strftime('%d/%m à %H:%M')}"
+        )
+        detail = (
+            "Reconnecter iCloud dans Vision, Configuration, Plugins, "
+            "Sauvegardes (identifiant Apple et code 2FA). "
+            if expired
+            else ""
+        )
+        if last:
+            detail += f"Dernière session valide le {last[:10]}. "
+        if status["detail"]:
+            detail += f"Détail : {status['detail']}"
+        items.append(
+            {
+                "rule": ICLOUD_RULE["id"],
+                "node_id": "infra-01",
+                "equipment_id": "infra-01",
+                "subject": "icloud-session",
+                "title": title,
+                "detail": detail.strip(),
+                "since": status["since"],
+                "urgent": expired,
+                "evidence": {
+                    "state": status["state"],
+                    "checked_at": status["checked_at"],
+                    "last_success_at": last,
+                },
+            }
+        )
+    return {
+        **ICLOUD_RULE,
+        "state": "watch" if items else "ok",
+        "nodes": [
+            {
+                "node_id": "icloud",
+                "state": "watch" if items else "ok",
+                "summary": f"iCloud : {label}",
+            }
+        ],
+        "items": items,
+    }
 
 
 def record_archive_check(

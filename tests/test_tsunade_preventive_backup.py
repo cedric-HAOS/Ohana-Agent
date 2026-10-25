@@ -242,3 +242,115 @@ def test_service_starts_an_archive_check_on_request(tmp_path: Path) -> None:
             service.request_archive_check({"target": 3})
     finally:
         monitor.close()
+
+
+def _icloud(state: str, at: datetime, *, last_success: datetime | None = None):
+    from ohana_agent.plugins.backup.icloud_connectivity import (
+        ICloudConnectivityStatus,
+    )
+
+    return ICloudConnectivityStatus(
+        state=state,
+        connected=state == "connected",
+        remote="icloud:",
+        checked_at=at.isoformat(timespec="seconds"),
+        last_success_at=last_success.isoformat(timespec="seconds")
+        if last_success
+        else None,
+        detail=None if state == "connected" else "Invalid global session",
+    )
+
+
+def _icloud_rule(summary: dict) -> dict:
+    return next(c for c in summary["checks"] if c["id"] == "icloud_session")
+
+
+def test_without_a_reading_the_icloud_rule_has_nothing_to_judge(monitor) -> None:
+    assert _icloud_rule(monitor.summary(now=NOW))["state"] == "insufficient_data"
+    assert monitor.icloud_status() is None
+
+
+def test_an_open_session_is_ok(monitor) -> None:
+    monitor.record_icloud_status(_icloud("connected", NOW, last_success=NOW))
+
+    summary = monitor.summary(now=NOW)
+
+    assert _icloud_rule(summary)["nodes"][0]["summary"] == "iCloud : session ouverte"
+    assert all(item["rule"] != "icloud_session" for item in summary["watch"])
+
+
+def test_an_expired_session_is_urgent_at_once(monitor) -> None:
+    last_good = NOW - timedelta(days=3)
+    monitor.record_icloud_status(
+        _icloud("session_expired", NOW, last_success=last_good)
+    )
+
+    summary = monitor.summary(now=NOW)
+
+    item = next(i for i in summary["watch"] if i["rule"] == "icloud_session")
+    assert item["urgent"] is True
+    assert "les prochaines sauvegardes échoueront" in item["title"]
+    assert "Reconnecter iCloud" in item["detail"]
+    assert "Dernière session valide le 2026-10-17" in item["detail"]
+    assert summary["conclusion"].startswith("Intervention à prévoir")
+
+
+def test_an_unreachable_icloud_is_reported_only_when_it_lasts(monitor) -> None:
+    start = NOW - timedelta(hours=2)
+    monitor.record_icloud_status(_icloud("unreachable", start))
+    monitor.record_icloud_status(_icloud("unreachable", NOW - timedelta(hours=1)))
+    assert all(i["rule"] != "icloud_session" for i in monitor.summary(now=NOW)["watch"])
+
+    monitor.record_icloud_status(_icloud("unreachable", NOW))
+    later = NOW + timedelta(hours=1)
+    monitor.record_icloud_status(_icloud("unreachable", later))
+    item = next(
+        i for i in monitor.summary(now=later)["watch"] if i["rule"] == "icloud_session"
+    )
+
+    assert item["urgent"] is False
+    assert item["title"].startswith("iCloud : iCloud injoignable depuis le 20/10 à ")
+    assert monitor.icloud_status()["since"].startswith("2026-10-20T10:00:00")
+
+
+def test_a_recovered_session_ends_the_alert_and_restarts_the_clock(monitor) -> None:
+    monitor.record_icloud_status(_icloud("session_expired", NOW - timedelta(hours=5)))
+    monitor.record_icloud_status(_icloud("connected", NOW, last_success=NOW))
+
+    status = monitor.icloud_status()
+
+    assert status["connected"] is True
+    assert status["since"].startswith("2026-10-20T12:00:00")
+    assert all(i["rule"] != "icloud_session" for i in monitor.summary(now=NOW)["watch"])
+
+
+def test_an_old_reading_proves_nothing(monitor) -> None:
+    monitor.record_icloud_status(_icloud("session_expired", NOW - timedelta(hours=6)))
+
+    assert all(i["rule"] != "icloud_session" for i in monitor.summary(now=NOW)["watch"])
+
+
+def test_the_service_serves_the_icloud_state_with_the_restore_tests(tmp_path) -> None:
+    from ohana_agent.api.service import AdministrationService
+    from ohana_agent.infrastructure.repository import (
+        InfrastructureConfigurationRepository,
+    )
+
+    monitor = TsunadePreventiveMonitor(tmp_path / "control.db")
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            tmp_path / "infrastructure.yaml"
+        ),
+        preventive_monitor=monitor,
+    )
+    try:
+        assert service.read_restore_tests()["icloud"] is None
+        monitor.record_icloud_status(_icloud("session_expired", NOW))
+
+        document = service.read_restore_tests()
+
+        assert document["icloud"]["state"] == "session_expired"
+        assert document["icloud"]["connected"] is False
+        assert "secret" not in str(document)
+    finally:
+        monitor.close()

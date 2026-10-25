@@ -329,9 +329,19 @@ def build_production_agent(
         ),
     )
 
+    def record_icloud_status(status: object) -> None:
+        if administration_service is None or (
+            administration_service.preventive_monitor is None
+        ):
+            return
+        administration_service.preventive_monitor.record_icloud_status(status)
+
     icloud_connectivity_reporter = ICloudConnectivityReporter(
         ICloudConnectivityProbe(plugins["backup"].config),
-        sinks=(mqtt_home_assistant_publisher.publish_icloud_connectivity,),
+        sinks=(
+            mqtt_home_assistant_publisher.publish_icloud_connectivity,
+            record_icloud_status,
+        ),
     )
 
     def record_archive_check(check: object) -> None:

@@ -2,6 +2,12 @@
 
 ## Non publié
 
+- Phase 10 : l'état de la session iCloud (contrôle horaire de rclone) est conservé
+  par Tsunade avec la date depuis laquelle il dure, servi avec les restaurations
+  (`GET /v1/backups/restore-tests`, champ `icloud`) et suivi par la règle
+  préventive `icloud_session` : une session expirée est urgente, un iCloud
+  injoignable ou en erreur depuis plus de 3 heures est signalé. Jusqu'ici l'état
+  n'était publié que vers Home Assistant.
 - Planificateur : le jour de la semaine d'un horaire Cron compte depuis le lundi
   (`0` lundi … `6` dimanche, contrairement à `crontab`) ; c'est désormais écrit
   dans le README, `docs/Backup.md` et l'exemple de configuration. Les noms `mon`

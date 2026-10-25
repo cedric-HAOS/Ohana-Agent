@@ -1125,6 +1125,7 @@ class AdministrationService:
             "schema_version": 1,
             "generated_at": paris_iso(paris_now()),
             "max_age_days": RESTORE_TEST_MAX_AGE_DAYS,
+            "icloud": self.preventive_monitor.icloud_status(),
             "targets": self.preventive_monitor.backup_posture(),
         }
 

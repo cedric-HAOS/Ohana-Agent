@@ -302,6 +302,7 @@ def test_agent_serves_the_detail_and_shizune_gets_only_the_essential(
         "log_errors_growth",
         "ha_unavailable_entities",
         "backup_restore",
+        "icloud_session",
         "adguard_protection",
         "storage_health",
     ]

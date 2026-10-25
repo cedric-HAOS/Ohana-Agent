@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, tzinfo
 
 from ohana_agent.scheduler.base_trigger import BaseTrigger
 
-
 # Unlike the usual cron, the weekday field counts like Python's weekday(): 0 is
 # Monday and 6 is Sunday (Sunday is 0 or 7 in crontab(5)). Every schedule saved
 # by Vision uses these numbers. Names are unambiguous and accepted everywhere.

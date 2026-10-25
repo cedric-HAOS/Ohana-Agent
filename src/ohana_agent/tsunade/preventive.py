@@ -257,6 +257,15 @@ class TsunadePreventiveMonitor:
                 note=note,
             )
 
+    def record_icloud_status(self, status: Any) -> None:
+        """Keep the hourly reading of the iCloud session used by the backups."""
+        with self._lock:
+            preventive_backup.record_icloud_status(self._connection, status)
+
+    def icloud_status(self) -> dict[str, Any] | None:
+        with self._lock:
+            return preventive_backup.icloud_status(self._connection)
+
     def record_archive_check(self, check: Any) -> None:
         """Keep the outcome of an independent read of a published archive."""
         with self._lock:
@@ -610,6 +619,7 @@ class TsunadePreventiveMonitor:
                 preventive_rules.log_errors_growth(self._connection, current),
                 preventive_rules.ha_unavailable_entities(self._connection, current),
                 preventive_backup.restore_readiness(self._connection, current),
+                preventive_backup.icloud_readiness(self._connection, current),
                 self._adguard_pause.check(current),
                 preventive_rules.storage_health(self._connection, current),
             ]

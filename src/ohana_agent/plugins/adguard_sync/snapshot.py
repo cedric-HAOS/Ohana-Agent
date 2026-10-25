@@ -172,6 +172,11 @@ class AdGuardSnapshotProbe:
         return {
             "checked_sections": list(snapshots[0]),
             "different_sections": differences,
+            # Read from the origin: the pause preventive rule follows its length.
+            "protection": {
+                "enabled": origin_dns.get("protection_enabled"),
+                "disabled_until": origin_dns.get("protection_disabled_until"),
+            },
         }
 
     @staticmethod

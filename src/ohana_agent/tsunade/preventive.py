@@ -25,6 +25,8 @@ from ohana_agent.observation.observation import Observation
 from ohana_agent.observation.observation_status import ObservationStatus
 from ohana_agent.tsunade import preventive_backup, preventive_rules
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
+from ohana_agent.tsunade.preventive_adguard import AdGuardPauseTracker
+from ohana_agent.tsunade.storage_health import StorageSampler
 
 LOGGER = logging.getLogger(__name__)
 
@@ -102,7 +104,12 @@ class TsunadePreventiveMonitor:
         database_path: Path | str,
         *,
         dependency_reader: Callable[[], dict[str, dict[str, list[str]]]] | None = None,
+        storage_sampler: StorageSampler | None = None,
     ) -> None:
+        # Reads this host's SD card counters; inert where there is no such card.
+        self._storage = (
+            storage_sampler if storage_sampler is not None else StorageSampler()
+        )
         # Declared dependencies between equipments (read again at each summary:
         # the owner edits the infrastructure while the Agent runs).
         self._dependency_reader = dependency_reader
@@ -166,6 +173,7 @@ class TsunadePreventiveMonitor:
             )"""
         )
         preventive_backup.install(self._connection)
+        self._adguard_pause = AdGuardPauseTracker(self._connection)
         self._connection.commit()
         # Pending daily aggregates: written every FLUSH_INTERVAL, not per
         # sample, because INFRA-01 writes to a slow SD card every minute.
@@ -197,6 +205,18 @@ class TsunadePreventiveMonitor:
             and observation.status is ObservationStatus.HEALTHY
         ):
             self.record_backup_success(str(observation.node), observation.timestamp)
+            return
+        if observation.capability == "adguard_sync.status":
+            protection = observation.metadata.get("protection")
+            if isinstance(protection, dict):
+                enabled = protection.get("enabled")
+                until = protection.get("disabled_until")
+                with self._lock:
+                    self._adguard_pause.observe(
+                        enabled if isinstance(enabled, bool) else None,
+                        until if isinstance(until, str) else None,
+                        observation.timestamp,
+                    )
             return
         latency = observation.latency_ms
         if (
@@ -317,6 +337,19 @@ class TsunadePreventiveMonitor:
                 ),
             ):
                 if isinstance(value, int | float) and not isinstance(value, bool):
+                    self._accumulate(observed_at, node, metric, float(value))
+            storage = self._storage.sample()
+            for metric, value in (
+                (preventive_rules.SD_LATENCY_METRIC, storage.write_latency_ms),
+                (preventive_rules.SD_WRITTEN_METRIC, storage.written_bytes),
+                (
+                    preventive_rules.SD_READONLY_METRIC,
+                    None
+                    if storage.root_readonly is None
+                    else float(storage.root_readonly),
+                ),
+            ):
+                if value is not None:
                     self._accumulate(observed_at, node, metric, float(value))
             uptime = health.get("host_uptime_seconds")
             if isinstance(uptime, int | float) and uptime >= 0:
@@ -577,6 +610,8 @@ class TsunadePreventiveMonitor:
                 preventive_rules.log_errors_growth(self._connection, current),
                 preventive_rules.ha_unavailable_entities(self._connection, current),
                 preventive_backup.restore_readiness(self._connection, current),
+                self._adguard_pause.check(current),
+                preventive_rules.storage_health(self._connection, current),
             ]
             active_incidents = self._active_incidents()
             mutes = self._active_mutes(current)

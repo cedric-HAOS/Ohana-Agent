@@ -28,6 +28,12 @@ LATENCY_CAPABILITIES = {
 HA_NODE = "ha-01"
 HA_UNAVAILABLE_METRIC = "ha_unavailable_entities"
 MAX_LOG_ITEMS = 5
+SD_LATENCY_METRIC = "sd_write_latency_ms"
+SD_WRITTEN_METRIC = "sd_written_bytes"
+SD_READONLY_METRIC = "root_readonly"
+SD_SLOW_MS = 100.0
+SD_CRITICAL_MS = 250.0
+SD_SLOW_DAYS = 3
 
 RULES: tuple[dict[str, str], ...] = (
     {
@@ -67,6 +73,17 @@ RULES: tuple[dict[str, str], ...] = (
             "horaire ; le minimum ignore les redémarrages) comparé aux 7 à 28 "
             "jours précédents : au moins 4 des 7 derniers jours au-dessus de "
             "l'habituel de 3 entités et de 20 %."
+        ),
+    },
+    {
+        "id": "storage_health",
+        "title": "Santé de la carte SD",
+        "rule": (
+            "Temps moyen d'une écriture sur la carte SD d'INFRA-01 (relevé du "
+            "noyau, au moins 20 écritures par mesure) : au moins 3 des 7 derniers "
+            "jours au-dessus de 100 ms, urgent au-dessus de 250 ms ; ou, plus "
+            "tôt, 4 des 7 derniers jours plus lents de 30 ms et du double de "
+            "l'habituel. Système de fichiers racine en lecture seule : urgent."
         ),
     },
 )
@@ -460,3 +477,113 @@ def correlate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return correlations
+
+
+def storage_health(connection: sqlite3.Connection, current: datetime) -> dict:
+    """The SD card writes slowly, or the root file system went read-only."""
+    latency = _series(
+        connection,
+        current,
+        "metric = ? AND samples > 0",
+        SD_LATENCY_METRIC,
+        "total / samples",
+    )
+    readonly = _series(connection, current, "metric = ?", SD_READONLY_METRIC, "maximum")
+    written = _series(connection, current, "metric = ?", SD_WRITTEN_METRIC, "total")
+    nodes, items = [], []
+    today = current.date()
+    week_start = today - timedelta(days=RECENT_DAYS - 1)
+    for node in sorted({key[0] for key in (*latency, *readonly)}):
+        points = latency.get((node, SD_LATENCY_METRIC), [])
+        recent = [(day, value) for day, value in points if day >= week_start]
+        slow_days = [(d, v) for d, v in recent if v >= SD_SLOW_MS]
+        critical = any(
+            v >= SD_CRITICAL_MS for d, v in recent if d >= today - timedelta(days=2)
+        )
+        latest = recent[-1][1] if recent else None
+        volume = dict(written.get((node, SD_WRITTEN_METRIC), [])).get(today)
+        readonly_now = any(
+            day == today and value >= 1.0
+            for day, value in readonly.get((node, SD_READONLY_METRIC), [])
+        )
+        state = "ok"
+        if readonly_now:
+            items.append(
+                {
+                    "rule": "storage_health",
+                    "node_id": node,
+                    "equipment_id": node,
+                    "subject": f"{node}:readonly",
+                    "title": (f"{node.upper()} : système de fichiers en lecture seule"),
+                    "detail": (
+                        "Le système a remonté sa partition racine en lecture "
+                        "seule : signe courant d'une carte SD défaillante. "
+                        "Plus rien ne s'écrit sur le disque."
+                    ),
+                    "since": today.isoformat(),
+                    "urgent": True,
+                    "evidence": {"root_readonly": True},
+                }
+            )
+            state = "watch"
+        if len(slow_days) >= SD_SLOW_DAYS or critical:
+            peak = max(v for _d, v in recent)
+            items.append(
+                {
+                    "rule": "storage_health",
+                    "node_id": node,
+                    "equipment_id": node,
+                    "subject": f"{node}:sd_latency",
+                    "title": (
+                        f"{node.upper()} : carte SD lente "
+                        f"({_number(peak)} ms par écriture)"
+                    ),
+                    "detail": (
+                        f"{len(slow_days)} des {RECENT_DAYS} derniers jours "
+                        f"au-dessus de {_number(SD_SLOW_MS)} ms par écriture "
+                        f"(pic {_number(peak)} ms). L'ancienne carte "
+                        "d'INFRA-01 en était à 284 ms avant sa panne : "
+                        "prévoir son remplacement."
+                    ),
+                    "since": slow_days[0][0].isoformat() if slow_days else None,
+                    "urgent": critical,
+                    "evidence": {
+                        "slow_days": [
+                            {"day": d.isoformat(), "mean_ms": round(v, 1)}
+                            for d, v in slow_days
+                        ],
+                        "threshold_ms": SD_SLOW_MS,
+                    },
+                }
+            )
+            state = "watch"
+        elif points:
+            evaluation = baseline_drift(
+                points, today=today, absolute_floor=30.0, relative_floor=1.0
+            )
+            if evaluation["state"] == "watch":
+                items.append(
+                    _drift_item(
+                        "storage_health",
+                        node,
+                        f"{node}:sd_latency_drift",
+                        f"{node.upper()} : écritures SD de plus en plus lentes",
+                        evaluation,
+                        " ms",
+                    )
+                )
+                state = "watch"
+        if latest is None and not readonly_now:
+            summary = f"{node.upper()} : aucune mesure d'écriture pour l'instant"
+            state = "insufficient_data"
+        else:
+            parts = []
+            if latest is not None:
+                parts.append(f"écriture SD {_number(latest)} ms en moyenne")
+            if volume:
+                parts.append(f"{_number(volume / 1_000_000_000)} Go écrits aujourd'hui")
+            if readonly_now:
+                parts.append("racine en lecture seule")
+            summary = f"{node.upper()} : " + ", ".join(parts)
+        nodes.append({"node_id": node, "state": state, "summary": summary})
+    return _check("storage_health", nodes, items)

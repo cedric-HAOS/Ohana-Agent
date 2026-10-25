@@ -2,6 +2,17 @@
 
 ## Non publié
 
+- Maintenance préventive : règle `adguard_protection`. Une protection AdGuard
+  suspendue depuis plus de 2 heures (pause longue ou sans fin prévue) est
+  signalée avec son heure de fin ; l'Agent lit déjà le réglage de l'origine à
+  chaque contrôle de réplication et ne lève jamais la pause.
+- Maintenance préventive : règle `storage_health`. L'Agent calcule le temps moyen
+  d'une écriture sur la carte SD d'INFRA-01 à partir de `/sys/block/mmcblk0/stat`
+  (au moins 20 écritures par mesure) et le volume écrit par jour. Au moins 3 des
+  7 derniers jours au-dessus de 100 ms est signalé (urgent au-dessus de 250 ms),
+  ainsi qu'une dégradation progressive et un système de fichiers racine remonté
+  en lecture seule (urgent). L'ancienne carte était à 284 ms avant sa panne du
+  09/10 ; la nouvelle mesure 17 à 20 ms.
 - Sauvegardes HAOS : nombre d'archives conservées dans iCloud réglable par cible
   (`remote_retention_count`, 0 = toutes, 1 à 365), comme pour INFRA-01. La
   rotation supprime l'archive et son `.sha256` après validation de la nouvelle,

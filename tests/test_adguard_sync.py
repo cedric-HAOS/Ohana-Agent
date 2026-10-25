@@ -721,3 +721,20 @@ def test_activation_validates_api_access_before_local_rewrites_exist(
         "192.168.1.12",
     }
     assert dns_requests == []
+
+
+def test_inspection_reports_the_origin_protection_state(tmp_path, monkeypatch):
+    origin = responses()
+    origin["dns_info"].update(
+        protection_enabled=False,
+        protection_disabled_until="2026-10-25T21:36:13.143497714+01:00",
+    )
+    mock_api(monkeypatch, origin, deepcopy(origin))
+
+    result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
+
+    assert result["protection"] == {
+        "enabled": False,
+        "disabled_until": "2026-10-25T21:36:13.143497714+01:00",
+    }
+    assert "secret" not in str(result)

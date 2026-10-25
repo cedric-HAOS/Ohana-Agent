@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import io
-from dataclasses import replace
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 

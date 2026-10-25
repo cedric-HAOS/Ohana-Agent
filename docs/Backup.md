@@ -64,6 +64,16 @@ publication du nouveau manifeste, et ne supprime que les plus anciens dossiers
 horodatés qui possèdent eux-mêmes un manifeste. Un dossier incomplet n'est jamais
 pris comme preuve d'une sauvegarde valide et n'est pas supprimé automatiquement.
 
+## Horaires
+
+Chaque cible a un horaire à cinq champs (minute, heure, jour du mois, mois, jour
+de la semaine), en heure de Paris. **Le jour de la semaine compte à partir du
+lundi** : `0` lundi … `6` dimanche, contrairement à `crontab` où `0` est le
+dimanche. `0 2 * * 6` sauvegarde donc le dimanche à 02:00 ; `0 2 * * 0` le lundi.
+Les noms `mon` à `sun` (`0 2 * * sun`) sont acceptés et évitent l'ambiguïté ; `7`
+est refusé. Vision écrit les numéros dans ce même sens. À la fin d'un changement
+d'heure, une heure répétée (02:00 deux fois) ne déclenche la tâche qu'une fois.
+
 ## Rétention iCloud des sauvegardes HAOS
 
 Chaque cible HAOS (`ha-01`, `linky-01`, `zwave-01`) a son propre

@@ -91,7 +91,10 @@ Quand le worker a été réveillé par Ohana, le dernier job du groupe peut dema
 à Katsuyu d'éteindre Bubule après son traitement. Les anciens `worker_id` et `mac_address` statiques
 restent lisibles pour compatibilité mais ne sont plus la source de vérité.
 Les horaires Cron sont interprétés en `Europe/Paris` par défaut ; les dates
-échangées et persistées restent en UTC.
+échangées et persistées restent en UTC. Le jour de la semaine d'un horaire
+Cron compte **à partir du lundi** (`0` lundi … `6` dimanche), à l'inverse de
+`crontab` où `0` est le dimanche : `0 2 * * 6` s'exécute le dimanche. Les noms
+`mon` à `sun` (`0 2 * * sun`, `mon-fri`) évitent toute ambiguïté.
 
 Tsunade applique aux incidents un cycle déterministe avant tout recours à l'IA.
 Le LLM local ne reçoit que le contexte utile et retourne des hypothèses,

@@ -26,6 +26,9 @@ infra_01:
   katsuyu_timeout_seconds: 3600
   max_artifact_bytes: 8589934592
 
+# Schedules: minute hour day month weekday, Europe/Paris. The weekday counts from
+# Monday (0 = Monday ... 6 = Sunday), unlike crontab where 0 is Sunday; names such
+# as `sun` or `mon-fri` are accepted and unambiguous.
 targets:
   - id: ha-01
     label: HA-01

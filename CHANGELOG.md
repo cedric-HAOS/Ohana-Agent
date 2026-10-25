@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Planificateur : le jour de la semaine d'un horaire Cron compte depuis le lundi
+  (`0` lundi … `6` dimanche, contrairement à `crontab`) ; c'est désormais écrit
+  dans le README, `docs/Backup.md` et l'exemple de configuration. Les noms `mon`
+  à `sun` et leurs plages (`mon-fri`) sont acceptés ; `7` reste refusé. Aucun
+  horaire existant ne change (HA-01 `0 2 * * 6` reste le dimanche).
 - Maintenance préventive : règle `adguard_protection`. Une protection AdGuard
   suspendue depuis plus de 2 heures (pause longue ou sans fin prévue) est
   signalée avec son heure de fin ; l'Agent lit déjà le réglage de l'origine à

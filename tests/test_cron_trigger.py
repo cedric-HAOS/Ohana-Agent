@@ -75,3 +75,34 @@ def test_cron_trigger_fires_once_in_the_hour_repeated_by_the_clock_change() -> N
     assert trigger.is_due(second) is False
     # The next day is a new occurrence.
     assert trigger.is_due(datetime(2026, 10, 26, 1, 0, 2, tzinfo=UTC)) is True
+
+
+def test_weekday_numbers_count_from_monday_not_like_crontab() -> None:
+    sunday = datetime(2026, 10, 25, 2, 0, tzinfo=UTC)
+    saturday = datetime(2026, 10, 24, 2, 0, tzinfo=UTC)
+
+    assert CronTrigger("0 2 * * 6").is_due(sunday) is True
+    assert CronTrigger("0 2 * * 6").is_due(saturday) is False
+    # In crontab(5) 0 is Sunday; here it is Monday, so this never fires on Sunday.
+    assert CronTrigger("0 2 * * 0").is_due(sunday) is False
+
+
+@pytest.mark.parametrize(
+    "expression, day, due",
+    [
+        ("0 2 * * sun", datetime(2026, 10, 25, 2, 0, tzinfo=UTC), True),
+        ("0 2 * * SUN", datetime(2026, 10, 25, 2, 0, tzinfo=UTC), True),
+        ("0 2 * * sun", datetime(2026, 10, 24, 2, 0, tzinfo=UTC), False),
+        ("0 2 * * mon", datetime(2026, 10, 26, 2, 0, tzinfo=UTC), True),
+        ("0 2 * * mon-fri", datetime(2026, 10, 23, 2, 0, tzinfo=UTC), True),
+        ("0 2 * * mon-fri", datetime(2026, 10, 24, 2, 0, tzinfo=UTC), False),
+        ("0 2 * * sat,sun", datetime(2026, 10, 24, 2, 0, tzinfo=UTC), True),
+    ],
+)
+def test_weekday_names_are_unambiguous(expression, day, due) -> None:
+    assert CronTrigger(expression).is_due(day) is due
+
+
+def test_crontab_sunday_seven_is_refused_not_silently_misread() -> None:
+    with pytest.raises(ValueError, match="between 0 and 6"):
+        CronTrigger("0 2 * * 7")

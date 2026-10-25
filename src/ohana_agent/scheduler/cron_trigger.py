@@ -2,15 +2,35 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 
 from ohana_agent.scheduler.base_trigger import BaseTrigger
 
 
+# Unlike the usual cron, the weekday field counts like Python's weekday(): 0 is
+# Monday and 6 is Sunday (Sunday is 0 or 7 in crontab(5)). Every schedule saved
+# by Vision uses these numbers. Names are unambiguous and accepted everywhere.
+WEEKDAY_NAMES = {
+    "mon": "0",
+    "tue": "1",
+    "wed": "2",
+    "thu": "3",
+    "fri": "4",
+    "sat": "5",
+    "sun": "6",
+}
+WEEKDAY_NAME = re.compile("|".join(WEEKDAY_NAMES), re.IGNORECASE)
+
+
 @dataclass
 class CronTrigger(BaseTrigger):
-    """Simple cron trigger supporting five fields: minute hour day month weekday."""
+    """Cron trigger with five fields: minute hour day month weekday.
+
+    The weekday is 0-6 for Monday-Sunday, or ``mon``..``sun`` (not crontab's
+    Sunday-first numbering: ``0 2 * * 6`` runs on Sunday here, Saturday there).
+    """
 
     expression: str
     timezone: tzinfo | None = None
@@ -27,7 +47,11 @@ class CronTrigger(BaseTrigger):
         self.hours = self._parse_field(fields[1], 0, 23)
         self.days = self._parse_field(fields[2], 1, 31)
         self.months = self._parse_field(fields[3], 1, 12)
-        self.weekdays = self._parse_field(fields[4], 0, 6)
+        self.weekdays = self._parse_field(
+            WEEKDAY_NAME.sub(lambda m: WEEKDAY_NAMES[m.group().lower()], fields[4]),
+            0,
+            6,
+        )
 
     def next_run_at(self, after: datetime) -> datetime | None:
         candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)

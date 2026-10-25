@@ -3,11 +3,13 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from ohana_agent.observation import Observation, ObservationStatus
 from ohana_agent.tsunade.incident_log_health import log_check_summary
 from ohana_agent.tsunade.incidents import TsunadeIncidentRepository
 
+PARIS = ZoneInfo("Europe/Paris")
 PARIS_SUMMER = timedelta(hours=2)
 
 
@@ -44,10 +46,17 @@ def test_every_incident_time_is_expressed_in_paris(tmp_path: Path) -> None:
             details.last_observed_at,
             *(event.occurred_at for event in details.events),
         ]
-        assert {value.utcoffset() for value in instants} == {PARIS_SUMMER}
+        # The diagnostic is stamped with the real clock, whose Paris offset
+        # depends on the day the suite runs (summer or winter time).
+        assert all(
+            value.utcoffset() == value.astimezone(PARIS).utcoffset()
+            for value in instants
+        )
+        assert details.started_at.utcoffset() == PARIS_SUMMER
         assert details.started_at == opened_at
         assert details.started_at.isoformat().startswith("2026-09-25T14:51:56")
-        assert details.latest_decision["occurred_at"].endswith("+02:00")
+        decided_at = datetime.fromisoformat(details.latest_decision["occurred_at"])
+        assert decided_at.utcoffset() == decided_at.astimezone(PARIS).utcoffset()
         stored = repository._connection.execute(  # noqa: SLF001
             "SELECT started_at FROM tsunade_incidents"
         ).fetchone()[0]

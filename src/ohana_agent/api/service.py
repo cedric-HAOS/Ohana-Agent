@@ -39,6 +39,7 @@ from ohana_agent.jobs.job_types import (
     AUTOMATIC_WAKE_JOB_TYPES,
     LOCAL_TIMEZONE,
     DistributedJobConflictError,
+    paris_instant,
 )
 from ohana_agent.jobs.log_sources import LogSourceBroker
 from ohana_agent.jobs.repository import DistributedJobRepository
@@ -1276,8 +1277,7 @@ class AdministrationService:
         current = now or datetime.now(LOCAL_TIMEZONE)
         if current.tzinfo is None or current.utcoffset() is None:
             current = current.replace(tzinfo=LOCAL_TIMEZONE)
-        else:
-            current = current.astimezone(LOCAL_TIMEZONE)
+        current = paris_instant(current)
         selected_window = window_hours or self.log_window_hours
         window_started = current - timedelta(hours=selected_window)
         baseline: list[dict[str, object]] = []

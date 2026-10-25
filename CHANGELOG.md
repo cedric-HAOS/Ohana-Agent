@@ -2,6 +2,19 @@
 
 ## Non publié
 
+- Changement d'heure d'automne : l'horloge des jobs est exprimée en décalage
+  fixe, car l'arithmétique `ZoneInfo` perd `fold` et refusait un job « créé dans
+  le futur » pendant l'heure répétée (la sauvegarde HA-01 de 02:00 le 25/10 a
+  échoué à ouvrir son investigation).
+- Journal : `httpx` et `httpcore` passent à WARNING hors DEBUG ; la sonde AdGuard
+  écrivait environ 14 000 lignes par jour et tronquait la collecte INFRA-01.
+- AdGuard : une pause temporaire de la protection, répliquée avec quelques
+  secondes d'écart, ne compte plus comme une divergence de `dns.server_config`
+  (tolérance de 120 s).
+- Test `test_tsunade_local_time` indépendant du jour d'exécution (heure d'été ou
+  d'hiver).
+
+
 ## [1.48.0] — 2026-10-10 — Supervision AdGuard centrée sur la réplication
 
 - Supervision AdGuard recentrée sur le cycle systemd et la cohérence des

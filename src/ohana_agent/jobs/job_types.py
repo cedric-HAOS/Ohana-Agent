@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -29,6 +30,19 @@ from ohana_agent.contracts.administration import (
 )
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
+
+
+def paris_instant(value: datetime) -> datetime:
+    """Express an instant in Paris time with a fixed offset.
+
+    Arithmetic on a ``ZoneInfo`` datetime is wall-clock arithmetic and drops
+    ``fold``: in the repeated hour of the autumn change, ``now + 5 minutes``
+    lands an hour in the past, and such values never equal another zone's.
+    """
+    offset = value.astimezone(LOCAL_TIMEZONE).utcoffset()
+    return value.astimezone(timezone(offset))  # type: ignore[arg-type]
+
+
 TERMINAL_STATUSES = {
     DistributedJobStatus.SUCCEEDED,
     DistributedJobStatus.FAILED,

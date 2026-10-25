@@ -29,6 +29,7 @@ from ohana_agent.jobs.job_types import (
     LOCAL_TIMEZONE,
     TERMINAL_STATUSES,
     DistributedJobConflictError,
+    paris_instant,
 )
 from ohana_agent.jobs.pairings import DistributedWorkerPairings
 from ohana_agent.jobs.schema import DistributedJobSchema
@@ -906,7 +907,7 @@ class DistributedJobRepository(
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("distributed job clock must return a timezone-aware value")
-        return value.astimezone(LOCAL_TIMEZONE)
+        return paris_instant(value)
 
     @staticmethod
     def _timestamp(value: datetime) -> str:

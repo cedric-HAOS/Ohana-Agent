@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Jobs distribués : les travaux d'un incident de journée (`ai.inference`,
+  `logs.health_check`, `logs.investigate`) attendent le prochain lot de 05:00 au
+  lieu d'expirer après 15 minutes avec Bubule éteint. Leur délai est prolongé
+  jusqu'au réveil planifié (en heures réelles, y compris la nuit de 25 heures) ;
+  Bubule n'est pas réveillé en journée. `ai.inference` rejoint les types qui
+  déclenchent le réveil de 05:00. Une sauvegarde `backup.infra` demandée à la main
+  n'est pas reportée.
 - Jobs distribués : un travail qu'aucun worker n'a jamais pris avant son échéance
   (Bubule éteint hors de la fenêtre de réveil de 05:00) reste en `TIMEOUT` mais
   porte maintenant l'erreur `worker.unavailable` et l'événement « no worker

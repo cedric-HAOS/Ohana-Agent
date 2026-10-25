@@ -8,6 +8,7 @@ import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from datetime import time as clock_time
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from threading import RLock
@@ -37,6 +38,7 @@ from ohana_agent.host.network import (
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.job_types import (
     AUTOMATIC_WAKE_JOB_TYPES,
+    DEFERRED_TO_BATCH_JOB_TYPES,
     LOCAL_TIMEZONE,
     DistributedJobConflictError,
     paris_instant,
@@ -1590,19 +1592,27 @@ class AdministrationService:
         if created_at.tzinfo is None or created_at.utcoffset() is None:
             created_at = created_at.replace(tzinfo=LOCAL_TIMEZONE)
         current = created_at.astimezone(self.wake_schedule_timezone)
-        if not (
+        in_window = (
             self.wake_planned_window_start_hour
             <= current.hour
             < self.wake_planned_window_end_hour
-        ):
-            return payload
-        planned_wake = current.replace(
-            hour=self.wake_planned_window_end_hour,
-            minute=0,
-            second=0,
-            microsecond=0,
         )
-        seconds_until_wake = math.ceil((planned_wake - current).total_seconds())
+        if not in_window and payload.get("type") not in DEFERRED_TO_BATCH_JOB_TYPES:
+            return payload
+        # Created in the window: today's batch. Created later in the day (an
+        # incident while Bubule is off): tomorrow's.
+        batch_day = current.date() + timedelta(days=0 if in_window else 1)
+        if not in_window and current.hour < self.wake_planned_window_start_hour:
+            batch_day = current.date()
+        planned_wake = datetime.combine(
+            batch_day,
+            clock_time(self.wake_planned_window_end_hour),
+            tzinfo=self.wake_schedule_timezone,
+        )
+        # Subtract instants, not wall-clock times: a day can have 23 or 25 hours.
+        seconds_until_wake = math.ceil(
+            (planned_wake.astimezone(UTC) - current.astimezone(UTC)).total_seconds()
+        )
         if seconds_until_wake <= 0:
             return payload
         extended = dict(payload)

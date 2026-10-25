@@ -68,7 +68,13 @@ JOB_TYPE_MODELS: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
 }
 
 AUTOMATIC_WAKE_JOB_TYPES = frozenset(
-    {"backup.infra", "logs.health_check", "logs.investigate"}
+    {"backup.infra", "logs.health_check", "logs.investigate", "ai.inference"}
+)
+# Work an incident asks for in the daytime: Bubule is off by design, so instead of
+# letting it expire after its short timeout it waits for the next 05:00 batch.
+# backup.infra is not here: a backup asked by hand must run now or fail visibly.
+DEFERRED_TO_BATCH_JOB_TYPES = frozenset(
+    {"logs.health_check", "logs.investigate", "ai.inference"}
 )
 # Results Tsunade must record before the job is settled (resumed at restart).
 COMPLETION_PROCESSED_TYPES = frozenset(

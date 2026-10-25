@@ -90,6 +90,7 @@ from ohana_agent.runtime.plugin_catalog import (
     production_plugin_specs,
 )
 from ohana_agent.runtime.plugin_specs import ProductionPlugins
+from ohana_agent.runtime.process_memory import process_rss_bytes
 from ohana_agent.runtime.vision_probe import VisionVitalsProbe, vitals_url
 from ohana_agent.runtime.vitals import AgentVitals, silent_agent_components
 from ohana_agent.scheduler import (
@@ -311,6 +312,7 @@ def build_production_agent(
         vitals=vitals,
         vision=vision_probe.latest if vision_probe is not None else None,
         data_bytes=lambda: database_bytes(data_directory),
+        rss_bytes=process_rss_bytes,
     )
     host_health_reporter = HostHealthReporter(
         host_health_monitor,

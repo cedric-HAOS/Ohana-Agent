@@ -110,6 +110,10 @@ class VisionVitalsProbe:
                 storage.get("database_bytes"), int
             ):
                 result["database_bytes"] = storage["database_bytes"]
+            # Vision >= 1.41: its own resident memory.
+            process = document.get("process")
+            if isinstance(process, dict) and isinstance(process.get("rss_bytes"), int):
+                result["rss_bytes"] = process["rss_bytes"]
         result["checked_at"] = checked_at
         with self._lock:
             self._latest = result

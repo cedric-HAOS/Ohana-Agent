@@ -91,6 +91,8 @@ class HostHealthSnapshot:
     vision: dict[str, Any] | None = None
     # Phase 5 hardening: SQLite files of the Agent, recorded daily for growth.
     ohana_data_bytes: int | None = None
+    # Resident memory of the Agent's own process, recorded daily to name what grows.
+    agent_rss_bytes: int | None = None
 
     def to_json(self) -> str:
         """Serialize the snapshot using stable compact JSON."""
@@ -394,9 +396,11 @@ class HostHealthMonitor:
         vitals: AgentVitals | None = None,
         vision: Callable[[], dict[str, Any] | None] | None = None,
         data_bytes: Callable[[], int | None] | None = None,
+        rss_bytes: Callable[[], int | None] | None = None,
     ) -> None:
         self._probe = probe
         self._data_bytes = data_bytes
+        self._rss_bytes = rss_bytes
         self._required_samples = max(required_samples, 1)
         self._utc_now = utc_now or (lambda: datetime.now(UTC))
         self._vitals = vitals
@@ -454,6 +458,7 @@ class HostHealthMonitor:
             stale_agent_components=stale,
             vision=vision,
             ohana_data_bytes=self._data_bytes() if self._data_bytes else None,
+            agent_rss_bytes=self._rss_bytes() if self._rss_bytes else None,
         )
 
     @staticmethod

@@ -182,6 +182,95 @@ def _drift_item(
     }
 
 
+PROCESS_METRICS = {"agent_rss_bytes": "l'Agent", "vision_rss_bytes": "Vision"}
+PROCESS_GROWTH_MB_PER_DAY = 5.0
+PROCESS_GROWTH_TOTAL_MB = 40.0
+PROCESS_MIN_DAYS = 4
+MEGABYTE = 1_000_000
+
+
+def _slope_per_day(points: list[tuple[date, float]]) -> float:
+    """Least-squares slope of a daily series, in value units per day."""
+    days = [(day - points[0][0]).days for day, _ in points]
+    mean_day = sum(days) / len(days)
+    mean_value = sum(value for _, value in points) / len(points)
+    spread = sum((d - mean_day) ** 2 for d in days)
+    if spread == 0:
+        return 0.0
+    return (
+        sum(
+            (d - mean_day) * (v - mean_value)
+            for d, (_, v) in zip(days, points, strict=True)
+        )
+        / spread
+    )
+
+
+def process_memory(
+    connection: sqlite3.Connection, current: datetime
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Which Ohana process grows: resident memory per process, daily mean."""
+    placeholders = ", ".join("?" for _ in PROCESS_METRICS)
+    since = (current.date() - timedelta(days=14)).isoformat()
+    rows = connection.execute(
+        f"""SELECT node_id, metric, day, total / samples AS value
+        FROM tsunade_trend_daily
+        WHERE metric IN ({placeholders}) AND samples > 0 AND day >= ?
+        ORDER BY node_id, metric, day""",  # noqa: S608 - fixed placeholders.
+        (*PROCESS_METRICS, since),
+    ).fetchall()
+    series: dict[tuple[str, str], list[tuple[date, float]]] = {}
+    for row in rows:
+        series.setdefault((row["node_id"], row["metric"]), []).append(
+            (date.fromisoformat(row["day"]), float(row["value"]))
+        )
+    nodes, items = [], []
+    for (node, metric), points in sorted(series.items()):
+        name = PROCESS_METRICS[metric]
+        latest = points[-1][1] / MEGABYTE
+        summary = f"{node.upper()} · {name} : {_number(latest)} Mo"
+        state = "ok"
+        if len(points) >= PROCESS_MIN_DAYS:
+            slope = _slope_per_day(points) / MEGABYTE
+            total = (points[-1][1] - points[0][1]) / MEGABYTE
+            summary += f", {_number(slope)} Mo par jour sur {len(points)} jours"
+            if slope >= PROCESS_GROWTH_MB_PER_DAY and total >= PROCESS_GROWTH_TOTAL_MB:
+                state = "watch"
+                items.append(
+                    {
+                        "rule": "memory_growth",
+                        "node_id": node,
+                        "equipment_id": node,
+                        "subject": f"{node}:{metric}",
+                        "title": f"{node.upper()} : {name} grossit "
+                        f"(+{_number(slope)} Mo par jour)",
+                        "detail": (
+                            f"Mémoire résidente de {name} : "
+                            f"{_number(points[0][1] / MEGABYTE)} Mo le "
+                            f"{points[0][0].isoformat()}, {_number(latest)} Mo le "
+                            f"{points[-1][0].isoformat()} (+{_number(slope)} Mo par "
+                            "jour). Un redémarrage la libère ; ce n'est pas la cause "
+                            "d'une panne, mais la mémoire de la machine finira par "
+                            "manquer."
+                        ),
+                        "since": points[0][0].isoformat(),
+                        "urgent": False,
+                        "evidence": {
+                            "process": name,
+                            "slope_mb_per_day": round(slope, 1),
+                            "days": [
+                                {"day": d.isoformat(), "mb": round(v / MEGABYTE, 1)}
+                                for d, v in points
+                            ],
+                        },
+                    }
+                )
+        nodes.append(
+            {"node_id": node, "metric": metric, "state": state, "summary": summary}
+        )
+    return nodes, items
+
+
 def memory_growth(connection: sqlite3.Connection, current: datetime) -> dict:
     series = _series(
         connection,
@@ -215,6 +304,15 @@ def memory_growth(connection: sqlite3.Connection, current: datetime) -> dict:
                     " %",
                 )
             )
+    process_nodes, process_items = process_memory(connection, current)
+    nodes += process_nodes
+    items += process_items
+    if process_nodes:
+        # Name the processes in the host-level memory alerts as well.
+        names = " ; ".join(node["summary"] for node in process_nodes)
+        for item in items:
+            if item["subject"].endswith(("memory_percent", "swap_percent")):
+                item["detail"] += f" Processus : {names}."
     return _check("memory_growth", nodes, items)
 
 

@@ -404,6 +404,11 @@ class TsunadePreventiveMonitor:
                 ("memory_percent", health.get("memory_percent")),
                 ("swap_percent", health.get("swap_percent")),
                 ("ohana_data_bytes", health.get("ohana_data_bytes")),
+                ("agent_rss_bytes", health.get("agent_rss_bytes")),
+                (
+                    "vision_rss_bytes",
+                    vision.get("rss_bytes") if isinstance(vision, dict) else None,
+                ),
                 (
                     "vision_db_bytes",
                     vision.get("database_bytes") if isinstance(vision, dict) else None,

@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.51.0] — 2026-10-25 — Maintenance préventive
+
 - Maintenance préventive : la mémoire résidente de l'Agent et de Vision est
   mesurée séparément (`VmRSS` de chaque processus, Vision la publie dans ses
   relevés) et enregistrée chaque jour. La règle `memory_growth` nomme le processus
@@ -10,6 +12,7 @@
   chaque processus. Le 25/10, la mémoire d'INFRA-01 montait de 2 points par jour
   depuis le 09/10 et un redémarrage de l'Agent et de Vision l'a ramenée de 77 % à
   44 % : il restait à savoir lequel des deux grossit.
+
 ## [1.50.0] — 2026-10-25 — Phase 10
 
 - Phase 10 : l'Agent lit les comptes rendus qu'Ohana-Installer écrit après

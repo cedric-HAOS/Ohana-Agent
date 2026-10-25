@@ -19,6 +19,9 @@ from ohana_agent.tsunade.local_time import paris_iso, to_paris
 RESTORE_OUTCOMES = ("ok", "partial", "failed")
 RESTORE_TEST_MAX_AGE_DAYS = 180
 HISTORY_LIMIT = 20
+INTEGRITY_MAX_AGE_DAYS = 14
+INTEGRITY_HISTORY_DAYS = 90
+INCONCLUSIVE = {"unreadable"}
 RULE: dict[str, str] = {
     "id": "backup_restore",
     "title": "Restauration des sauvegardes",
@@ -26,6 +29,9 @@ RULE: dict[str, str] = {
         "Une cible sauvegardée doit avoir été restaurée avec succès au moins "
         f"une fois, et au plus tard il y a {RESTORE_TEST_MAX_AGE_DAYS} jours. "
         "Un test partiel ou échoué reste signalé jusqu'à un nouveau test réussi. "
+        "L'archive la plus récente est relue depuis le remote (taille, SHA-256, "
+        "en-tête age) ; une archive altérée ou absente est urgente, un contrôle "
+        f"de plus de {INTEGRITY_MAX_AGE_DAYS} jours est signalé. "
         "Seul l'utilisateur déclare le résultat d'une restauration."
     ),
 }
@@ -46,6 +52,20 @@ CREATE TABLE IF NOT EXISTS tsunade_restore_tests (
 );
 CREATE INDEX IF NOT EXISTS tsunade_restore_tests_target
     ON tsunade_restore_tests (target, tested_at);
+CREATE TABLE IF NOT EXISTS tsunade_archive_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target TEXT NOT NULL,
+    backup_ref TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    size_bytes INTEGER,
+    expected_sha256 TEXT,
+    actual_sha256 TEXT,
+    encrypted INTEGER,
+    detail TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tsunade_archive_checks_target
+    ON tsunade_archive_checks (target, checked_at);
 """
 
 
@@ -65,6 +85,64 @@ def record_backup_success(
         (target, paris_iso(at)),
     )
     connection.commit()
+
+
+def record_archive_check(
+    connection: sqlite3.Connection,
+    *,
+    target: str,
+    backup_ref: str,
+    checked_at: datetime,
+    outcome: str,
+    size_bytes: int | None = None,
+    expected_sha256: str | None = None,
+    actual_sha256: str | None = None,
+    encrypted: bool | None = None,
+    detail: str = "",
+) -> None:
+    connection.execute(
+        """INSERT INTO tsunade_archive_checks
+        (target, backup_ref, checked_at, outcome, size_bytes, expected_sha256,
+         actual_sha256, encrypted, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            target,
+            backup_ref,
+            paris_iso(checked_at),
+            outcome,
+            size_bytes,
+            expected_sha256,
+            actual_sha256,
+            None if encrypted is None else int(encrypted),
+            detail[:300],
+        ),
+    )
+    cutoff = paris_iso(to_paris(checked_at) - timedelta(days=INTEGRITY_HISTORY_DAYS))
+    connection.execute(
+        "DELETE FROM tsunade_archive_checks WHERE checked_at < ?", (cutoff,)
+    )
+    connection.commit()
+
+
+def _check(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "backup_ref": row["backup_ref"],
+        "checked_at": paris_iso(row["checked_at"]),
+        "outcome": row["outcome"],
+        "size_bytes": row["size_bytes"],
+        "encrypted": None if row["encrypted"] is None else bool(row["encrypted"]),
+        "detail": row["detail"],
+    }
+
+
+def last_archive_check(
+    connection: sqlite3.Connection, target: str
+) -> dict[str, Any] | None:
+    row = connection.execute(
+        """SELECT * FROM tsunade_archive_checks WHERE target = ?
+        ORDER BY checked_at DESC, id DESC LIMIT 1""",
+        (target,),
+    ).fetchone()
+    return _check(row) if row else None
 
 
 def declare_restore_test(
@@ -121,7 +199,8 @@ def _test(row: sqlite3.Row) -> dict[str, Any]:
 def targets(connection: sqlite3.Connection) -> list[str]:
     rows = connection.execute(
         """SELECT target FROM tsunade_backup_runs
-        UNION SELECT target FROM tsunade_restore_tests ORDER BY target"""
+        UNION SELECT target FROM tsunade_restore_tests
+        UNION SELECT target FROM tsunade_archive_checks ORDER BY target"""
     ).fetchall()
     return [row[0] for row in rows]
 
@@ -167,6 +246,7 @@ def posture(connection: sqlite3.Connection, current: datetime) -> list[dict[str,
                     paris_iso(run["last_success_at"]) if run else None
                 ),
                 "backup_successes": run["successes"] if run else 0,
+                "integrity": last_archive_check(connection, target),
                 "last_test": last,
                 "last_verified_at": last_ok["tested_at"] if last_ok else None,
                 "history": [_test(t) for t in tests],
@@ -175,19 +255,66 @@ def posture(connection: sqlite3.Connection, current: datetime) -> list[dict[str,
     return result
 
 
+def _integrity_item(entry: dict[str, Any], current: datetime) -> dict | None:
+    """A proven archive problem is urgent; a stale check only needs a look."""
+    target, check = entry["target"], entry["integrity"]
+    if check is None:
+        return None
+    age = (current - to_paris(datetime.fromisoformat(check["checked_at"]))).days
+    if check["outcome"] == "ok":
+        if age <= INTEGRITY_MAX_AGE_DAYS:
+            return None
+        title = f"{target.upper()} : intégrité de l'archive non revérifiée"
+        detail = f"Dernier contrôle réussi il y a {age} jours."
+        urgent = False
+    elif check["outcome"] in INCONCLUSIVE:
+        title = f"{target.upper()} : archive illisible depuis le remote"
+        detail = (
+            f"Le contrôle du {check['checked_at'][:10]} n'a pas pu lire l'archive : "
+            f"{check['detail']}"
+        )
+        urgent = False
+    else:
+        title = f"{target.upper()} : archive sauvegardée altérée ou absente"
+        detail = (
+            f"Contrôle du {check['checked_at'][:10]} "
+            f"({check['backup_ref']}) : {check['detail']}"
+        )
+        urgent = True
+    return {
+        "rule": RULE["id"],
+        "node_id": target,
+        "equipment_id": target,
+        "subject": f"{target}:integrity",
+        "title": title,
+        "detail": detail,
+        "since": check["checked_at"],
+        "urgent": urgent,
+        "evidence": {
+            "backup_ref": check["backup_ref"],
+            "outcome": check["outcome"],
+            "checked_at": check["checked_at"],
+        },
+    }
+
+
 def restore_readiness(connection: sqlite3.Connection, current: datetime) -> dict:
-    """Preventive check: the targets whose restoration is not demonstrated."""
+    """Preventive check: restorations not demonstrated, archives not intact."""
+    current = to_paris(current)
     entries = posture(connection, current)
     nodes, items = [], []
     for entry in entries:
         target, state = entry["target"], entry["state"]
+        integrity = _integrity_item(entry, current)
         nodes.append(
             {
                 "node_id": target,
-                "state": "ok" if state == "verified" else "watch",
+                "state": "ok" if state == "verified" and integrity is None else "watch",
                 "summary": f"{target.upper()} : {entry['text']}",
             }
         )
+        if integrity is not None:
+            items.append(integrity)
         if state == "verified":
             continue
         last = entry["last_test"]

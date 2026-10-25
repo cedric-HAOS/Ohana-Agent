@@ -88,6 +88,8 @@ class ProductionAgent:
     host_health_runtime: HostHealthRuntime | None = None
     # Same lifecycle as host health: hourly rclone iCloud session check.
     icloud_connectivity_runtime: HostHealthRuntime | None = None
+    # Phase 10: daily independent read of the latest published backup archives.
+    archive_integrity_runtime: HostHealthRuntime | None = None
     vision_export_runtime: VisionExportRuntime | None = None
     # Phase 5: background probe of Vision's vitals, same start/stop lifecycle.
     vision_probe_runtime: VisionExportRuntime | None = None
@@ -251,6 +253,9 @@ class ProductionAgent:
         if self.icloud_connectivity_runtime is not None:
             self.icloud_connectivity_runtime.stop()
 
+        if self.archive_integrity_runtime is not None:
+            self.archive_integrity_runtime.stop()
+
         if self.vision_export_runtime is not None:
             self.vision_export_runtime.stop()
 
@@ -345,12 +350,16 @@ class ProductionAgent:
             self.host_health_runtime.start()
         if self.icloud_connectivity_runtime is not None:
             self.icloud_connectivity_runtime.start()
+        if self.archive_integrity_runtime is not None:
+            self.archive_integrity_runtime.start()
 
     def _tick_host_health(self) -> None:
         if self.host_health_runtime is not None:
             self.host_health_runtime.tick()
         if self.icloud_connectivity_runtime is not None:
             self.icloud_connectivity_runtime.tick()
+        if self.archive_integrity_runtime is not None:
+            self.archive_integrity_runtime.tick()
 
     def _start_scheduler(self) -> None:
         """Start observations, whether or not Vision has the infrastructure."""

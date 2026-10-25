@@ -2,6 +2,19 @@
 
 ## Non publié
 
+- Phase 10 : intégrité des archives publiées vérifiée indépendamment de leur
+  création. Chaque jour (première passe 30 minutes après le démarrage), l'Agent
+  relit en flux, sans rien écrire sur la microSD ni déchiffrer, l'archive la plus
+  récente de chaque cible et compare sa taille et son SHA-256 au manifeste
+  (INFRA-01) ou au fichier `.sha256` (HAOS) ; pour INFRA-01 il contrôle aussi
+  l'en-tête `age`. Une même archive n'est relue qu'une fois par semaine. Une
+  archive altérée ou absente est urgente, un remote illisible ne l'est pas, un
+  contrôle de plus de 14 jours est signalé. `POST /v1/backups/archives/verify`
+  lance un contrôle immédiat.
+- Planificateur : une tâche cron à heure fixe ne se déclenche plus deux fois dans
+  l'heure répétée du changement d'heure (la sauvegarde HA-01 du 25/10 à 02:00 a
+  été faite deux fois).
+
 ## [1.49.0] — 2026-10-25 — Restauration des sauvegardes et correctifs du changement d'heure
 
 - Changement d'heure d'automne : l'horloge des jobs est exprimée en décalage

@@ -61,3 +61,17 @@ def test_cron_trigger_interprets_configured_timezone() -> None:
 
     assert trigger.is_due(datetime(2026, 1, 1, 4, 0, tzinfo=UTC)) is True
     assert trigger.is_due(datetime(2026, 1, 1, 5, 0, tzinfo=UTC)) is False
+
+
+def test_cron_trigger_fires_once_in_the_hour_repeated_by_the_clock_change() -> None:
+    paris = ZoneInfo("Europe/Paris")
+    trigger = CronTrigger("0 2 * * *", timezone=paris)
+    first = datetime(2026, 10, 25, 0, 0, 2, tzinfo=UTC)  # 02:00 CEST
+    second = datetime(2026, 10, 25, 1, 0, 2, tzinfo=UTC)  # 02:00 CET, an hour later
+
+    assert trigger.is_due(first) is True
+    trigger.mark_executed(first)
+
+    assert trigger.is_due(second) is False
+    # The next day is a new occurrence.
+    assert trigger.is_due(datetime(2026, 10, 26, 1, 0, 2, tzinfo=UTC)) is True

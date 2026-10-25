@@ -201,3 +201,44 @@ def test_service_exposes_and_records_restoration_tests(tmp_path: Path) -> None:
             )
     finally:
         monitor.close()
+
+
+def test_service_starts_an_archive_check_on_request(tmp_path: Path) -> None:
+    from ohana_agent.api.service import AdministrationService
+    from ohana_agent.infrastructure.repository import (
+        InfrastructureConfigurationRepository,
+    )
+
+    class Reporter:
+        def __init__(self) -> None:
+            self.requests: list[str | None] = []
+
+        def request(self, target: str | None = None) -> list[str]:
+            self.requests.append(target)
+            return [target] if target else ["ha-01", "infra-01"]
+
+    monitor = TsunadePreventiveMonitor(tmp_path / "control.db")
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            tmp_path / "infrastructure.yaml"
+        ),
+        preventive_monitor=monitor,
+    )
+    try:
+        assert "backups.archives.verify" not in service.capabilities().operations
+        with pytest.raises(LookupError):
+            service.request_archive_check({})
+
+        reporter = Reporter()
+        service.archive_integrity = reporter
+        assert "backups.archives.verify" in service.capabilities().operations
+        assert service.request_archive_check({"target": " infra-01 "}) == {
+            "started": ["infra-01"],
+            "busy": False,
+        }
+        assert service.request_archive_check({})["started"] == ["ha-01", "infra-01"]
+        assert reporter.requests == ["infra-01", None]
+        with pytest.raises(ValueError, match="string"):
+            service.request_archive_check({"target": 3})
+    finally:
+        monitor.close()

@@ -47,6 +47,8 @@ from ohana_agent.observation.exporters import (
     VisionObservationOutbox,
 )
 from ohana_agent.observation.monitoring import MonitoringScheduleRegistry
+from ohana_agent.plugins.backup.archive_integrity import ArchiveIntegrityReporter
+from ohana_agent.plugins.backup.archive_verifier import ArchiveVerifier
 from ohana_agent.plugins.backup.config import BackupConfig
 from ohana_agent.plugins.backup.coordinator import BackupCoordinator
 from ohana_agent.plugins.backup.icloud_connectivity import (
@@ -332,6 +334,26 @@ def build_production_agent(
         sinks=(mqtt_home_assistant_publisher.publish_icloud_connectivity,),
     )
 
+    def record_archive_check(check: object) -> None:
+        if administration_service is None or (
+            administration_service.preventive_monitor is None
+        ):
+            return
+        administration_service.preventive_monitor.record_archive_check(check)
+
+    def last_archive_check(target: str) -> dict | None:
+        if administration_service is None or (
+            administration_service.preventive_monitor is None
+        ):
+            return None
+        return administration_service.preventive_monitor.last_archive_check(target)
+
+    archive_integrity_reporter = ArchiveIntegrityReporter(
+        ArchiveVerifier(plugins["backup"].config),
+        record=record_archive_check,
+        last_check=last_archive_check,
+    )
+
     export_handler = ObservationExportHandler(
         pipeline=ObservationExportPipeline(
             exporters=[
@@ -453,6 +475,7 @@ def build_production_agent(
 
     def update_log_source_broker(backup_config: BackupConfig, _: object) -> None:
         icloud_connectivity_reporter.update_config(backup_config)
+        archive_integrity_reporter.update_config(backup_config)
         if (
             administration_service is not None
             and administration_service.log_source_broker is not None
@@ -489,6 +512,7 @@ def build_production_agent(
         home_assistant_publisher=mqtt_home_assistant_publisher,
         host_health_runtime=host_health_reporter,
         icloud_connectivity_runtime=icloud_connectivity_reporter,
+        archive_integrity_runtime=archive_integrity_reporter,
         vision_export_runtime=vision_export_runtime,
         vision_probe_runtime=vision_probe,
         on_scheduler_activity=vitals.beater("scheduler"),
@@ -531,5 +555,6 @@ def build_production_agent(
                 ),
             )
         )
+        administration_service.archive_integrity = archive_integrity_reporter
 
     return agent

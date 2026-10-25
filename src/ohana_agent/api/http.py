@@ -606,6 +606,10 @@ def _administration_routes(
             ),
             _route("/v1/preventive/mute", _call_with_body(service.mute_preventive)),
             _route(
+                "/v1/backups/archives/verify",
+                _call_with_body(service.request_archive_check),
+            ),
+            _route(
                 "/v1/backups/restore-tests/declare",
                 _call_with_body(service.declare_restore_test),
             ),

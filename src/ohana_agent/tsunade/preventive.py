@@ -237,6 +237,26 @@ class TsunadePreventiveMonitor:
                 note=note,
             )
 
+    def record_archive_check(self, check: Any) -> None:
+        """Keep the outcome of an independent read of a published archive."""
+        with self._lock:
+            preventive_backup.record_archive_check(
+                self._connection,
+                target=check.target,
+                backup_ref=check.backup_ref,
+                checked_at=to_paris(check.checked_at),
+                outcome=check.outcome,
+                size_bytes=check.size_bytes,
+                expected_sha256=check.expected_sha256,
+                actual_sha256=check.actual_sha256,
+                encrypted=check.encrypted,
+                detail=check.detail,
+            )
+
+    def last_archive_check(self, target: str) -> dict[str, Any] | None:
+        with self._lock:
+            return preventive_backup.last_archive_check(self._connection, target)
+
     def backup_posture(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
         current = to_paris(now) if now is not None else paris_now()
         with self._lock:

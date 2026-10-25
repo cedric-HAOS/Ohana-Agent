@@ -215,6 +215,8 @@ class AdministrationService:
         self.self_report = self_report
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
+        # Phase 10: set by the bootstrap; verifies the latest published archives.
+        self.archive_integrity: Any | None = None
         self.expertise_service = expertise_service
         self._worker_cycle_lock = RLock()
         self.log_analysis_enabled = (
@@ -360,6 +362,8 @@ class AdministrationService:
                     "backups.restore_tests.declare",
                 ]
             )
+            if self.archive_integrity is not None:
+                operations.append("backups.archives.verify")
             if self._preventive_backfill_available():
                 operations.append("preventive.backfill")
         if self.companion_repository is not None:
@@ -1123,6 +1127,16 @@ class AdministrationService:
             "max_age_days": RESTORE_TEST_MAX_AGE_DAYS,
             "targets": self.preventive_monitor.backup_posture(),
         }
+
+    def request_archive_check(self, payload: dict[str, Any]) -> object:
+        """Phase 10: read the latest archive again now, in the background."""
+        if self.archive_integrity is None:
+            raise LookupError("La vérification des archives est indisponible")
+        target = payload.get("target")
+        if target is not None and not isinstance(target, str):
+            raise ValueError("target must be a string")
+        started = self.archive_integrity.request(target.strip() if target else None)
+        return {"started": started, "busy": not started}
 
     def declare_restore_test(self, payload: dict[str, Any]) -> object:
         """Keep the outcome of a restoration the owner performed for real."""

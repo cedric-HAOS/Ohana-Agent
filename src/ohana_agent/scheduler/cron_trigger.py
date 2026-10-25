@@ -49,10 +49,18 @@ class CronTrigger(BaseTrigger):
         if self.timezone is not None:
             normalized = now.astimezone(self.timezone).replace(second=0, microsecond=0)
         last_execution = self.last_executed_at
-        already_executed = (
-            last_execution is not None
-            and last_execution.replace(second=0, microsecond=0) == normalized
-        )
+        already_executed = False
+        if last_execution is not None:
+            last = last_execution.replace(second=0, microsecond=0)
+            if self.timezone is not None:
+                # Compare wall-clock minutes: a time repeated by the autumn clock
+                # change (02:00 twice) is the same cron occurrence, not a new one.
+                last = last_execution.astimezone(self.timezone).replace(
+                    second=0, microsecond=0, tzinfo=None
+                )
+                already_executed = last == normalized.replace(tzinfo=None)
+            else:
+                already_executed = last == normalized
         return self._matches(normalized) and not already_executed
 
     def _mark_executed(self, executed_at: datetime) -> None:

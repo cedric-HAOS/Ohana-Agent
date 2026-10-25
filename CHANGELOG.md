@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Maintenance préventive : règle `backup_freshness`. Une sauvegarde planifiée qui
+  n'a pas eu lieu, même sans échec ni incident (tâche perdue, horaire erroné), est
+  signalée : en retard au-delà d'un intervalle et demi de son horaire (plus 2 h),
+  urgente au-delà de trois intervalles. La dernière sauvegarde est la plus récente
+  entre un succès observé et l'horodatage de l'archive relue sur le remote.
 - Jobs distribués : les travaux d'un incident de journée (`ai.inference`,
   `logs.health_check`, `logs.investigate`) attendent le prochain lot de 05:00 au
   lieu d'expirer après 15 minutes avec Bubule éteint. Leur délai est prolongé

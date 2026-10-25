@@ -105,7 +105,10 @@ class TsunadePreventiveMonitor:
         *,
         dependency_reader: Callable[[], dict[str, dict[str, list[str]]]] | None = None,
         storage_sampler: StorageSampler | None = None,
+        schedule_reader: Callable[[], dict[str, str]] | None = None,
     ) -> None:
+        # Cron expression of each backup target, read again at each summary.
+        self._schedule_reader = schedule_reader
         # Reads this host's SD card counters; inert where there is no such card.
         self._storage = (
             storage_sampler if storage_sampler is not None else StorageSampler()
@@ -256,6 +259,14 @@ class TsunadePreventiveMonitor:
                 reference=reference,
                 note=note,
             )
+
+    def _backup_schedules(self) -> dict[str, str]:
+        if self._schedule_reader is None:
+            return {}
+        try:
+            return dict(self._schedule_reader())
+        except Exception:  # noqa: BLE001 - a broken backup file must not stop the synthesis
+            return {}
 
     def record_icloud_status(self, status: Any) -> None:
         """Keep the hourly reading of the iCloud session used by the backups."""
@@ -620,6 +631,9 @@ class TsunadePreventiveMonitor:
                 preventive_rules.ha_unavailable_entities(self._connection, current),
                 preventive_backup.restore_readiness(self._connection, current),
                 preventive_backup.icloud_readiness(self._connection, current),
+                preventive_backup.backup_freshness(
+                    self._connection, current, self._backup_schedules()
+                ),
                 self._adguard_pause.check(current),
                 preventive_rules.storage_health(self._connection, current),
             ]

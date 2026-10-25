@@ -201,6 +201,16 @@ def build_preventive_backfill_tasks(
     ]
 
 
+def _backup_schedules(config: BackupConfig) -> dict[str, str]:
+    """Cron expression of every enabled backup target, INFRA-01 included."""
+    schedules = {
+        target.id: target.schedule for target in config.targets if target.enabled
+    }
+    if config.infra_01.enabled:
+        schedules["infra-01"] = config.infra_01.schedule
+    return schedules
+
+
 def attach_administration(context: AdministrationContext) -> AdministrationService:
     """Build the administration service and its listeners onto ``context.agent``."""
     administration_config = context.configuration.administration
@@ -228,6 +238,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         dependency_reader=lambda: equipment_dependencies(
             infrastructure_repository.read()
         ),
+        schedule_reader=lambda: _backup_schedules(context.plugins["backup"].config),
     )
     release_check = ReleaseCheck()
     release_check.start()

@@ -10,11 +10,13 @@ its outcome.
 
 from __future__ import annotations
 
+import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ohana_agent.tsunade.local_time import paris_iso, to_paris
+from ohana_agent.scheduler.cron_trigger import CronTrigger
+from ohana_agent.tsunade.local_time import PARIS, paris_iso, to_paris
 
 RESTORE_OUTCOMES = ("ok", "partial", "failed")
 RESTORE_TEST_MAX_AGE_DAYS = 180
@@ -22,6 +24,19 @@ HISTORY_LIMIT = 20
 INTEGRITY_MAX_AGE_DAYS = 14
 INTEGRITY_HISTORY_DAYS = 90
 INCONCLUSIVE = {"unreadable"}
+FRESHNESS_RULE: dict[str, str] = {
+    "id": "backup_freshness",
+    "title": "Sauvegardes à l'heure",
+    "rule": (
+        "Chaque sauvegarde planifiée doit avoir réussi depuis moins d'un intervalle "
+        "et demi de son horaire (plus 2 heures de marge) : au-delà elle est "
+        "signalée en retard, au-delà de trois intervalles elle est urgente. La "
+        "dernière sauvegarde est la plus récente entre un succès observé par "
+        "l'Agent et l'horodatage de l'archive relue sur le remote."
+    ),
+}
+FRESHNESS_GRACE = timedelta(hours=2)
+ARCHIVE_STAMP = re.compile(r"^(\d{8}T\d{6}Z)")
 ICLOUD_WATCH_AFTER = timedelta(hours=3)
 # The session is checked hourly: a reading older than this says nothing.
 ICLOUD_STALE_AFTER = timedelta(hours=3)
@@ -72,6 +87,10 @@ CREATE TABLE IF NOT EXISTS tsunade_restore_tests (
 );
 CREATE INDEX IF NOT EXISTS tsunade_restore_tests_target
     ON tsunade_restore_tests (target, tested_at);
+CREATE TABLE IF NOT EXISTS tsunade_backup_seen (
+    target TEXT PRIMARY KEY,
+    first_seen TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tsunade_icloud_status (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     state TEXT NOT NULL,
@@ -114,6 +133,120 @@ def record_backup_success(
         (target, paris_iso(at)),
     )
     connection.commit()
+
+
+def schedule_gap(expression: str, current: datetime) -> timedelta | None:
+    """Time between two runs of a cron expression (daily, weekly, monthly...)."""
+    try:
+        trigger = CronTrigger(expression, timezone=PARIS)
+        first = trigger.next_run_at(current)
+        second = trigger.next_run_at(first) if first is not None else None
+    except (ValueError, TypeError):
+        return None
+    if first is None or second is None:
+        return None
+    return second.astimezone(UTC) - first.astimezone(UTC)
+
+
+def _age_text(age: timedelta) -> str:
+    hours = int(age.total_seconds() // 3600)
+    return f"{hours // 24} j {hours % 24} h" if hours >= 48 else f"{hours} h"
+
+
+def _latest_backup(connection: sqlite3.Connection, target: str) -> datetime | None:
+    """The newest evidence of a backup: an observed success or a published archive."""
+    moments: list[datetime] = []
+    run = connection.execute(
+        "SELECT last_success_at FROM tsunade_backup_runs WHERE target = ?", (target,)
+    ).fetchone()
+    if run is not None:
+        moments.append(to_paris(datetime.fromisoformat(run["last_success_at"])))
+    check = last_archive_check(connection, target)
+    match = ARCHIVE_STAMP.match(check["backup_ref"]) if check else None
+    if match is not None:
+        stamp = datetime.strptime(match.group(1), "%Y%m%dT%H%M%SZ")
+        moments.append(to_paris(stamp.replace(tzinfo=UTC)))
+    return max(moments) if moments else None
+
+
+def backup_freshness(
+    connection: sqlite3.Connection, current: datetime, schedules: dict[str, str]
+) -> dict:
+    """Preventive check: a scheduled backup that did not happen, however silently."""
+    current = to_paris(current)
+    nodes, items = [], []
+    for target in sorted(schedules):
+        gap = schedule_gap(schedules[target], current)
+        if gap is None:
+            continue
+        seen = connection.execute(
+            "SELECT first_seen FROM tsunade_backup_seen WHERE target = ?", (target,)
+        ).fetchone()
+        if seen is None:
+            connection.execute(
+                "INSERT INTO tsunade_backup_seen (target, first_seen) VALUES (?, ?)",
+                (target, paris_iso(current)),
+            )
+            connection.commit()
+            first_seen = current
+        else:
+            first_seen = to_paris(datetime.fromisoformat(seen["first_seen"]))
+        latest = _latest_backup(connection, target)
+        reference = latest or first_seen
+        age = current - reference
+        late = age > gap * 1.5 + FRESHNESS_GRACE
+        very_late = age > gap * 3
+        label = target.upper()
+        if latest is None:
+            summary = (
+                f"{label} : aucune sauvegarde observée, "
+                f"attendue tous les {_age_text(gap)}"
+            )
+            title = f"{label} : aucune sauvegarde observée depuis {_age_text(age)}"
+        else:
+            summary = f"{label} : dernière sauvegarde il y a {_age_text(age)}"
+            title = f"{label} : sauvegarde en retard (dernière il y a {_age_text(age)})"
+        nodes.append(
+            {
+                "node_id": target,
+                "state": "watch" if late else "ok",
+                "summary": summary,
+            }
+        )
+        if late:
+            items.append(
+                {
+                    "rule": FRESHNESS_RULE["id"],
+                    "node_id": target,
+                    "equipment_id": target,
+                    "subject": f"{target}:freshness",
+                    "title": title,
+                    "detail": (
+                        f"Horaire « {schedules[target]} » : une sauvegarde est "
+                        f"attendue tous les {_age_text(gap)} environ. "
+                        + (
+                            "Dernière trace le "
+                            + paris_iso(latest)[:16].replace("T", " à ")
+                            + "."
+                            if latest
+                            else "Aucune trace depuis le premier contrôle."
+                        )
+                    ),
+                    "since": paris_iso(reference),
+                    "urgent": very_late,
+                    "evidence": {
+                        "schedule": schedules[target],
+                        "expected_gap_hours": int(gap.total_seconds() // 3600),
+                        "last_backup_at": paris_iso(latest) if latest else None,
+                    },
+                }
+            )
+    return {
+        **FRESHNESS_RULE,
+        "state": ("watch" if items else ("ok" if nodes else "insufficient_data")),
+        "nodes": nodes,
+        "items": items,
+    }
 
 
 def record_icloud_status(connection: sqlite3.Connection, status: Any) -> None:

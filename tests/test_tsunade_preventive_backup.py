@@ -354,3 +354,150 @@ def test_the_service_serves_the_icloud_state_with_the_restore_tests(tmp_path) ->
         assert "secret" not in str(document)
     finally:
         monitor.close()
+
+
+def _fresh_rule(summary: dict) -> dict:
+    return next(c for c in summary["checks"] if c["id"] == "backup_freshness")
+
+
+def _scheduled(tmp_path: Path, schedules: dict[str, str]) -> TsunadePreventiveMonitor:
+    return TsunadePreventiveMonitor(
+        tmp_path / "control.db", schedule_reader=lambda: schedules
+    )
+
+
+def _late_items(summary: dict) -> list[dict]:
+    return [i for i in summary["watch"] if i["rule"] == "backup_freshness"]
+
+
+def test_a_daily_backup_made_this_morning_is_on_time(tmp_path: Path) -> None:
+    monitor = _scheduled(tmp_path, {"infra-01": "0 4 * * *"})
+    try:
+        monitor.record_backup_success("infra-01", NOW - timedelta(hours=10))
+
+        summary = monitor.summary(now=NOW)
+
+        assert _late_items(summary) == []
+        assert _fresh_rule(summary)["nodes"][0]["summary"] == (
+            "INFRA-01 : dernière sauvegarde il y a 10 h"
+        )
+    finally:
+        monitor.close()
+
+
+def test_a_daily_backup_missed_once_is_late_then_urgent(tmp_path: Path) -> None:
+    monitor = _scheduled(tmp_path, {"infra-01": "0 4 * * *"})
+    try:
+        monitor.record_backup_success("infra-01", NOW - timedelta(hours=40))
+        late = _late_items(monitor.summary(now=NOW))
+        assert late[0]["urgent"] is False
+        assert "sauvegarde en retard (dernière il y a 40 h)" in late[0]["title"]
+
+        # A success recorded earlier than the newest one never rewinds the clock.
+        monitor.record_backup_success("infra-01", NOW - timedelta(hours=10))
+        assert _late_items(monitor.summary(now=NOW)) == []
+    finally:
+        monitor.close()
+
+
+def test_three_missed_days_make_it_urgent(tmp_path: Path) -> None:
+    monitor = _scheduled(tmp_path, {"infra-01": "0 4 * * *"})
+    try:
+        monitor.record_backup_success("infra-01", NOW - timedelta(hours=80))
+
+        item = _late_items(monitor.summary(now=NOW))[0]
+
+        assert item["urgent"] is True
+        assert item["subject"] == "infra-01:freshness"
+        assert "Horaire « 0 4 * * * »" in item["detail"]
+    finally:
+        monitor.close()
+
+
+def test_a_weekly_backup_has_a_weekly_tolerance(tmp_path: Path) -> None:
+    monitor = _scheduled(tmp_path, {"ha-01": "0 2 * * 6"})
+    try:
+        monitor.record_backup_success("ha-01", NOW - timedelta(days=8))
+        assert _late_items(monitor.summary(now=NOW)) == []
+    finally:
+        monitor.close()
+
+
+def test_a_weekly_backup_missed_is_reported(tmp_path: Path) -> None:
+    monitor = _scheduled(tmp_path, {"ha-01": "0 2 * * 6"})
+    try:
+        monitor.record_backup_success("ha-01", NOW - timedelta(days=11))
+
+        item = _late_items(monitor.summary(now=NOW))[0]
+
+        assert item["urgent"] is False
+        assert "11 j" in item["title"]
+    finally:
+        monitor.close()
+
+
+def test_a_monthly_backup_is_judged_by_the_published_archive(tmp_path: Path) -> None:
+    from ohana_agent.plugins.backup.archive_verifier import ArchiveCheck
+
+    monitor = _scheduled(tmp_path, {"linky-01": "15 2 1 * *"})
+    try:
+        monitor.record_archive_check(
+            ArchiveCheck(
+                "linky-01",
+                "20261001T001500Z_2c2b2ac3",
+                "ok",
+                NOW,
+                size_bytes=1,
+                expected_sha256="0" * 64,
+                actual_sha256="0" * 64,
+            )
+        )
+
+        summary = monitor.summary(now=NOW)
+
+        # Backed up 19 days ago, a month between runs: no alert, no success seen.
+        assert _late_items(summary) == []
+        assert (
+            "dernière sauvegarde il y a 19 j"
+            in (_fresh_rule(summary)["nodes"][0]["summary"])
+        )
+    finally:
+        monitor.close()
+
+
+def test_a_target_never_seen_is_reported_after_a_full_interval(tmp_path: Path) -> None:
+    monitor = _scheduled(tmp_path, {"infra-01": "0 4 * * *"})
+    try:
+        first = monitor.summary(now=NOW)
+        assert _late_items(first) == []
+        assert "aucune sauvegarde observée" in _fresh_rule(first)["nodes"][0]["summary"]
+
+        later = monitor.summary(now=NOW + timedelta(hours=40))
+        item = _late_items(later)[0]
+
+        assert "aucune sauvegarde observée depuis 40 h" in item["title"]
+        assert "Aucune trace depuis le premier contrôle." in item["detail"]
+    finally:
+        monitor.close()
+
+
+@pytest.mark.parametrize("schedules", [{}, {"ha-01": "not a cron"}])
+def test_without_schedules_or_with_a_broken_one_nothing_is_judged(
+    tmp_path: Path, schedules: dict[str, str]
+) -> None:
+    monitor = _scheduled(tmp_path, schedules)
+    try:
+        assert _fresh_rule(monitor.summary(now=NOW))["state"] == "insufficient_data"
+    finally:
+        monitor.close()
+
+
+def test_a_failing_schedule_reader_never_breaks_the_summary(tmp_path: Path) -> None:
+    def broken() -> dict[str, str]:
+        raise RuntimeError("backup.yaml unreadable")
+
+    monitor = TsunadePreventiveMonitor(tmp_path / "control.db", schedule_reader=broken)
+    try:
+        assert _fresh_rule(monitor.summary(now=NOW))["state"] == "insufficient_data"
+    finally:
+        monitor.close()

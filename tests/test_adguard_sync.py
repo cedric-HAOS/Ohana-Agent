@@ -270,6 +270,30 @@ def test_dns_settings_match_replication_normalization(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "replica_until, expected",
+    [
+        ("2026-10-25T21:36:24.56717795+01:00", []),
+        ("2026-10-25T21:36:13.143497714+01:00", []),
+        ("2026-10-25T21:41:13.143497714+01:00", ["dns.server_config"]),
+        (None, ["dns.server_config"]),
+        ("not-a-date", ["dns.server_config"]),
+    ],
+)
+def test_protection_pause_end_is_compared_with_replication_tolerance(
+    tmp_path, monkeypatch, replica_until, expected
+):
+    origin = responses()
+    origin["dns_info"]["protection_disabled_until"] = (
+        "2026-10-25T21:36:13.143497714+01:00"
+    )
+    replica = deepcopy(origin)
+    replica["dns_info"]["protection_disabled_until"] = replica_until
+    mock_api(monkeypatch, origin, replica)
+    result = AdGuardSnapshotProbe().inspect(settings_file(tmp_path))
+    assert result["different_sections"] == expected
+
+
+@pytest.mark.parametrize(
     "change",
     [
         lambda document: document["features"]["dhcp"].update(serverConfig=True),

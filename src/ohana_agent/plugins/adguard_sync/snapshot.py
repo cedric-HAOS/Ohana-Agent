@@ -5,6 +5,7 @@ Replication contract: bakito/adguardhome-sync internal/sync/action-general.go.
 """
 
 import json
+from datetime import datetime, timedelta
 from ipaddress import ip_address
 from time import monotonic
 from typing import Any
@@ -103,6 +104,24 @@ def _features(document: dict[str, Any]) -> dict[str, Any]:
     return flags
 
 
+# A temporary protection pause is replicated as a duration, so each instance
+# computes its own end instant a few seconds apart.
+PROTECTION_PAUSE_TOLERANCE_SECONDS = 120
+
+
+def _align_protection_pause(origin: dict[str, Any], replica: dict[str, Any]) -> None:
+    field = "protection_disabled_until"
+    try:
+        gap = abs(
+            datetime.fromisoformat(origin[field])
+            - datetime.fromisoformat(replica[field])
+        )
+    except (KeyError, TypeError, ValueError):
+        return
+    if gap <= timedelta(seconds=PROTECTION_PAUSE_TOLERANCE_SECONDS):
+        replica[field] = origin[field]
+
+
 class AdGuardSnapshotProbe:
     def _configuration(
         self, settings: AdGuardSyncPluginConfig
@@ -144,6 +163,7 @@ class AdGuardSnapshotProbe:
         ):
             # adguardhome-sync deliberately disables this on the replica.
             origin_dns["use_private_ptr_resolvers"] = False
+        _align_protection_pause(origin_dns, snapshots[1].get("dns.server_config", {}))
         if not snapshots[0]:
             raise ValueError("No replicated sections selected")
         differences = [

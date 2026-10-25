@@ -87,6 +87,7 @@ from ohana_agent.tsunade.incidents import (
 )
 from ohana_agent.tsunade.investigations import InvestigationExecutor
 from ohana_agent.tsunade.preventive import TsunadePreventiveMonitor
+from ohana_agent.tsunade.restore_reports import REPORT_DIRECTORY
 
 LOGGER = logging.getLogger(__name__)
 
@@ -239,6 +240,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
             infrastructure_repository.read()
         ),
         schedule_reader=lambda: _backup_schedules(context.plugins["backup"].config),
+        restore_report_directory=REPORT_DIRECTORY,
     )
     release_check = ReleaseCheck()
     release_check.start()

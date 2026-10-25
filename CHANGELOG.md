@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Phase 10 : l'Agent lit les comptes rendus qu'Ohana-Installer écrit après
+  `ohana restore` (`/var/lib/ohana-installer/restore-reports`, JSON sans secret,
+  lus au plus une fois par minute et une seule fois chacun). Une restauration
+  d'INFRA-01 réussie, partielle ou échouée entre dans le registre des
+  restaurations, marquée « Installer » avec l'étape atteinte ; partielle ou
+  échouée, elle est urgente. Un fichier illisible, trop gros ou d'un autre schéma
+  est ignoré.
 - Télémétrie Home Assistant : une valeur en retard n'ouvre plus d'incident au
   premier relevé. Elle doit l'être deux contrôles de suite (état `UNKNOWN` au
   premier, avec `stale_readings` et un message explicite). 11 des 14 incidents de

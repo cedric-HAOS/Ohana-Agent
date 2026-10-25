@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS tsunade_restore_tests (
 );
 CREATE INDEX IF NOT EXISTS tsunade_restore_tests_target
     ON tsunade_restore_tests (target, tested_at);
+CREATE TABLE IF NOT EXISTS tsunade_restore_reports (
+    report_id TEXT PRIMARY KEY,
+    ingested_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tsunade_backup_seen (
     target TEXT PRIMARY KEY,
     first_seen TEXT NOT NULL
@@ -119,6 +123,15 @@ CREATE INDEX IF NOT EXISTS tsunade_archive_checks_target
 
 def install(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA)
+    columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(tsunade_restore_tests)")
+    }
+    if "source" not in columns:
+        # Tests are declared by the user, or reported by Ohana-Installer.
+        connection.execute(
+            "ALTER TABLE tsunade_restore_tests "
+            "ADD COLUMN source TEXT NOT NULL DEFAULT 'user'"
+        )
 
 
 def record_backup_success(
@@ -427,6 +440,7 @@ def declare_restore_test(
     declared_at: datetime,
     reference: str = "",
     note: str = "",
+    source: str = "user",
 ) -> dict[str, Any]:
     target = target.strip().lower()
     if not target or len(target) > 64:
@@ -439,8 +453,8 @@ def declare_restore_test(
         raise ValueError("a partial or failed restoration needs a note")
     cursor = connection.execute(
         """INSERT INTO tsunade_restore_tests
-        (target, tested_at, outcome, reference, note, declared_at)
-        VALUES (?, ?, ?, ?, ?, ?)""",
+        (target, tested_at, outcome, reference, note, declared_at, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             target,
             paris_iso(tested_at),
@@ -448,6 +462,7 @@ def declare_restore_test(
             reference.strip()[:200],
             note.strip()[:1000],
             paris_iso(declared_at),
+            source,
         ),
     )
     connection.commit()
@@ -466,6 +481,7 @@ def _test(row: sqlite3.Row) -> dict[str, Any]:
         "reference": row["reference"],
         "note": row["note"],
         "declared_at": paris_iso(row["declared_at"]),
+        "source": row["source"],
     }
 
 

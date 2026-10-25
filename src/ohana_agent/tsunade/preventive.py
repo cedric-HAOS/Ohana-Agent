@@ -26,6 +26,7 @@ from ohana_agent.observation.observation_status import ObservationStatus
 from ohana_agent.tsunade import preventive_backup, preventive_rules
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.preventive_adguard import AdGuardPauseTracker
+from ohana_agent.tsunade.restore_reports import read_reports
 from ohana_agent.tsunade.storage_health import StorageSampler
 
 LOGGER = logging.getLogger(__name__)
@@ -106,7 +107,13 @@ class TsunadePreventiveMonitor:
         dependency_reader: Callable[[], dict[str, dict[str, list[str]]]] | None = None,
         storage_sampler: StorageSampler | None = None,
         schedule_reader: Callable[[], dict[str, str]] | None = None,
+        restore_report_directory: Path | str | None = None,
     ) -> None:
+        # Where Ohana-Installer leaves a report after ``ohana restore``.
+        self._restore_report_directory = (
+            Path(restore_report_directory) if restore_report_directory else None
+        )
+        self._reports_read_at: datetime | None = None
         # Cron expression of each backup target, read again at each summary.
         self._schedule_reader = schedule_reader
         # Reads this host's SD card counters; inert where there is no such card.
@@ -260,6 +267,51 @@ class TsunadePreventiveMonitor:
                 note=note,
             )
 
+    def _ingest_restore_reports(self, current: datetime) -> None:
+        """Enter the restorations Ohana-Installer reports, once each."""
+        if self._restore_report_directory is None:
+            return
+        if (
+            self._reports_read_at is not None
+            and current - self._reports_read_at < timedelta(seconds=60)
+        ):
+            return
+        self._reports_read_at = current
+        for report in read_reports(self._restore_report_directory):
+            known = self._connection.execute(
+                "SELECT 1 FROM tsunade_restore_reports WHERE report_id = ?",
+                (report["report_id"],),
+            ).fetchone()
+            if known is not None:
+                continue
+            note = (
+                f"Rapport d'Ohana-Installer ({report['mode']}, étape "
+                f"{report['stage_label']}) : "
+                f"{report['detail'] or 'sans détail'}"
+            )
+            try:
+                preventive_backup.declare_restore_test(
+                    self._connection,
+                    target=report["target"],
+                    outcome=report["outcome"],
+                    # A machine clock ahead of this one must not refuse the report.
+                    tested_at=min(to_paris(report["finished_at"]), current),
+                    declared_at=current,
+                    reference=report["backup_id"],
+                    note=note,
+                    source="installer",
+                )
+            except ValueError:
+                LOGGER.warning(
+                    "Ignoring invalid restore report %s", report["report_id"]
+                )
+            self._connection.execute(
+                "INSERT OR IGNORE INTO tsunade_restore_reports "
+                "(report_id, ingested_at) VALUES (?, ?)",
+                (report["report_id"], paris_iso(current)),
+            )
+            self._connection.commit()
+
     def _backup_schedules(self) -> dict[str, str]:
         if self._schedule_reader is None:
             return {}
@@ -300,6 +352,7 @@ class TsunadePreventiveMonitor:
     def backup_posture(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
         current = to_paris(now) if now is not None else paris_now()
         with self._lock:
+            self._ingest_restore_reports(current)
             return preventive_backup.posture(self._connection, current)
 
     def record_metric(self, node: str, metric: str, value: float, at: datetime) -> None:
@@ -621,6 +674,7 @@ class TsunadePreventiveMonitor:
         current = to_paris(now) if now is not None else paris_now()
         with self._lock:
             self._flush(current)
+            self._ingest_restore_reports(current)
             checks = [
                 self._disk_growth(current),
                 self._repeated_reboots(current),

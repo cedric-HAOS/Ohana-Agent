@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError
@@ -692,9 +693,16 @@ def test_access_log_keeps_successful_requests_out_of_the_journal(
     with pytest.raises(HTTPError):
         request_json(administration_server, "/v1/capabilities", token="wrong")
 
-    access = [
-        record for record in caplog.records if record.name == "ohana_agent.api.http"
-    ]
+    def access_records() -> list[logging.LogRecord]:
+        return [
+            record for record in caplog.records if record.name == "ohana_agent.api.http"
+        ]
+
+    # The access log line is written by the server thread just after the reply.
+    deadline = time.monotonic() + 5
+    while not access_records() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    access = access_records()
     messages = [record.getMessage() for record in access]
     assert len(access) == 1
     assert access[0].levelno == logging.INFO

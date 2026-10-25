@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
@@ -28,19 +28,14 @@ from ohana_agent.contracts.administration import (
     TrendsHistoryBackfillParameters,
     TrendsHistoryBackfillResult,
 )
+from ohana_agent.tsunade.local_time import paris_instant as _paris_instant
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
 
 
 def paris_instant(value: datetime) -> datetime:
-    """Express an instant in Paris time with a fixed offset.
-
-    Arithmetic on a ``ZoneInfo`` datetime is wall-clock arithmetic and drops
-    ``fold``: in the repeated hour of the autumn change, ``now + 5 minutes``
-    lands an hour in the past, and such values never equal another zone's.
-    """
-    offset = value.astimezone(LOCAL_TIMEZONE).utcoffset()
-    return value.astimezone(timezone(offset))  # type: ignore[arg-type]
+    """Paris time with a fixed offset: exact sums and differences (see local_time)."""
+    return _paris_instant(value)
 
 
 TERMINAL_STATUSES = {

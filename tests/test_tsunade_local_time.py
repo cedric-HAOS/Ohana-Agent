@@ -110,3 +110,33 @@ def test_log_check_summary_reports_findings_not_ko() -> None:
         {"status": "OK", "sources": [{**source, "truncated": True, "findings": []}]}
     ).endswith("aucune anomalie, collecte incomplète")
     assert "KO" not in log_check_summary({})
+
+
+def test_paris_differences_are_exact_across_the_autumn_clock_change() -> None:
+    from ohana_agent.tsunade.local_time import paris_now, to_paris
+
+    first_pass = to_paris(datetime(2026, 10, 25, 0, 30, tzinfo=UTC))  # 02:30 CEST
+    second_pass = to_paris(datetime(2026, 10, 25, 1, 30, tzinfo=UTC))  # 02:30 CET
+
+    assert first_pass.isoformat() == "2026-10-25T02:30:00+02:00"
+    assert second_pass.isoformat() == "2026-10-25T02:30:00+01:00"
+    # Same wall-clock time, one real hour apart.
+    assert second_pass - first_pass == timedelta(hours=1)
+    assert first_pass + timedelta(hours=1) == second_pass
+    assert second_pass == datetime(2026, 10, 25, 1, 30, tzinfo=UTC)
+    assert to_paris(datetime(2026, 10, 25, 1, 0, 2, tzinfo=UTC)) + timedelta(
+        minutes=5
+    ) > to_paris(datetime(2026, 10, 25, 1, 0, 2, tzinfo=UTC))
+    assert paris_now().utcoffset() in {timedelta(hours=1), timedelta(hours=2)}
+
+
+def test_paris_differences_are_exact_across_the_spring_clock_change() -> None:
+    from ohana_agent.tsunade.local_time import to_paris
+
+    before = to_paris(datetime(2027, 3, 28, 0, 59, tzinfo=UTC))  # 01:59 CET
+    after = before + timedelta(minutes=2)
+
+    assert before.isoformat() == "2027-03-28T01:59:00+01:00"
+    assert after - before == timedelta(minutes=2)
+    # The sum is the right instant; to_paris puts the right Paris label on it.
+    assert to_paris(after).isoformat() == "2027-03-28T03:01:00+02:00"

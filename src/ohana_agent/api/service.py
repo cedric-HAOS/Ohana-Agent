@@ -72,7 +72,7 @@ from ohana_agent.tsunade.investigations import (
     InvestigationRequest,
     investigation_summary,
 )
-from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
+from ohana_agent.tsunade.local_time import PARIS, paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.preventive import TsunadePreventiveMonitor
 from ohana_agent.tsunade.preventive_backup import RESTORE_TEST_MAX_AGE_DAYS
 from ohana_agent.tsunade.repair_catalog import eligible_repair, repair_spec
@@ -1244,7 +1244,10 @@ class AdministrationService:
                 hours=24
             ):
                 return None
-        midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+        # A Paris calendar day: the offset of midnight, not of now, applies.
+        midnight = current.astimezone(PARIS).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         return self.create_job(
             {
                 "protocol_version": 1,

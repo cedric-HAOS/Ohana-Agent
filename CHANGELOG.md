@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Changements d'heure : `to_paris()` et `paris_now()` renvoient des heures de Paris à
+  décalage fixe, pour que toute somme ou différence de Tsunade soit exacte (une
+  différence entre deux heures `ZoneInfo` ignore le changement d'heure ; un jour
+  de 23 ou 25 heures décalait âges, délais et fenêtres d'une heure). L'affichage
+  ne change pas. Le jour de Paris du rattrapage préventif utilise le décalage de
+  minuit, pas celui de l'instant. Le test du journal d'accès ne dépend plus d'une
+  course entre le serveur et l'assertion.
 - Maintenance préventive : règle `backup_freshness`. Une sauvegarde planifiée qui
   n'a pas eu lieu, même sans échec ni incident (tâche perdue, horaire erroné), est
   signalée : en retard au-delà d'un intervalle et demi de son horaire (plus 2 h),

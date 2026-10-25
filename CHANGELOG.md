@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.50.0] — 2026-10-25 — Phase 10
+
 - Phase 10 : l'Agent lit les comptes rendus qu'Ohana-Installer écrit après
   `ohana restore` (`/var/lib/ohana-installer/restore-reports`, JSON sans secret,
   lus au plus une fois par minute et une seule fois chacun). Une restauration

@@ -72,6 +72,7 @@ from ohana_agent.tsunade.investigations import (
 )
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.preventive import TsunadePreventiveMonitor
+from ohana_agent.tsunade.preventive_backup import RESTORE_TEST_MAX_AGE_DAYS
 from ohana_agent.tsunade.repair_catalog import eligible_repair, repair_spec
 
 LOGGER = logging.getLogger(__name__)
@@ -351,7 +352,14 @@ class AdministrationService:
         if self.self_report is not None:
             operations.append("agent.vitals.read")
         if self.preventive_monitor is not None:
-            operations.extend(["preventive.read", "preventive.mute"])
+            operations.extend(
+                [
+                    "preventive.read",
+                    "preventive.mute",
+                    "backups.restore_tests.read",
+                    "backups.restore_tests.declare",
+                ]
+            )
             if self._preventive_backfill_available():
                 operations.append("preventive.backfill")
         if self.companion_repository is not None:
@@ -1103,6 +1111,37 @@ class AdministrationService:
             raise LookupError("La maintenance préventive est indisponible")
         return self.preventive_monitor.unmute(
             str(payload.get("rule", "")), str(payload.get("subject", ""))
+        )
+
+    def read_restore_tests(self) -> object:
+        """Phase 10: backup targets and the restoration tests declared for them."""
+        if self.preventive_monitor is None:
+            raise LookupError("La maintenance préventive est indisponible")
+        return {
+            "schema_version": 1,
+            "generated_at": paris_iso(paris_now()),
+            "max_age_days": RESTORE_TEST_MAX_AGE_DAYS,
+            "targets": self.preventive_monitor.backup_posture(),
+        }
+
+    def declare_restore_test(self, payload: dict[str, Any]) -> object:
+        """Keep the outcome of a restoration the owner performed for real."""
+        if self.preventive_monitor is None:
+            raise LookupError("La maintenance préventive est indisponible")
+        tested_at = payload.get("tested_at")
+        if tested_at is not None:
+            try:
+                tested_at = datetime.fromisoformat(str(tested_at))
+            except ValueError as error:
+                raise ValueError("tested_at must be an ISO 8601 date") from error
+            if tested_at.tzinfo is None:
+                tested_at = tested_at.replace(tzinfo=LOCAL_TIMEZONE)
+        return self.preventive_monitor.declare_restore_test(
+            target=str(payload.get("target", "")),
+            outcome=str(payload.get("outcome", "")),
+            tested_at=tested_at,
+            reference=str(payload.get("reference", "")),
+            note=str(payload.get("note", "")),
         )
 
     def read_preventive_summary(self) -> object:

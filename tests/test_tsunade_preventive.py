@@ -301,6 +301,7 @@ def test_agent_serves_the_detail_and_shizune_gets_only_the_essential(
         "response_time",
         "log_errors_growth",
         "ha_unavailable_entities",
+        "backup_restore",
     ]
     essential = service.read_companion_summary()["preventive"]
     assert essential["status"] == "watch"

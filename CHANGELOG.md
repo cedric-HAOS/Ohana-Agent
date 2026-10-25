@@ -13,6 +13,13 @@
   (tolérance de 120 s).
 - Test `test_tsunade_local_time` indépendant du jour d'exécution (heure d'été ou
   d'hiver).
+- Phase 10 : règle préventive `backup_restore`. Une cible sauvegardée
+  (observations `backup.run` réussies) sans restauration déclarée est signalée
+  « jamais testée » ; un dernier test partiel ou échoué est urgent ; un dernier
+  test réussi de plus de 180 jours est « ancien ». Le résultat d'une
+  restauration est déclaré par l'utilisateur (`POST
+  /v1/backups/restore-tests/declare`, lecture `GET /v1/backups/restore-tests`),
+  conservé avec sa date et sa référence, jamais déduit.
 
 
 ## [1.48.0] — 2026-10-10 — Supervision AdGuard centrée sur la réplication

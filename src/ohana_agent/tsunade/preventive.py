@@ -23,7 +23,7 @@ from typing import Any
 
 from ohana_agent.observation.observation import Observation
 from ohana_agent.observation.observation_status import ObservationStatus
-from ohana_agent.tsunade import preventive_rules
+from ohana_agent.tsunade import preventive_backup, preventive_rules
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 
 LOGGER = logging.getLogger(__name__)
@@ -165,6 +165,7 @@ class TsunadePreventiveMonitor:
                 PRIMARY KEY (rule, subject)
             )"""
         )
+        preventive_backup.install(self._connection)
         self._connection.commit()
         # Pending daily aggregates: written every FLUSH_INTERVAL, not per
         # sample, because INFRA-01 writes to a slow SD card every minute.
@@ -191,6 +192,12 @@ class TsunadePreventiveMonitor:
 
     def record_observation(self, observation: Observation) -> None:
         """Daily response time of successful DNS, MQTT and network checks."""
+        if (
+            observation.capability == "backup.run"
+            and observation.status is ObservationStatus.HEALTHY
+        ):
+            self.record_backup_success(str(observation.node), observation.timestamp)
+            return
         latency = observation.latency_ms
         if (
             observation.capability not in preventive_rules.LATENCY_CAPABILITIES
@@ -203,6 +210,37 @@ class TsunadePreventiveMonitor:
         self.record_metric(
             str(observation.node), metric, float(latency), observation.timestamp
         )
+
+    def record_backup_success(self, target: str, at: datetime) -> None:
+        with self._lock:
+            preventive_backup.record_backup_success(self._connection, target, at)
+
+    def declare_restore_test(
+        self,
+        *,
+        target: str,
+        outcome: str,
+        tested_at: datetime | None = None,
+        reference: str = "",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Keep the result of a restoration the owner really performed."""
+        declared_at = paris_now()
+        with self._lock:
+            return preventive_backup.declare_restore_test(
+                self._connection,
+                target=target,
+                outcome=outcome,
+                tested_at=to_paris(tested_at) if tested_at else declared_at,
+                declared_at=declared_at,
+                reference=reference,
+                note=note,
+            )
+
+    def backup_posture(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
+        current = to_paris(now) if now is not None else paris_now()
+        with self._lock:
+            return preventive_backup.posture(self._connection, current)
 
     def record_metric(self, node: str, metric: str, value: float, at: datetime) -> None:
         observed_at = to_paris(at)
@@ -518,6 +556,7 @@ class TsunadePreventiveMonitor:
                 preventive_rules.response_time(self._connection, current),
                 preventive_rules.log_errors_growth(self._connection, current),
                 preventive_rules.ha_unavailable_entities(self._connection, current),
+                preventive_backup.restore_readiness(self._connection, current),
             ]
             active_incidents = self._active_incidents()
             mutes = self._active_mutes(current)

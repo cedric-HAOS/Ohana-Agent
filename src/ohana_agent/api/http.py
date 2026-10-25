@@ -540,6 +540,7 @@ def _administration_routes(
             _route("/v1/investigations", _call(service.list_investigations)),
             _route("/v1/experiences", _call(service.list_experiences)),
             _route("/v1/preventive", _call(service.read_preventive_summary)),
+            _route("/v1/backups/restore-tests", _call(service.read_restore_tests)),
             _route("/v1/vitals", _call(service.read_agent_vitals)),
             _route("/v1/incidents/timeline", _call(service.read_incident_timeline)),
             _route("/v1/repairs/statistics", _call(service.read_repair_statistics)),
@@ -604,6 +605,10 @@ def _administration_routes(
                 _call(service.request_preventive_backfill),
             ),
             _route("/v1/preventive/mute", _call_with_body(service.mute_preventive)),
+            _route(
+                "/v1/backups/restore-tests/declare",
+                _call_with_body(service.declare_restore_test),
+            ),
             _route(
                 "/v1/incidents/history",
                 _call_with_body(service.search_incident_history),

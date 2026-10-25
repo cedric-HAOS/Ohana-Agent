@@ -2,6 +2,13 @@
 
 ## Non publié
 
+- Jobs distribués : un travail qu'aucun worker n'a jamais pris avant son échéance
+  (Bubule éteint hors de la fenêtre de réveil de 05:00) reste en `TIMEOUT` mais
+  porte maintenant l'erreur `worker.unavailable` et l'événement « no worker
+  claimed the job before its timeout », au lieu du message d'un travail en cours
+  qui dépasse son délai. Du 11 au 24/10, 34 jobs `ai.inference` et
+  `logs.health_check` créés par des incidents en journée ont expiré ainsi ; aucun
+  n'avait été pris (tentative 0).
 - Phase 10 : l'état de la session iCloud (contrôle horaire de rclone) est conservé
   par Tsunade avec la date depuis laquelle il dure, servi avec les restaurations
   (`GET /v1/backups/restore-tests`, champ `icloud`) et suivi par la règle

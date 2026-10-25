@@ -174,3 +174,32 @@ def test_the_attempt_limit_is_configurable_and_bounded(
         assert repository.get(JOB_ID).status == DistributedJobStatus.FAILED
     finally:
         repository.close()
+
+
+def test_a_job_no_worker_ever_took_expires_as_worker_unavailable(
+    repository: DistributedJobRepository, clock: Clock
+) -> None:
+    _queue(repository, clock, "system.health")
+
+    clock.now += timedelta(hours=6, seconds=1)
+    expired = repository.get(JOB_ID)
+
+    assert expired.status == DistributedJobStatus.TIMEOUT
+    assert expired.error is not None
+    assert expired.error.code == "worker.unavailable"
+    assert "Bubule éteint" in expired.error.message
+    assert "no worker claimed the job before its timeout" in _events(repository)
+
+
+def test_a_job_that_ran_out_of_time_keeps_the_generic_timeout(
+    repository: DistributedJobRepository, clock: Clock
+) -> None:
+    _queue(repository, clock, "system.health")
+    assert _claim(repository, "system.health").job is not None
+
+    clock.now += timedelta(hours=6, seconds=1)
+    expired = repository.get(JOB_ID)
+
+    assert expired.status == DistributedJobStatus.TIMEOUT
+    assert expired.error is None
+    assert "job timeout elapsed" in _events(repository)

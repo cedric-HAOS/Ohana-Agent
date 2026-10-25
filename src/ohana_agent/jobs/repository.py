@@ -642,13 +642,32 @@ class DistributedJobRepository(
         for row in rows:
             current = DistributedJobStatus(row["status"])
             if self._deadline(row) <= now:
+                # Never claimed: the worker was off or unreachable the whole time,
+                # which is not a job that ran out of time.
+                unclaimed = int(row["attempt"]) == 0
                 self._transition_locked(
                     row,
                     DistributedJobStatus.TIMEOUT,
                     now,
-                    detail="job timeout elapsed",
+                    detail=(
+                        "no worker claimed the job before its timeout"
+                        if unclaimed
+                        else "job timeout elapsed"
+                    ),
                     finished_at=now,
                     clear_lease=True,
+                    error=(
+                        {
+                            "code": "worker.unavailable",
+                            "message": (
+                                "Aucun worker Katsuyu n'a pris ce travail avant son "
+                                "échéance (Bubule éteint ou injoignable)."
+                            ),
+                            "retryable": True,
+                        }
+                        if unclaimed
+                        else None
+                    ),
                 )
                 continue
             if (

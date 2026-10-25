@@ -139,12 +139,13 @@ def test_configure_logging_accepts_lowercase_level() -> None:
     assert logging.getLogger().level == logging.DEBUG
 
 
-def test_configure_logging_quiets_zwave_client_outside_debug() -> None:
+@pytest.mark.parametrize("name", ["zwave_js_server", "httpx", "httpcore"])
+def test_configure_logging_quiets_chatty_clients_outside_debug(name: str) -> None:
     configure_logging("INFO")
-    assert logging.getLogger("zwave_js_server").level == logging.WARNING
+    assert logging.getLogger(name).level == logging.WARNING
 
     configure_logging("DEBUG")
-    assert logging.getLogger("zwave_js_server").level == logging.DEBUG
+    assert logging.getLogger(name).level == logging.DEBUG
 
 
 def test_configure_logging_rejects_unknown_level() -> None:

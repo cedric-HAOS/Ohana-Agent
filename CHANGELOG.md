@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.49.0] — 2026-10-25 — Restauration des sauvegardes et correctifs du changement d'heure
+
 - Changement d'heure d'automne : l'horloge des jobs est exprimée en décalage
   fixe, car l'arithmétique `ZoneInfo` perd `fold` et refusait un job « créé dans
   le futur » pendant l'heure répétée (la sauvegarde HA-01 de 02:00 le 25/10 a

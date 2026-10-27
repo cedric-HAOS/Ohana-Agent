@@ -214,6 +214,13 @@ class TsunadeRepairDecisionRequest(AdministrationModel):
     answered_by: str = Field(default="utilisateur", min_length=1, max_length=120)
 
 
+class TsunadeLogWindowExtensionRequest(AdministrationModel):
+    """One explicit click extending a finished log follow-up to 24 hours."""
+
+    source: ValidationSource
+    authorized_by: str = Field(default="utilisateur", min_length=1, max_length=120)
+
+
 class TsunadeExperienceConfirmationRequest(AdministrationModel):
     confirm: Literal[True]
     source: ValidationSource

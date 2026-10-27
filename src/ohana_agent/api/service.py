@@ -57,6 +57,7 @@ from ohana_agent.tsunade.expertise_catalog import (
 from ohana_agent.tsunade.followups import TsunadeFollowupService
 from ohana_agent.tsunade.incident_models import (
     TsunadeIncident,
+    TsunadeLogWindowExtensionRequest,
     TsunadeRepairDecisionRequest,
     TsunadeRepairProposalRequest,
 )
@@ -1538,6 +1539,18 @@ class AdministrationService:
             },
         )
         return job
+
+    def extend_log_investigation_window(
+        self, incident_id: str, payload: dict[str, Any]
+    ) -> object:
+        """Authorize the finished log follow-up again over the previous 24 hours."""
+        if self.followups is None:
+            raise LookupError("Les investigations complémentaires sont indisponibles")
+        request = TsunadeLogWindowExtensionRequest.model_validate(payload)
+        with self._worker_cycle_lock:
+            return self.followups.extend_window(
+                incident_id, request.source, request.authorized_by
+            )
 
     def list_investigations(self) -> object:
         if self.investigation_executor is None:

@@ -51,6 +51,8 @@ class FollowupPersistence:
         plan = redact_sensitive_value(plan)
         now = datetime.now(ZoneInfo("Europe/Paris"))
         request_id = str(uuid4())
+        window_hours = int(plan.get("window_hours", 2))
+        window = "deux heures" if window_hours == 2 else f"{window_hours} heures"
         with self._lock, self._connection:
             incident = self._connection.execute(
                 "SELECT ended_at FROM tsunade_incidents WHERE incident_id=?",
@@ -91,7 +93,7 @@ class FollowupPersistence:
                     plan["reason"],
                     f"Autoriser une collecte ciblée des journaux de {plan['source']} ? "
                     f"Motif recherché : « {plan['pattern']} ». "
-                    f"Fenêtre de deux heures, au plus {plan['max_bytes'] // 1024} Kio "
+                    f"Fenêtre de {window}, au plus {plan['max_bytes'] // 1024} Kio "
                     "lus, sans modification du système.",
                     json.dumps(["AUTHORIZE", "REFUSE", "LATER"]),
                     now.isoformat(),
@@ -167,8 +169,10 @@ class FollowupPersistence:
         job: dict[str, Any] | None,
         *,
         automatic: bool = False,
+        source: str = "shizune",
     ) -> dict[str, Any]:
         now = datetime.now(ZoneInfo("Europe/Paris"))
+        answer_source = "read_only_policy" if automatic else source
         if choice not in {"AUTHORIZE", "REFUSE"}:
             raise ValueError("Cette réponse n’est pas valable pour l’investigation")
         safe_job = redact_sensitive_value(job) if job is not None else None
@@ -201,7 +205,7 @@ class FollowupPersistence:
                 (
                     now.isoformat(),
                     choice,
-                    "read_only_policy" if automatic else "shizune",
+                    answer_source,
                     device_id,
                     request_id,
                 ),
@@ -214,7 +218,8 @@ class FollowupPersistence:
                     (
                         "Investigation en lecture seule autorisée par la politique."
                         if automatic
-                        else "Collecte complémentaire autorisée depuis Shizune."
+                        else "Collecte complémentaire autorisée depuis "
+                        f"{'Vision' if answer_source == 'vision' else 'Shizune'}."
                     )
                     if choice == "AUTHORIZE"
                     else "Collecte complémentaire refusée."
@@ -222,7 +227,7 @@ class FollowupPersistence:
                 payload={
                     "request_id": request_id,
                     "authorized": choice == "AUTHORIZE",
-                    "source": "read_only_policy" if automatic else "shizune",
+                    "source": answer_source,
                     "answered_by": device_id,
                 },
             )

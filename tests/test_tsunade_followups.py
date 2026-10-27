@@ -613,6 +613,214 @@ def test_authorized_collection_is_reviewed_once_and_does_not_loop(
     )
 
 
+def exhausted(s):
+    """Run one authorized 2-hour cycle until Tsunade has nothing more to offer."""
+    propose(s)
+    authorize(s)
+    collected(s)
+    review = poll(s)
+    s.service.complete_job(
+        str(review.job_id),
+        {
+            "worker_id": "worker",
+            "attempt": review.attempt,
+            "status": "SUCCEEDED",
+            "result": ai_result(incomplete=True),
+        },
+    )
+    assert poll(s) is None
+    incident = s.incidents.get(s.incident.incident_id)
+    assert incident_assessment(incident)["state"] == "investigation_exhausted"
+
+
+def extend(s, **overrides):
+    payload = {"source": "vision", "authorized_by": "utilisateur Vision", **overrides}
+    return s.service.extend_log_investigation_window(
+        str(s.incident.incident_id), payload
+    )
+
+
+def test_exhausted_followup_can_be_extended_once_to_24_hours(setup):
+    s = setup
+    exhausted(s)
+    first = s.incidents.get(s.incident.incident_id).followup
+    assert first["plan"].get("window_hours") is None
+    before = incident_assessment(s.incidents.get(s.incident.incident_id))["followup"]
+    assert before["window_hours"] == 2
+    assert before["window_extension_available"] is True
+
+    extend(s)
+
+    job = poll(s)
+    assert job.type == "logs.investigate"
+    window = datetime.fromisoformat(
+        job.parameters["window_ended_at"]
+    ) - datetime.fromisoformat(job.parameters["window_started_at"])
+    assert window == timedelta(hours=24)
+    assert job.parameters["pattern"] == first["plan"]["pattern"]
+    assert job.parameters["source"] == first["plan"]["source"]
+    assert job.parameters["max_bytes"] == first["plan"]["max_bytes"]
+    assert job.parameters["max_bytes"] == s.service.log_max_bytes
+    incident = s.incidents.get(s.incident.incident_id)
+    request = s.incidents.get_user_request(incident.followup["request_id"])
+    assert request.answer == "AUTHORIZE"
+    assert request.answer_source == "vision"
+    assert request.answered_by == "utilisateur Vision"
+    assert "24 heures" in request.question
+    assert s.service.read_companion_requests().requests == []
+    assert any(
+        e.summary == "Collecte complémentaire autorisée depuis Vision."
+        for e in incident.events
+    )
+    during = incident_assessment(incident)
+    assert during["state"] == "analyzing"
+    assert during["followup"]["window_extension_available"] is False
+
+    with pytest.raises(ValueError):
+        extend(s)  # Nothing finished yet: no second extension in flight.
+    assert s.jobs.count("logs.investigate") == 2
+
+    s.service.complete_job(
+        str(job.job_id),
+        {
+            "worker_id": "worker",
+            "attempt": job.attempt,
+            "status": "SUCCEEDED",
+            "result": {
+                "status": "OK",
+                "analyzed_at": datetime.now(ZoneInfo("Europe/Paris")).isoformat(),
+                "source": "ha-01",
+                "pattern": job.parameters["pattern"],
+                "matched_lines": 0,
+                "findings": [],
+                "truncated": False,
+            },
+        },
+    )
+    review = poll(s)
+    assert review.type == "ai.inference"
+    scope = json.loads(
+        next(
+            e
+            for e in review.parameters["evidence"]
+            if e["source"] == "investigation.followup"
+        )["content"]
+    )["scope"]
+    assert scope["window_started_at"] == job.parameters["window_started_at"]
+    s.service.complete_job(
+        str(review.job_id),
+        {
+            "worker_id": "worker",
+            "attempt": review.attempt,
+            "status": "SUCCEEDED",
+            "result": ai_result(incomplete=True),
+        },
+    )
+    done = incident_assessment(s.incidents.get(s.incident.incident_id))
+    assert done["state"] == "investigation_exhausted"
+    assert done["followup"]["window_hours"] == 24
+    assert done["followup"]["window_extension_available"] is False
+    with pytest.raises(ValueError, match="24 dernières heures"):
+        extend(s)
+    assert s.jobs.count("logs.investigate") == 2
+
+
+def test_extension_is_refused_unless_the_followup_is_finished(setup):
+    s = setup
+    with pytest.raises(ValueError, match="terminée"):
+        extend(s)  # No follow-up at all.
+    propose(s)
+    with pytest.raises(ValueError, match="terminée"):
+        extend(s)  # Authorization still pending.
+    authorize(s)
+    with pytest.raises(ValueError, match="terminée"):
+        extend(s)  # Collection under way.
+    assert s.jobs.count("logs.investigate") == 1
+
+
+def test_extension_accepts_only_its_two_fields(setup):
+    s = setup
+    exhausted(s)
+    for payload in (
+        {"source": "vision", "authorized_by": "x", "window_hours": 720},
+        {"source": "other", "authorized_by": "x"},
+        {"authorized_by": "x"},
+    ):
+        with pytest.raises(ValueError):
+            s.service.extend_log_investigation_window(
+                str(s.incident.incident_id), payload
+            )
+    assert s.jobs.count("logs.investigate") == 1
+
+
+@pytest.mark.parametrize("change", ["disabled", "source_removed", "limit", "resolved"])
+def test_obsolete_policy_refuses_extension_without_a_pending_request(setup, change):
+    s = setup
+    exhausted(s)
+    if change == "disabled":
+        s.service.log_analysis_enabled = False
+    elif change == "source_removed":
+        s.service.log_sources = ()
+    elif change == "limit":
+        s.service.log_max_bytes = 1024
+    else:
+        s.incidents.process(
+            Observation(
+                node="ha-01",
+                service="logs",
+                capability="logs.health",
+                status=ObservationStatus.HEALTHY,
+                success=True,
+                message="OK",
+                source="logs.health",
+                timestamp=datetime.now(ZoneInfo("Europe/Paris")),
+            )
+        )
+    with pytest.raises(ValueError):
+        extend(s)
+    assert s.jobs.count("logs.investigate") == 1
+    assert s.service.read_companion_requests().requests == []
+    assert len(s.incidents.list_user_requests(state="all").requests) == 1
+
+
+def test_extension_survives_crash_before_dispatch(setup, monkeypatch):
+    s = setup
+    exhausted(s)
+
+    def crash(_payload):
+        raise RuntimeError("simulated process interruption")
+
+    monkeypatch.setattr(s.service.followups, "create_job", crash)
+    with pytest.raises(RuntimeError):
+        extend(s)
+    monkeypatch.undo()
+    s.service.followups.resume()
+    job = poll(s)
+    assert job.type == "logs.investigate"
+    assert s.jobs.count("logs.investigate") == 2
+    window = datetime.fromisoformat(
+        job.parameters["window_ended_at"]
+    ) - datetime.fromisoformat(job.parameters["window_started_at"])
+    assert window == timedelta(hours=24)
+
+
+def test_investigation_window_contract_stops_at_24_hours():
+    from ohana_agent.contracts.administration import LogsInvestigateParameters
+
+    now = datetime.now(ZoneInfo("Europe/Paris"))
+    base = {
+        "source": "ha-01",
+        "pattern": "timeout",
+        "incident_id": str(uuid4()),
+        "window_ended_at": now,
+    }
+    LogsInvestigateParameters(**base, window_started_at=now - timedelta(hours=24))
+    with pytest.raises(ValueError, match="24 hours"):
+        LogsInvestigateParameters(
+            **base, window_started_at=now - timedelta(hours=24, seconds=1)
+        )
+
+
 @pytest.mark.parametrize("choice", ["REFUSE", "LATER"])
 def test_refusal_or_deferral_never_executes(setup, choice):
     propose(setup)

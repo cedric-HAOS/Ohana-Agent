@@ -146,6 +146,7 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
         hypothesis = decision.get("interpretation") or decision.get("summary")
         if isinstance(hypothesis, str):
             hypothesis = redact_sensitive_text(hypothesis)
+    window_hours = (followup.get("plan") or {}).get("window_hours", 2)
     return {
         "state": state,
         "label": label,
@@ -184,6 +185,11 @@ def incident_assessment(incident: TsunadeIncident) -> dict[str, Any]:
                 else followup.get("detail")
             ),
             "request_id": followup.get("request_id"),
+            "window_hours": window_hours,
+            # Offered once: the 24-hour search is the widest authorizable one.
+            "window_extension_available": state == "investigation_exhausted"
+            and incident.capability_id == "logs.health"
+            and window_hours < 24,
         }
         if followup
         else None,

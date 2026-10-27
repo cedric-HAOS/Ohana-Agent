@@ -639,6 +639,10 @@ def _administration_routes(
                 _call_with_body(service.request_log_investigation),
             ),
             _route(
+                "/v1/incidents/{incident_id}/logs/investigate/extend",
+                _call_with_body(service.extend_log_investigation_window),
+            ),
+            _route(
                 "/v1/incidents/{incident_id}/repairs/authorize",
                 _call_with_body(service.authorize_incident_repair),
             ),

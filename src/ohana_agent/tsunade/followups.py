@@ -15,11 +15,14 @@ from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.tsunade.expertise import (
     TsunadeExpertiseService,
 )
+from ohana_agent.tsunade.incident_summary import incident_assessment
 from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
 
 LOCAL_TIMEZONE = ZoneInfo("Europe/Paris")
+DEFAULT_WINDOW_HOURS = 2
+EXTENDED_WINDOW_HOURS = 24
 
 
 class TsunadeFollowupService:
@@ -196,8 +199,58 @@ class TsunadeFollowupService:
                 }
             )
 
+    def extend_window(
+        self, incident_id: str, source: str, authorized_by: str
+    ) -> object:
+        """Authorize the same bounded search over the previous 24 hours.
+
+        The click is the authorization: it reuses the finished follow-up's
+        source, pattern and byte budget, and only a finished one-shot cycle
+        can be extended, once.
+        """
+        incident = self.incidents.get(incident_id)
+        if (
+            incident_assessment(incident)["state"] != "investigation_exhausted"
+            or incident.capability_id != "logs.health"
+        ):
+            raise ValueError(
+                "Aucune investigation terminée ne peut être étendue pour cet incident"
+            )
+        previous = incident.followup or {}
+        plan = previous.get("plan") or {}
+        if plan.get("window_hours", DEFAULT_WINDOW_HOURS) >= EXTENDED_WINDOW_HOURS:
+            raise ValueError("La recherche couvre déjà les 24 dernières heures")
+        extended = {
+            **plan,
+            "window_hours": EXTENDED_WINDOW_HOURS,
+            "reason": "Étendre la recherche aux 24 heures précédentes pour "
+            "vérifier la persistance des anomalies observées.",
+        }
+        # Check before persisting, so a refusal leaves no pending request.
+        self._validate_policy({"incident_id": incident_id, "plan": extended})
+        if self.jobs.active_for_incident("logs.investigate", incident_id):
+            raise ValueError("Une collecte est déjà en cours pour cet incident")
+        suffix = f":window-{EXTENDED_WINDOW_HOURS}h"
+        proposal = self.incidents.propose_followup(
+            incident_id,
+            f"{previous['origin_job_id']}{suffix}",
+            f"{previous['basis']}{suffix}",
+            extended,
+        )
+        if proposal is None:
+            raise ValueError("Cette extension a déjà été demandée")
+        return self.respond(
+            proposal["request_id"], authorized_by, "AUTHORIZE", source=source
+        )
+
     def respond(
-        self, request_id: str, device_id: str, choice: str, *, automatic: bool = False
+        self,
+        request_id: str,
+        device_id: str,
+        choice: str,
+        *,
+        automatic: bool = False,
+        source: str = "shizune",
     ) -> object:
         request = self.incidents.get_user_request(request_id)
         followup = self.incidents.get_followup(request_id)
@@ -217,7 +270,8 @@ class TsunadeFollowupService:
             parameters = LogsInvestigateParameters(
                 source=plan["source"],
                 pattern=plan["pattern"],
-                window_started_at=now - timedelta(hours=2),
+                window_started_at=now
+                - timedelta(hours=plan.get("window_hours", DEFAULT_WINDOW_HOURS)),
                 window_ended_at=now,
                 max_bytes=plan["max_bytes"],
                 incident_id=followup["incident_id"],
@@ -231,7 +285,7 @@ class TsunadeFollowupService:
                 "timeout": plan["timeout"],
             }
         self.incidents.answer_followup(
-            request_id, choice, device_id, job, automatic=automatic
+            request_id, choice, device_id, job, automatic=automatic, source=source
         )
         self.resume()
         return self.incidents.get_user_request(request_id)
@@ -247,6 +301,8 @@ class TsunadeFollowupService:
             or incident.node_id != plan["source"]
             or plan["max_bytes"] > max_bytes
             or plan["timeout"] > timeout
+            or plan.get("window_hours", DEFAULT_WINDOW_HOURS)
+            not in {DEFAULT_WINDOW_HOURS, EXTENDED_WINDOW_HOURS}
         ):
             raise ValueError(
                 "Le périmètre de collecte n’est plus autorisé ; "

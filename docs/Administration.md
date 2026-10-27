@@ -211,7 +211,9 @@ Deux extensions conservent les mêmes règles de contrôle :
 - `logs.health_check` limite les cibles à HA-01, LINKY-01 et ZWAVE-01, la
   fenêtre à quarante-huit heures et le volume à quatre Mio par cible ;
 - `logs.investigate` exige un incident, une cible, un motif littéral et une
-  fenêtre maximale de deux heures.
+  fenêtre maximale de 24 heures (deux heures par défaut ; 24 heures seulement
+  par l'extension que l'opérateur autorise depuis Vision après une première
+  investigation terminée).
 
 `GET /v1/incidents` conserve la collection version 1 et ajoute une synthèse
 compatible : compteurs historiques, dernier job `logs.health_check` sans

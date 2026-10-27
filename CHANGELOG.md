@@ -2,6 +2,16 @@
 
 ## Non publié
 
+- Investigation des journaux : quand une collecte complémentaire est terminée et
+  réévaluée sans conclure (« Investigation terminée — suite à préciser »), Vision
+  peut autoriser une seule fois la même recherche sur les 24 heures précédentes
+  (`POST /v1/incidents/{id}/logs/investigate/extend`, source `vision`). Même
+  motif, même volume maximal, lecture seule ; l'Agent revérifie la politique avant
+  d'enregistrer la demande. La fenêtre de `logs.investigate` passe de deux à 24
+  heures au plus (Katsuyu doit aussi accepter cette fenêtre, voir son journal des changements) et
+  l'évaluation expose `followup.window_hours` et
+  `followup.window_extension_available`.
+
 ## [1.51.0] — 2026-10-25 — Maintenance préventive
 
 - Maintenance préventive : la mémoire résidente de l'Agent et de Vision est

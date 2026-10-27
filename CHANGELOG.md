@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.52.0] — 2026-10-27 — Investigation des journaux
+
 - Investigation des journaux : quand une collecte complémentaire est terminée et
   réévaluée sans conclure (« Investigation terminée — suite à préciser »), Vision
   peut autoriser une seule fois la même recherche sur les 24 heures précédentes

@@ -1,5 +1,6 @@
 """Tests for Tsunade's persistent, deduplicated incident lifecycle."""
 
+import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -664,3 +665,100 @@ def test_followup_persistence_redacts_sensitive_plan(
         assert "[redacted]" in rendered
     finally:
         repository.close()
+
+
+def _processed_count(repository: TsunadeIncidentRepository) -> int:
+    return repository._connection.execute(
+        "SELECT COUNT(*) FROM tsunade_processed_observations"
+    ).fetchone()[0]
+
+
+def test_processed_observation_ids_are_purged_after_their_retention(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    started = datetime(2026, 10, 30, 12, tzinfo=UTC)
+    try:
+        for minute in range(3):
+            repository.process(
+                _observation(
+                    ObservationStatus.HEALTHY, started + timedelta(minutes=minute)
+                )
+            )
+        assert _processed_count(repository) == 3
+        old = (started - timedelta(hours=25)).isoformat()
+        repository._connection.execute(
+            "UPDATE tsunade_processed_observations SET processed_at=? WHERE rowid <= 2",
+            (old,),
+        )
+        repository._connection.commit()
+
+        assert repository.purge_processed_observations(now=started) == 2
+        assert _processed_count(repository) == 1
+        assert repository.purge_processed_observations(now=started) == 0
+    finally:
+        repository._connection.close()
+
+
+def test_purge_removes_a_backlog_in_several_batches(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr("ohana_agent.tsunade.incidents._PURGE_BATCH", 4)
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    now = datetime(2026, 10, 30, 12, tzinfo=UTC)
+    try:
+        repository._connection.executemany(
+            "INSERT INTO tsunade_processed_observations VALUES (?, ?)",
+            [(str(uuid4()), (now - timedelta(days=2)).isoformat()) for _ in range(9)]
+            + [(str(uuid4()), now.isoformat())],
+        )
+        repository._connection.commit()
+        assert repository.purge_processed_observations(now=now) == 9
+        assert _processed_count(repository) == 1
+    finally:
+        repository._connection.close()
+
+
+def test_existing_processed_ids_are_dated_by_the_migration(tmp_path: Path) -> None:
+    database = tmp_path / "control.db"
+    legacy = sqlite3.connect(database)
+    legacy.execute(
+        "CREATE TABLE tsunade_processed_observations (observation_id TEXT PRIMARY KEY)"
+    )
+    legacy.execute("INSERT INTO tsunade_processed_observations VALUES ('legacy')")
+    legacy.commit()
+    legacy.close()
+
+    repository = TsunadeIncidentRepository(database)
+    try:
+        row = repository._connection.execute(
+            "SELECT processed_at FROM tsunade_processed_observations"
+        ).fetchone()
+        assert row[0] is not None
+        assert repository.purge_processed_observations() == 0
+        assert _processed_count(repository) == 1
+    finally:
+        repository._connection.close()
+
+
+def test_first_observation_of_the_day_triggers_the_purge(tmp_path: Path) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    try:
+        repository._connection.execute(
+            "INSERT INTO tsunade_processed_observations VALUES ('stale', "
+            "'2026-01-01T00:00:00+01:00')"
+        )
+        repository._connection.commit()
+        repository.process(
+            _observation(ObservationStatus.HEALTHY, datetime(2026, 10, 30, tzinfo=UTC))
+        )
+        ids = [
+            row[0]
+            for row in repository._connection.execute(
+                "SELECT observation_id FROM tsunade_processed_observations"
+            )
+        ]
+        assert "stale" not in ids
+        assert len(ids) == 1
+    finally:
+        repository._connection.close()

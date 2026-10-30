@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ohana_agent.tsunade.local_time import paris_iso, paris_now
+
 
 class TsunadeIncidentSchema:
     """SQLite schema and migrations of the Tsunade control database."""
@@ -83,7 +85,8 @@ class TsunadeIncidentSchema:
                 PRIMARY KEY(node_id, service_id, capability_id)
             );
             CREATE TABLE IF NOT EXISTS tsunade_processed_observations (
-                observation_id TEXT PRIMARY KEY
+                observation_id TEXT PRIMARY KEY,
+                processed_at TEXT
             );
             CREATE TABLE IF NOT EXISTS tsunade_repairs (
                 repair_id TEXT PRIMARY KEY,
@@ -213,6 +216,23 @@ class TsunadeIncidentSchema:
             self._connection.execute(
                 "ALTER TABLE tsunade_capability_state "
                 "ADD COLUMN last_sync_completed_at TEXT"
+            )
+        processed_columns = {
+            row[1]
+            for row in self._connection.execute(
+                "PRAGMA table_info(tsunade_processed_observations)"
+            )
+        }
+        if "processed_at" not in processed_columns:
+            # The table only held ids and was never purged. Existing rows are dated
+            # from now: they leave with the next purge after the retention.
+            self._connection.execute(
+                "ALTER TABLE tsunade_processed_observations "
+                "ADD COLUMN processed_at TEXT"
+            )
+            self._connection.execute(
+                "UPDATE tsunade_processed_observations SET processed_at=?",
+                (paris_iso(paris_now()),),
             )
         self._migrate_experience_history()
         self.initialize_followups()

@@ -30,8 +30,11 @@ from ohana_agent.tsunade.incident_models import (
 from ohana_agent.tsunade.incident_repairs import TsunadeRepairs
 from ohana_agent.tsunade.incident_schema import TsunadeIncidentSchema
 from ohana_agent.tsunade.incident_user_requests import TsunadeUserRequests
-from ohana_agent.tsunade.local_time import paris_iso, paris_now
+from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.repair_statistics import TsunadeRepairStatistics
+
+PROCESSED_OBSERVATION_RETENTION = timedelta(hours=24)
+_PURGE_BATCH = 20_000
 
 
 class TsunadeIncidentRepository(
@@ -56,6 +59,7 @@ class TsunadeIncidentRepository(
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
+        self._processed_purged_on: str | None = None
         self._connection = sqlite3.connect(
             self.database_path,
             check_same_thread=False,
@@ -70,6 +74,7 @@ class TsunadeIncidentRepository(
     def process(self, observation: Observation) -> TsunadeIncident | None:
         """Apply one observation idempotently to its capability incident."""
         key = (observation.node, observation.service, observation.capability)
+        self._purge_processed_if_due()
         with self._lock, self._connection:
             if self._processed(observation.id):
                 return None
@@ -504,9 +509,44 @@ class TsunadeIncidentRepository(
 
     def _mark_processed(self, observation_id: UUID) -> None:
         self._connection.execute(
-            "INSERT INTO tsunade_processed_observations VALUES (?)",
-            (str(observation_id),),
+            "INSERT INTO tsunade_processed_observations "
+            "(observation_id, processed_at) VALUES (?, ?)",
+            (str(observation_id), paris_iso(paris_now())),
         )
+
+    def _purge_processed_if_due(self) -> None:
+        """Purge once per Paris day, on the first observation that follows."""
+        today = paris_now().date().isoformat()
+        if self._processed_purged_on == today:
+            return
+        try:
+            self.purge_processed_observations()
+        except sqlite3.OperationalError:
+            # A busy database must not cost an observation: try again on the next.
+            return
+        self._processed_purged_on = today
+
+    def purge_processed_observations(self, *, now: datetime | None = None) -> int:
+        """Forget the observation ids kept for deduplication past their retention.
+
+        An observation reaches Tsunade once, live, and a late one is also dropped by
+        the capability state's timestamp: a day of ids is enough. Deleted in batches
+        so a large backlog never holds the control database for long.
+        """
+        current = paris_now() if now is None else to_paris(now)
+        cutoff = paris_iso(current - PROCESSED_OBSERVATION_RETENTION)
+        deleted = 0
+        while True:
+            with self._lock, self._connection:
+                cursor = self._connection.execute(
+                    """DELETE FROM tsunade_processed_observations WHERE rowid IN (
+                    SELECT rowid FROM tsunade_processed_observations
+                    WHERE julianday(processed_at) < julianday(?) LIMIT ?)""",
+                    (cutoff, _PURGE_BATCH),
+                )
+            deleted += cursor.rowcount
+            if cursor.rowcount < _PURGE_BATCH:
+                return deleted
 
     def _incident(self, row: sqlite3.Row, *, include_events: bool) -> TsunadeIncident:
         events: list[TsunadeIncidentEvent] = []

@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## [1.53.0] — 2026-10-30 — Purge des observations traitées
+
+- Tsunade : les identifiants d'observations déjà traitées (`tsunade_processed_observations`) ne sont plus conservés indéfiniment. Chaque ligne porte maintenant sa date de traitement (`processed_at`, heure de Paris) et les lignes de plus de 24 heures sont supprimées une fois par jour, par lots de 20 000. Le 30/10, la table pesait environ 54 Mo sur les 59 Mo de `distributed-jobs.db` (573 000 lignes) et grossissait d'environ 22,5 Mo par jour. La migration date les lignes existantes du jour du démarrage : elles partent 24 heures plus tard. Le fichier ne rétrécit qu'après un `VACUUM` manuel, Agent arrêté.
+
 ## [1.52.0] — 2026-10-27 — Investigation des journaux
 
 - Investigation des journaux : quand une collecte complémentaire est terminée et

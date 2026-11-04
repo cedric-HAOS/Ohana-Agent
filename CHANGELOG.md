@@ -2,6 +2,9 @@
 
 ## Non publié
 
+- Mémoire : le diagnostic en production (1.54.1) montre que les objets vivants de l'Agent restent stables (environ 107 000, 0,7 Mo suivis) alors que la mémoire résidente monte de 20 à 25 Mo par jour : ce n'est pas une fuite d'objets mais la sonde Z-Wave JS, qui charge tout l'état du contrôleur (environ 8 Mo de dictionnaires en cycles) chaque minute. Après chaque sonde, `release_freed_memory()` lance le ramasse-miettes et `malloc_trim` pour rendre les pages libres au système. À mesurer après déploiement dans la règle `memory_growth`.
+- « Mettre à jour » : la demande réutilise la dernière lecture apt (au plus 2 minutes) au lieu de relancer la simulation, trop lente sur INFRA-01 et plus longue que le délai de Vision (« Ohana-Agent administration is unavailable: timed out » alors que l'assistant démarrait bien).
+
 - Contrôle DNS : un échec isolé n'ouvre plus d'incident. `failure_threshold` (2 par défaut dans `dns.yaml`, 1 dans la configuration interne) compte les échecs consécutifs par serveur et par nom ; le premier est « inconnu », le deuxième est critique comme avant. Sur LINKY-01, 10 des 20 incidents `dns.resolve` du mois duraient moins de deux minutes (un seul contrôle manqué).
 - Maintenance préventive : `all_rules()` rassemble les définitions de règles en un seul endroit et la mise en sourdine s'appuie dessus. Conséquence visible : les règles `backup_restore`, `icloud_session`, `backup_freshness` et `adguard_protection` peuvent désormais être ignorées (elles étaient refusées à tort), et un test compare cette liste aux règles réellement évaluées.
 - `AdministrationService` est répartie en cinq modules (`service_companion`, `service_jobs`, `service_logs`, `service_preventive`, `service_system`) qui ajoutent leurs méthodes à la classe : de 2 265 à 853 lignes dans `service.py`, sans changement de comportement ni d'API.

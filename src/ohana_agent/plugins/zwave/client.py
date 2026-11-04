@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from ohana_agent.plugins.zwave.result import ZWaveHealthResult, ZWaveNodeResult
+from ohana_agent.runtime.memory_release import release_freed_memory
 
 WebSocketQuery = Callable[[str, float, bool], Awaitable[ZWaveHealthResult]]
 
@@ -56,6 +57,9 @@ class ZWaveHealthClient:
                     healthy=False,
                     error=str(error),
                 )
+            finally:
+                # The whole controller state was loaded for this one probe.
+                release_freed_memory()
 
         if scheme in {"http", "https"}:
             return self._query_http(

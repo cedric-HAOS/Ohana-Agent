@@ -63,7 +63,9 @@ class SystemServiceMixin:
         if self.system_updates_reader is None or self.system_update_requester is None:
             raise LookupError("La mise à jour système est indisponible")
         if action == "upgrade":
-            state = self.system_updates_reader()
+            # The page the owner clicked on shows this same reading: re-running apt
+            # here would be slow on the Pi and could outlast Vision's timeout.
+            state = self.read_system_updates()
             if state["lists_stale"]:
                 raise ValueError(
                     "Les listes de paquets sont périmées : les actualiser avant "

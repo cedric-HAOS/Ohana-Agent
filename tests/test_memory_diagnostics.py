@@ -88,3 +88,53 @@ def test_service_serves_and_controls_the_diagnostics(tmp_path):
     assert service.control_memory_trace({"action": "stop"})["tracing"] is False
     with pytest.raises(ValueError):
         service.control_memory_trace({"action": "restart"})
+
+
+def test_release_collects_cycles_and_survives_a_missing_malloc_trim(monkeypatch):
+    import gc
+
+    from ohana_agent.runtime import memory_release
+
+    class Cycle:
+        pass
+
+    first, second = Cycle(), Cycle()
+    first.other, second.other = second, first
+    del first, second
+    gc.disable()
+    try:
+        calls = []
+        monkeypatch.setattr(
+            memory_release.ctypes,
+            "CDLL",
+            lambda name: calls.append(name) or (_ for _ in ()).throw(OSError(name)),
+        )
+
+        memory_release.release_freed_memory()
+    finally:
+        gc.enable()
+
+    assert calls == ["libc.so.6"]
+
+
+def test_every_websocket_probe_releases_memory_afterwards(monkeypatch):
+    from ohana_agent.plugins.zwave import client as zwave_client
+
+    released = []
+    monkeypatch.setattr(
+        zwave_client, "release_freed_memory", lambda: released.append(1)
+    )
+
+    async def probe(url, timeout, verify_tls):
+        return zwave_client.ZWaveHealthResult(url=url, healthy=True)
+
+    zwave_client.ZWaveHealthClient(websocket_query=probe).query("ws://zwave.test:3000")
+
+    async def failing(url, timeout, verify_tls):
+        raise OSError("refused")
+
+    zwave_client.ZWaveHealthClient(websocket_query=failing).query(
+        "ws://zwave.test:3000"
+    )
+
+    assert released == [1, 1]

@@ -332,12 +332,15 @@ def test_service_refuses_an_upgrade_on_stale_lists_or_nothing_pending(tmp_path):
     with pytest.raises(ValueError, match="périmées"):
         service.request_system_update("upgrade")
     state.update(lists_stale=False, pending_count=0)
+    service._system_updates_cache = None  # the guard reuses a recent reading
     with pytest.raises(ValueError, match="Aucune mise à jour"):
         service.request_system_update("upgrade")
     state.update(pending_count=3)
+    service._system_updates_cache = None  # the guard reuses a recent reading
     assert service.request_system_update("upgrade")["started"] is True
     # refreshing the lists needs no precondition
     state.update(lists_stale=True)
+    service._system_updates_cache = None  # the guard reuses a recent reading
     assert service.request_system_update("refresh")["action"] == "refresh"
     assert requested == ["upgrade", "refresh"]
     assert service.read_system_updates()["helper"] == {"installed": True}
@@ -382,8 +385,8 @@ def test_service_keeps_the_last_list_while_apt_runs_then_rereads(tmp_path):
     service.read_system_updates()
     service.request_system_update("upgrade")
     during = service.read_system_updates()
-    assert len(reads) == 2  # one read for the guard, one before; none while running
+    assert len(reads) == 1  # the guard reuses the reading; none while running
     assert during["helper"]["upgrade"]["state"] == "running"
     helper["upgrade"] = {"state": "succeeded"}
     service.read_system_updates()
-    assert len(reads) == 3  # expired by the request, read again once apt is done
+    assert len(reads) == 2  # expired by the request, read again once apt is done

@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.54.1] — 2026-11-04 — Diagnostic de la mémoire de l'Agent
+
 - Diagnostic de la mémoire de l'Agent : `GET /v1/diagnostics/memory` (recensement des objets vivants par type) et `POST /v1/diagnostics/memory/trace` (`{"action": "start"|"stop"}`) démarrent ou arrêtent une trace d'allocations (`tracemalloc`, 12 niveaux) dont le rapport nomme les lignes qui ont grossi depuis le départ. Rien ne tourne tant que le propriétaire ne le demande : la trace coûte de la mémoire et du temps sur INFRA-01. Sert à trouver la fuite de l'Agent signalée par `memory_growth` (+10,9 Mo par jour, jusqu'à +25 Mo certains jours).
 
 ## [1.54.0] — 2026-11-04 — Mises à jour système

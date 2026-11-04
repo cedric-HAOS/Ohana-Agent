@@ -2,6 +2,11 @@
 
 ## Non publié
 
+- Contrôle DNS : un échec isolé n'ouvre plus d'incident. `failure_threshold` (2 par défaut dans `dns.yaml`, 1 dans la configuration interne) compte les échecs consécutifs par serveur et par nom ; le premier est « inconnu », le deuxième est critique comme avant. Sur LINKY-01, 10 des 20 incidents `dns.resolve` du mois duraient moins de deux minutes (un seul contrôle manqué).
+- Maintenance préventive : `all_rules()` rassemble les définitions de règles en un seul endroit et la mise en sourdine s'appuie dessus. Conséquence visible : les règles `backup_restore`, `icloud_session`, `backup_freshness` et `adguard_protection` peuvent désormais être ignorées (elles étaient refusées à tort), et un test compare cette liste aux règles réellement évaluées.
+- `AdministrationService` est répartie en cinq modules (`service_companion`, `service_jobs`, `service_logs`, `service_preventive`, `service_system`) qui ajoutent leurs méthodes à la classe : de 2 265 à 853 lignes dans `service.py`, sans changement de comportement ni d'API.
+- Retrait d'alias dépréciés sans appelant : `PluginRuntime.state()` (remplacé par `get_state()`), `device_name`, `power` et `energy` sur le résultat de télémétrie Home Assistant, l'attribut `shelly_telemetry_config` de la ligne de commande (l'option `--shelly-telemetry-config` reste acceptée) et `ohana_agent.infrastructure.Observation`. Les formes de configuration héritées (fichier `shelly-telemetry.yaml`, mode Linky par Home Assistant, vérification HTTP de Z-Wave JS UI) sont conservées tant que la configuration d'INFRA-01 n'est pas vérifiée.
+
 ## [1.54.1] — 2026-11-04 — Diagnostic de la mémoire de l'Agent
 
 - Diagnostic de la mémoire de l'Agent : `GET /v1/diagnostics/memory` (recensement des objets vivants par type) et `POST /v1/diagnostics/memory/trace` (`{"action": "start"|"stop"}`) démarrent ou arrêtent une trace d'allocations (`tracemalloc`, 12 niveaux) dont le rapport nomme les lignes qui ont grossi depuis le départ. Rien ne tourne tant que le propriétaire ne le demande : la trace coûte de la mémoire et du temps sur INFRA-01. Sert à trouver la fuite de l'Agent signalée par `memory_growth` (+10,9 Mo par jour, jusqu'à +25 Mo certains jours).

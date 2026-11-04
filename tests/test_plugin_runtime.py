@@ -14,13 +14,13 @@ def test_plugin_runtime_sets_plugin_state() -> None:
 
     runtime.set_state("dns", PluginState.LOADED)
 
-    assert runtime.state("dns") == PluginState.LOADED
+    assert runtime.get_state("dns") == PluginState.LOADED
 
 
 def test_plugin_runtime_returns_none_for_unknown_plugin() -> None:
     runtime = PluginRuntime()
 
-    assert runtime.state("unknown") is None
+    assert runtime.get_state("unknown") is None
 
 
 def test_plugin_runtime_has_plugin_state() -> None:
@@ -43,7 +43,7 @@ def test_plugin_runtime_can_overwrite_plugin_state() -> None:
     runtime.set_state("dns", PluginState.DISCOVERED)
     runtime.set_state("dns", PluginState.REGISTERED)
 
-    assert runtime.state("dns") == PluginState.REGISTERED
+    assert runtime.get_state("dns") == PluginState.REGISTERED
 
 
 def test_plugin_runtime_removes_plugin_state() -> None:
@@ -53,7 +53,7 @@ def test_plugin_runtime_removes_plugin_state() -> None:
     runtime.remove("dns")
 
     assert runtime.has("dns") is False
-    assert runtime.state("dns") is None
+    assert runtime.get_state("dns") is None
 
 
 def test_plugin_runtime_remove_unknown_plugin_is_noop() -> None:

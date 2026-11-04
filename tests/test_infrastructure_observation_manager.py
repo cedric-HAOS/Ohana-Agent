@@ -1,9 +1,9 @@
 from ohana_agent.infrastructure import (
     HealthStatus,
     Infrastructure,
+    InfrastructureHealthUpdate,
     InfrastructureRuntime,
     Node,
-    Observation,
     ObservationManager,
     Service,
     ServiceType,
@@ -24,7 +24,7 @@ def test_observation_manager_records_observation() -> None:
     runtime = InfrastructureRuntime.from_infrastructure(infrastructure)
     manager = ObservationManager(runtime=runtime)
 
-    observation = Observation(
+    observation = InfrastructureHealthUpdate(
         target_name="unknown",
         health=HealthStatus.HEALTHY,
         source="test",
@@ -45,7 +45,7 @@ def test_observation_manager_applies_observation_to_service_runtime() -> None:
 
     manager = ObservationManager(runtime=runtime)
 
-    observation = Observation(
+    observation = InfrastructureHealthUpdate(
         target_name="dns",
         health=HealthStatus.HEALTHY,
         source="dns-checker",
@@ -72,7 +72,7 @@ def test_observation_manager_applies_observation_to_node_runtime() -> None:
 
     manager = ObservationManager(runtime=runtime)
 
-    observation = Observation(
+    observation = InfrastructureHealthUpdate(
         target_name="INFRA-01",
         health=HealthStatus.DEGRADED,
         source="node-checker",
@@ -95,7 +95,7 @@ def test_observation_manager_returns_false_for_unknown_target() -> None:
 
     manager = ObservationManager(runtime=runtime)
 
-    observation = Observation(
+    observation = InfrastructureHealthUpdate(
         target_name="missing",
         health=HealthStatus.UNHEALTHY,
         source="test",

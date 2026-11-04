@@ -93,7 +93,7 @@ def test_plugin_manager_discovers_plugins() -> None:
     descriptors = manager.discover()
 
     assert descriptors == (descriptor,)
-    assert manager.runtime.state("dns") == PluginState.DISCOVERED
+    assert manager.runtime.get_state("dns") == PluginState.DISCOVERED
 
 
 def test_plugin_manager_loads_plugins() -> None:
@@ -113,7 +113,7 @@ def test_plugin_manager_loads_plugins() -> None:
 
     assert plugins == (plugin,)
     assert loader.loaded_descriptors == (descriptor,)
-    assert manager.runtime.state("dns") == PluginState.LOADED
+    assert manager.runtime.get_state("dns") == PluginState.LOADED
 
 
 def test_plugin_manager_registers_plugin() -> None:
@@ -128,7 +128,7 @@ def test_plugin_manager_registers_plugin() -> None:
     assert manager.count == 1
     assert manager.get("dns") is plugin
     assert plugin.registered_context is context
-    assert manager.runtime.state("dns") == PluginState.REGISTERED
+    assert manager.runtime.get_state("dns") == PluginState.REGISTERED
     assert isinstance(event_bus.events[0], PluginRegistered)
 
 
@@ -142,7 +142,7 @@ def test_plugin_manager_unregisters_plugin() -> None:
     manager.unregister("dns")
 
     assert manager.count == 0
-    assert manager.runtime.state("dns") == PluginState.UNLOADED
+    assert manager.runtime.get_state("dns") == PluginState.UNLOADED
     assert isinstance(event_bus.events[-1], PluginUnregistered)
 
 
@@ -170,7 +170,7 @@ def test_plugin_manager_start_runs_full_pipeline() -> None:
 
     assert plugins == (plugin,)
     assert manager.has("dns") is True
-    assert manager.runtime.state("dns") == PluginState.REGISTERED
+    assert manager.runtime.get_state("dns") == PluginState.REGISTERED
 
 
 def test_plugin_manager_registers_dns_plugin() -> None:

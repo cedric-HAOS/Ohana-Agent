@@ -48,9 +48,6 @@ def test_parse_arguments_uses_default_configuration_paths(
     assert arguments.home_assistant_telemetry_config == Path(
         "config/plugins/home-assistant-telemetry.yaml"
     )
-    assert arguments.shelly_telemetry_config == (
-        arguments.home_assistant_telemetry_config
-    )
     assert arguments.teleinformation_config == Path(
         "config/plugins/teleinformation.yaml"
     )
@@ -106,7 +103,9 @@ def test_parse_arguments_accepts_custom_paths(
     assert arguments.network_config == Path("custom/network.yaml")
     assert arguments.zwave_config == Path("custom/zwave.yaml")
     assert arguments.wireguard_config == Path("custom/wireguard.yaml")
-    assert arguments.shelly_telemetry_config == Path("custom/shelly-telemetry.yaml")
+    assert arguments.home_assistant_telemetry_config == Path(
+        "custom/shelly-telemetry.yaml"
+    )
     assert arguments.teleinformation_config == Path("custom/teleinformation.yaml")
     assert arguments.backup_config == Path("custom/backup.yaml")
     assert arguments.log_level == "DEBUG"
@@ -500,7 +499,7 @@ def test_parse_arguments_accepts_linux_configuration_paths(
     assert arguments.wireguard_config == Path(
         "/etc/ohana-agent/plugins/wireguard.yaml",
     )
-    assert arguments.shelly_telemetry_config == Path(
+    assert arguments.home_assistant_telemetry_config == Path(
         "/etc/ohana-agent/plugins/shelly-telemetry.yaml",
     )
     assert arguments.teleinformation_config == Path(

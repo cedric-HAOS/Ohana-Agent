@@ -25,18 +25,3 @@ class HomeAssistantTelemetryCheckResult:
     secondary: HomeAssistantTelemetryValue | None = None
     attempts: int = 1
     error: str | None = None
-
-    @property
-    def device_name(self) -> str:
-        """Deprecated alias for service_name."""
-        return self.service_name
-
-    @property
-    def power(self) -> HomeAssistantTelemetryValue:
-        """Deprecated alias for primary."""
-        return self.primary
-
-    @property
-    def energy(self) -> HomeAssistantTelemetryValue | None:
-        """Deprecated alias for secondary."""
-        return self.secondary

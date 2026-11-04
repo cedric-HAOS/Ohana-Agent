@@ -11,7 +11,6 @@ from ohana_agent.infrastructure.infrastructure_health_update import (
     InfrastructureHealthUpdate,
 )
 from ohana_agent.infrastructure.node import Node
-from ohana_agent.infrastructure.observation import Observation
 from ohana_agent.infrastructure.observation_manager import ObservationManager
 from ohana_agent.infrastructure.runtime import (
     EndpointRuntime,
@@ -40,6 +39,5 @@ __all__ = [
     "SchedulerObservationHandler",
     "InfrastructureCapability",
     "InfrastructureCapabilityCalculator",
-    "Observation",
     "InfrastructureHealthUpdate",
 ]

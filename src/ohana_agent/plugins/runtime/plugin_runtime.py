@@ -32,13 +32,6 @@ class PluginRuntime:
     def get_state(self, plugin_name: str) -> PluginState | None:
         return self._states.get(plugin_name)
 
-    def state(self, plugin_name: str) -> PluginState | None:
-        """Return the runtime state of a plugin.
-
-        Deprecated alias for get_state().
-        """
-        return self.get_state(plugin_name)
-
     def has(self, plugin_name: str) -> bool:
         return plugin_name in self
 

@@ -127,8 +127,6 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     arguments = parser.parse_args()
-    # Deprecated attribute retained for callers that still inspect the old name.
-    arguments.shelly_telemetry_config = arguments.home_assistant_telemetry_config
     return arguments
 
 

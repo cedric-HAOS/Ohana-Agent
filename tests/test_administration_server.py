@@ -133,6 +133,8 @@ def test_administration_server_declares_available_operations(
     assert result["operations"] == [
         "infrastructure.read",
         "infrastructure.write",
+        "agent.diagnostics.memory.read",
+        "agent.diagnostics.memory.trace",
     ]
 
 

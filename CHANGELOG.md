@@ -2,6 +2,8 @@
 
 ## Non publié
 
+- Diagnostic de la mémoire de l'Agent : `GET /v1/diagnostics/memory` (recensement des objets vivants par type) et `POST /v1/diagnostics/memory/trace` (`{"action": "start"|"stop"}`) démarrent ou arrêtent une trace d'allocations (`tracemalloc`, 12 niveaux) dont le rapport nomme les lignes qui ont grossi depuis le départ. Rien ne tourne tant que le propriétaire ne le demande : la trace coûte de la mémoire et du temps sur INFRA-01. Sert à trouver la fuite de l'Agent signalée par `memory_growth` (+10,9 Mo par jour, jusqu'à +25 Mo certains jours).
+
 ## [1.54.0] — 2026-11-04 — Mises à jour système
 
 - Mises à jour système : `GET /v1/system/updates` (opération `system.updates.read`) décrit l'état des paquets de l'hôte de l'Agent sans aucun privilège. `apt-get -s --with-new-pkgs upgrade` simule la mise à jour (paquets en attente, correctifs de sécurité repérés par leur origine, paquets retenus, noyau concerné), complétée par l'âge des listes de paquets, `reboot-required` et la dernière opération apt de l'historique. Des listes de plus de 3 jours donnent le verdict `stale_lists` : un « 0 mise à jour » issu de listes périmées n'est plus présenté comme un système à jour (le 04/11, INFRA-01 avait des listes datant du 09/10, aucune mise à jour automatique n'étant configurée). La simulation est gardée 2 minutes.

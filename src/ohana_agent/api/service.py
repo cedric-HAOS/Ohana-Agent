@@ -46,6 +46,7 @@ from ohana_agent.jobs.job_types import (
 from ohana_agent.jobs.log_sources import LogSourceBroker
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
+from ohana_agent.runtime.memory_diagnostics import AllocationTrace, memory_report
 from ohana_agent.tsunade.companion_overview import logs_overview, services_overview
 from ohana_agent.tsunade.evidence_privacy import redact_session_paths
 from ohana_agent.tsunade.expertise import (
@@ -220,6 +221,7 @@ class AdministrationService:
         self.self_report = self_report
         self.system_updates_reader = system_updates_reader
         self.system_update_requester = system_update_requester
+        self.allocation_trace = AllocationTrace()
         self._system_updates_cache: tuple[float, dict[str, Any]] | None = None
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
@@ -361,6 +363,9 @@ class AdministrationService:
             )
         if self.self_report is not None:
             operations.append("agent.vitals.read")
+        operations.extend(
+            ["agent.diagnostics.memory.read", "agent.diagnostics.memory.trace"]
+        )
         if self.system_updates_reader is not None:
             operations.append("system.updates.read")
             if self.system_update_requester is not None:
@@ -1107,6 +1112,19 @@ class AdministrationService:
         if self.self_report is None:
             raise LookupError("Le détail des vitaux de l'Agent est indisponible")
         return self.self_report()
+
+    def read_memory_diagnostics(self) -> object:
+        """Object census and, while a trace runs, the allocation sites that grew."""
+        return memory_report(self.allocation_trace)
+
+    def control_memory_trace(self, payload: dict[str, Any]) -> object:
+        """Start or stop the allocation trace (costly: only while diagnosing)."""
+        action = payload.get("action")
+        if action == "start":
+            return self.allocation_trace.start()
+        if action == "stop":
+            return self.allocation_trace.stop()
+        raise ValueError("action must be start or stop")
 
     def read_system_updates(self) -> object:
         """Pending OS package updates; the simulation is kept for two minutes."""

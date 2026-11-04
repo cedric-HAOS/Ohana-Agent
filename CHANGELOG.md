@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.55.0] — 2026-11-04 — Mémoire
+
 - Mémoire : le diagnostic en production (1.54.1) montre que les objets vivants de l'Agent restent stables (environ 107 000, 0,7 Mo suivis) alors que la mémoire résidente monte de 20 à 25 Mo par jour : ce n'est pas une fuite d'objets mais la sonde Z-Wave JS, qui charge tout l'état du contrôleur (environ 8 Mo de dictionnaires en cycles) chaque minute. Après chaque sonde, `release_freed_memory()` lance le ramasse-miettes et `malloc_trim` pour rendre les pages libres au système. À mesurer après déploiement dans la règle `memory_growth`.
 - « Mettre à jour » : la demande réutilise la dernière lecture apt (au plus 2 minutes) au lieu de relancer la simulation, trop lente sur INFRA-01 et plus longue que le délai de Vision (« Ohana-Agent administration is unavailable: timed out » alors que l'assistant démarrait bien).
 

@@ -23,7 +23,12 @@ from typing import Any
 
 from ohana_agent.observation.observation import Observation
 from ohana_agent.observation.observation_status import ObservationStatus
-from ohana_agent.tsunade import preventive_backup, preventive_expiry, preventive_rules
+from ohana_agent.tsunade import (
+    preventive_adguard,
+    preventive_backup,
+    preventive_expiry,
+    preventive_rules,
+)
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.preventive_adguard import AdGuardPauseTracker
 from ohana_agent.tsunade.restore_reports import read_reports
@@ -85,6 +90,24 @@ RULES: tuple[dict[str, str], ...] = (
         ),
     },
 )
+
+
+def all_rules() -> tuple[dict[str, str], ...]:
+    """Every preventive rule: the one list that decides what can be muted.
+
+    Their definitions live next to the code that evaluates each of them; this
+    is the single place that gathers them, so a new rule cannot be left out of
+    what the owner may set aside (a test compares it with the summary).
+    """
+    return (
+        *RULES,
+        *preventive_rules.RULES,
+        preventive_backup.RULE,
+        preventive_backup.ICLOUD_RULE,
+        preventive_backup.FRESHNESS_RULE,
+        preventive_adguard.RULE,
+        *preventive_expiry.RULES,
+    )
 
 
 @dataclass(slots=True)
@@ -771,12 +794,7 @@ class TsunadePreventiveMonitor:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Hide one drift from the watch list for ``days``; it stays visible."""
-        known = (
-            {item["id"] for item in RULES}
-            | {item["id"] for item in preventive_rules.RULES}
-            | {item["id"] for item in preventive_expiry.RULES}
-        )
-        if rule not in known:
+        if rule not in {item["id"] for item in all_rules()}:
             raise ValueError(f"unknown preventive rule: {rule}")
         if not subject.strip() or len(subject) > 400:
             raise ValueError("a preventive subject is required")

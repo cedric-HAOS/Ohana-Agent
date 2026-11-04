@@ -322,3 +322,16 @@ def test_a_tls_service_is_probed_for_the_certificate_it_presents(tmp_path):
 
     # The certificate is untrusted (self-signed) and still gives its expiry.
     assert abs((read - expires).total_seconds()) < 2
+
+
+def test_every_rule_of_the_summary_is_registered_and_can_be_muted(monitor):
+    from ohana_agent.tsunade.preventive import all_rules
+
+    registered = [rule["id"] for rule in all_rules()]
+    evaluated = [check["id"] for check in monitor.summary(now=NOW)["checks"]]
+
+    assert len(registered) == len(set(registered)), "a rule id is declared twice"
+    assert set(evaluated) == set(registered), "summary and registry disagree"
+    # Rules that used to be missing from the list: the owner may now set them aside.
+    for rule in ("backup_restore", "icloud_session", "adguard_protection"):
+        assert monitor.mute(rule, "any-subject", days=7, now=NOW)["rule"] == rule

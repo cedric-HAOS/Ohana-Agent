@@ -23,7 +23,7 @@ from typing import Any
 
 from ohana_agent.observation.observation import Observation
 from ohana_agent.observation.observation_status import ObservationStatus
-from ohana_agent.tsunade import preventive_backup, preventive_rules
+from ohana_agent.tsunade import preventive_backup, preventive_expiry, preventive_rules
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.preventive_adguard import AdGuardPauseTracker
 from ohana_agent.tsunade.restore_reports import read_reports
@@ -695,6 +695,7 @@ class TsunadePreventiveMonitor:
                 ),
                 self._adguard_pause.check(current),
                 preventive_rules.storage_health(self._connection, current),
+                *preventive_expiry.checks(self._connection, current),
             ]
             active_incidents = self._active_incidents()
             mutes = self._active_mutes(current)
@@ -770,9 +771,11 @@ class TsunadePreventiveMonitor:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Hide one drift from the watch list for ``days``; it stays visible."""
-        known = {item["id"] for item in RULES} | {
-            item["id"] for item in preventive_rules.RULES
-        }
+        known = (
+            {item["id"] for item in RULES}
+            | {item["id"] for item in preventive_rules.RULES}
+            | {item["id"] for item in preventive_expiry.RULES}
+        )
         if rule not in known:
             raise ValueError(f"unknown preventive rule: {rule}")
         if not subject.strip() or len(subject) > 400:

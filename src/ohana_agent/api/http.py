@@ -542,6 +542,7 @@ def _administration_routes(
             _route("/v1/preventive", _call(service.read_preventive_summary)),
             _route("/v1/backups/restore-tests", _call(service.read_restore_tests)),
             _route("/v1/vitals", _call(service.read_agent_vitals)),
+            _route("/v1/system/updates", _call(service.read_system_updates)),
             _route("/v1/incidents/timeline", _call(service.read_incident_timeline)),
             _route("/v1/repairs/statistics", _call(service.read_repair_statistics)),
             _route(
@@ -605,6 +606,14 @@ def _administration_routes(
                 _call(service.request_preventive_backfill),
             ),
             _route("/v1/preventive/mute", _call_with_body(service.mute_preventive)),
+            _route(
+                "/v1/system/updates/refresh",
+                _call(partial(service.request_system_update, "refresh")),
+            ),
+            _route(
+                "/v1/system/updates/apply",
+                _call(partial(service.request_system_update, "upgrade")),
+            ),
             _route(
                 "/v1/backups/archives/verify",
                 _call_with_body(service.request_archive_check),

@@ -128,6 +128,8 @@ class AdministrationService:
         incident_repository: TsunadeIncidentRepository | None = None,
         preventive_monitor: TsunadePreventiveMonitor | None = None,
         self_report: Callable[[], dict[str, Any]] | None = None,
+        system_updates_reader: Callable[[], dict[str, Any]] | None = None,
+        system_update_requester: Any | None = None,
         investigation_executor: InvestigationExecutor | None = None,
         log_source_broker: LogSourceBroker | None = None,
         expertise_service: TsunadeExpertiseService | None = None,
@@ -216,6 +218,9 @@ class AdministrationService:
         self.incident_repository = incident_repository
         self.preventive_monitor = preventive_monitor
         self.self_report = self_report
+        self.system_updates_reader = system_updates_reader
+        self.system_update_requester = system_update_requester
+        self._system_updates_cache: tuple[float, dict[str, Any]] | None = None
         self.investigation_executor = investigation_executor
         self.log_source_broker = log_source_broker
         # Phase 10: set by the bootstrap; verifies the latest published archives.
@@ -356,6 +361,10 @@ class AdministrationService:
             )
         if self.self_report is not None:
             operations.append("agent.vitals.read")
+        if self.system_updates_reader is not None:
+            operations.append("system.updates.read")
+            if self.system_update_requester is not None:
+                operations.extend(["system.updates.refresh", "system.updates.apply"])
         if self.preventive_monitor is not None:
             operations.extend(
                 [
@@ -1098,6 +1107,53 @@ class AdministrationService:
         if self.self_report is None:
             raise LookupError("Le détail des vitaux de l'Agent est indisponible")
         return self.self_report()
+
+    def read_system_updates(self) -> object:
+        """Pending OS package updates; the simulation is kept for two minutes."""
+        if self.system_updates_reader is None:
+            raise LookupError("L'état des mises à jour système est indisponible")
+        helper = (
+            self.system_update_requester.status()
+            if self.system_update_requester is not None
+            else None
+        )
+        # While apt runs the simulation would read a half-installed system:
+        # keep the last answer and let the helper's progress speak.
+        running = helper is not None and any(
+            helper.get(action, {}).get("state") == "running"
+            for action in ("refresh", "upgrade")
+        )
+        cached = self._system_updates_cache
+        if cached is None or (not running and time.monotonic() - cached[0] >= 120):
+            cached = (time.monotonic(), self.system_updates_reader())
+            self._system_updates_cache = cached
+        return cached[1] if helper is None else {**cached[1], "helper": helper}
+
+    def request_system_update(self, action: str) -> object:
+        """Ask the Installer helper to refresh the lists or apply the upgrade.
+
+        Nothing is installed without the owner's click in Vision, apt only
+        changes packages already installed, and the machine is never restarted.
+        """
+        if self.system_updates_reader is None or self.system_update_requester is None:
+            raise LookupError("La mise à jour système est indisponible")
+        if action == "upgrade":
+            state = self.system_updates_reader()
+            if state["lists_stale"]:
+                raise ValueError(
+                    "Les listes de paquets sont périmées : les actualiser avant "
+                    "de mettre à jour"
+                )
+            if not state["pending_count"]:
+                raise ValueError("Aucune mise à jour n'est en attente")
+        result = self.system_update_requester.request(action)
+        # The pending list is stale once apt ran: expire it, keep it for display.
+        if self._system_updates_cache is not None:
+            self._system_updates_cache = (
+                float("-inf"),
+                self._system_updates_cache[1],
+            )
+        return result
 
     def mute_preventive(self, payload: dict[str, Any]) -> object:
         """Fewer useless alerts: set one drift aside for a number of days."""

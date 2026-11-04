@@ -306,6 +306,9 @@ def test_agent_serves_the_detail_and_shizune_gets_only_the_essential(
         "backup_freshness",
         "adguard_protection",
         "storage_health",
+        "system_updates",
+        "tls_certificates",
+        "ha_updates",
     ]
     essential = service.read_companion_summary()["preventive"]
     assert essential["status"] == "watch"

@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -37,6 +38,7 @@ from ohana_agent.core.events import EventBus
 from ohana_agent.host.chrony import ChronyRestartRequester, chrony_status
 from ohana_agent.host.dhcp import DHCPConfigurationError, DnsmasqDHCPRepository
 from ohana_agent.host.network import NetworkManagerRepository
+from ohana_agent.host.system_updates import SystemUpdateRequester, read_system_updates
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.log_sources import LogSourceBroker
 from ohana_agent.jobs.repository import DistributedJobRepository
@@ -87,6 +89,11 @@ from ohana_agent.tsunade.incidents import (
 )
 from ohana_agent.tsunade.investigations import InvestigationExecutor
 from ohana_agent.tsunade.preventive import TsunadePreventiveMonitor
+from ohana_agent.tsunade.preventive_expiry import (
+    ExpirySampler,
+    probe_certificate,
+    read_certificate_file,
+)
 from ohana_agent.tsunade.restore_reports import REPORT_DIRECTORY
 
 LOGGER = logging.getLogger(__name__)
@@ -285,6 +292,8 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         incident_repository=incident_repository,
         preventive_monitor=preventive_monitor,
         self_report=self_report.snapshot,
+        system_updates_reader=read_system_updates,
+        system_update_requester=SystemUpdateRequester(),
         investigation_executor=investigation_executor,
         log_source_broker=(
             LogSourceBroker(context.plugins["backup"].config, job_repository)
@@ -355,7 +364,8 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
     context.event_bus.subscribe(
         ObservationPublished, preventive_monitor.handle_observation
     )
-    _start_home_assistant_availability(context, preventive_monitor)
+    availability = _start_home_assistant_availability(context, preventive_monitor)
+    _start_expiry_sampler(preventive_monitor, administration_config, availability)
     if (
         job_repository is not None
         and context.plugins["backup"].config.infra_01.use_katsuyu
@@ -377,19 +387,70 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
 
 def _start_home_assistant_availability(
     context: AdministrationContext, monitor: TsunadePreventiveMonitor
-) -> None:
+) -> HomeAssistantAvailabilitySampler | None:
     """Phase 4: hourly count of unavailable entities on HA-01."""
     try:
         config = context.plugins["home_assistant_telemetry"].config
     except KeyError:
-        return
-    HomeAssistantAvailabilitySampler(
+        return None
+    sampler = HomeAssistantAvailabilitySampler(
         url=config.home_assistant_url,
         token=telemetry_token(config),
         record_metric=monitor.record_metric,
         record_snapshot=monitor.record_snapshot,
         verify_tls=config.verify_tls,
-    ).start()
+    )
+    sampler.start()
+    return sampler
+
+
+# Ohana-Bank's own certificate, read through the local nginx (no file access).
+BANK_TLS_PROBE = ("Ohana-Bank", "127.0.0.1", 443, "bank.ohana.lan")
+
+
+def _expiry_certificates(
+    administration_config: AdministrationConfig,
+) -> list[tuple[str, Callable[[], datetime]]]:
+    """What can expire: the Bank certificate and the Agent's own TLS files."""
+    label, host, port, server_name = BANK_TLS_PROBE
+    certificates: list[tuple[str, Callable[[], datetime]]] = [
+        (label, lambda: probe_certificate(host, port, server_name))
+    ]
+    listeners = (
+        administration_config.jobs.worker_tls
+        if administration_config.jobs.enabled
+        else None,
+        administration_config.companion,
+    )
+    files: dict[Path, str] = {}
+    for listener, name in zip(
+        listeners, ("Listener Katsuyu", "Listener Shizune"), strict=True
+    ):
+        if listener is None or not listener.enabled:
+            continue
+        files.setdefault(listener.certificate_file, f"{name} (certificat)")
+        files.setdefault(listener.ca_certificate_file, "Autorité locale Ohana (CA)")
+    for path, name in files.items():
+        certificates.append((name, partial(read_certificate_file, path)))
+    return certificates
+
+
+def _start_expiry_sampler(
+    monitor: TsunadePreventiveMonitor,
+    administration_config: AdministrationConfig,
+    availability: HomeAssistantAvailabilitySampler | None,
+) -> ExpirySampler:
+    """Phase 4: system updates, certificates and Home Assistant updates."""
+    sampler = ExpirySampler(
+        record_snapshot=monitor.record_snapshot,
+        system_reader=read_system_updates,
+        certificates=lambda: _expiry_certificates(administration_config),
+        home_assistant_states=(
+            availability.fetch_states if availability is not None else None
+        ),
+    )
+    sampler.start()
+    return sampler
 
 
 def _agent_version() -> str:

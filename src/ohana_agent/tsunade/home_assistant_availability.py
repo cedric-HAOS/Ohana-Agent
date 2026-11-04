@@ -80,6 +80,10 @@ class HomeAssistantAvailabilitySampler:
     def stop(self) -> None:
         self._stop.set()
 
+    def fetch_states(self) -> Any:
+        """One read of ``/api/states`` for the other hourly-or-slower readers."""
+        return self._fetch()
+
     def sample(self) -> int | None:
         try:
             entities = unavailable_entities(self._fetch())

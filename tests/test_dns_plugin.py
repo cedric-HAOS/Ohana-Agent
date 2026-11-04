@@ -547,3 +547,75 @@ def test_dns_plugin_can_be_reconfigured() -> None:
 
     assert plugin.config is config
     assert [server.name for server in plugin.servers] == ["dns-secondary"]
+
+
+class SequencedDNSCheck:
+    """Answer the successive checks with the given healthy flags."""
+
+    def __init__(self, outcomes: list[bool]) -> None:
+        self.outcomes = list(outcomes)
+
+    def check(self, hostname: str, server: str | None = None) -> DNSCheckResult:
+        healthy = self.outcomes.pop(0)
+        return DNSCheckResult(
+            hostname=hostname,
+            healthy=healthy,
+            address="192.168.1.12" if healthy else None,
+            error=None if healthy else "The DNS operation timed out.",
+        )
+
+
+def _confirming_plugin(outcomes: list[bool], threshold: int = 2) -> DNSPlugin:
+    return DNSPlugin(
+        check=SequencedDNSCheck(outcomes),
+        config=DNSConfig(failure_threshold=threshold),
+    )
+
+
+def test_a_single_dns_failure_is_unknown_until_it_repeats() -> None:
+    from ohana_agent.infrastructure.enums import HealthStatus
+
+    plugin = _confirming_plugin([False, False, False])
+
+    first = plugin.execute(hostname="example.com", server="192.168.1.12")
+    second = plugin.execute(hostname="example.com", server="192.168.1.12")
+
+    assert first.success is False
+    assert first.health is HealthStatus.UNKNOWN
+    assert "(1/2 failed checks)" in first.message
+    # The second consecutive failure keeps its default meaning: unhealthy.
+    assert second.success is False
+    assert second.health is None
+    assert "failed checks" not in second.message
+
+
+def test_a_dns_success_resets_the_failure_count() -> None:
+    from ohana_agent.infrastructure.enums import HealthStatus
+
+    plugin = _confirming_plugin([False, True, False])
+
+    plugin.execute(hostname="example.com", server="192.168.1.12")
+    assert plugin.execute(hostname="example.com", server="192.168.1.12").success
+    third = plugin.execute(hostname="example.com", server="192.168.1.12")
+
+    assert third.health is HealthStatus.UNKNOWN
+
+
+def test_dns_failures_are_counted_per_server() -> None:
+    from ohana_agent.infrastructure.enums import HealthStatus
+
+    plugin = _confirming_plugin([False, False])
+
+    one = plugin.execute(hostname="example.com", server="192.168.1.11")
+    other = plugin.execute(hostname="example.com", server="192.168.1.12")
+
+    assert one.health is HealthStatus.UNKNOWN
+    assert other.health is HealthStatus.UNKNOWN
+
+
+def test_the_default_policy_keeps_reporting_the_first_dns_failure() -> None:
+    plugin = _confirming_plugin([False], threshold=1)
+
+    result = plugin.execute(hostname="example.com")
+
+    assert result.health is None and result.success is False

@@ -26,4 +26,5 @@ class DNSConfig:
     queries: list[str] = field(default_factory=list)
     timeout: float = 2.0
     retries: int = 1
+    failure_threshold: int = 1
     policy: DNSPolicyConfig = field(default_factory=DNSPolicyConfig)

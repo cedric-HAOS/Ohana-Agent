@@ -28,6 +28,7 @@ class DNSConfigurationBuilder:
             queries=config.queries.copy(),
             timeout=config.timeout,
             retries=config.retries,
+            failure_threshold=config.failure_threshold,
             policy=DNSPolicyConfig(
                 minimum_healthy_servers=(config.policy.minimum_healthy_servers),
             ),

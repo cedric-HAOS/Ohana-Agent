@@ -24,6 +24,8 @@ class DNSPluginConfig(Config):
     timeout: PositiveFloat = 2.0
     retries: int = Field(default=1, ge=0)
     interval_seconds: PositiveInt = 60
+    # A blip of one minute resolves by itself: an incident needs two failures.
+    failure_threshold: PositiveInt = 2
 
     policy: DNSPolicyConfig = Field(
         default_factory=DNSPolicyConfig,

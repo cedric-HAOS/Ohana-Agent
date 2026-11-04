@@ -3,6 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
+from ohana_agent.infrastructure.enums import HealthStatus
 from ohana_agent.plugins.dns.capability_runtime import DNSCapabilityRuntime
 from ohana_agent.plugins.dns.check import DNSCheck
 from ohana_agent.plugins.dns.check_result import DNSCheckResult
@@ -41,6 +42,8 @@ class DNSPlugin(Plugin):
         self.runtime = runtime or DNSRuntime()
         self.config = config or DNSConfig()
         self.capability_runtime = capability_runtime or DNSCapabilityRuntime()
+        # Failed checks in a row per (server, hostname): see ``_confirmed``.
+        self._consecutive_failures: dict[tuple[str | None, str], int] = {}
         self.servers = [
             DNSServer(config=server_config) for server_config in self.config.servers
         ]
@@ -97,10 +100,12 @@ class DNSPlugin(Plugin):
             message = f"DNS resolution succeeded for {result.hostname}."
         else:
             message = result.error or (f"DNS resolution failed for {result.hostname}.")
+        health, message = self._confirmed(server, result, message)
 
         return ObserverResult(
             success=result.healthy,
             latency=latency_ms,
+            health=health,
             message=message,
             check="dns.resolve",
             description="Resolve a hostname using the DNS plugin.",
@@ -111,6 +116,28 @@ class DNSPlugin(Plugin):
                 "error": result.error,
             },
         )
+
+    def _confirmed(
+        self, server: str | None, result: DNSCheckResult, message: str
+    ) -> tuple[HealthStatus | None, str]:
+        """Only the failure that repeats is unhealthy; the first one is unknown.
+
+        A resolver that misses one check and answers the next (19 incidents of
+        about 85 s on LINKY-01 in a month) is not an outage worth an incident.
+        """
+        key = (server, result.hostname)
+        if result.healthy:
+            self._consecutive_failures.pop(key, None)
+            return None, message
+        failures = self._consecutive_failures.get(key, 0) + 1
+        self._consecutive_failures[key] = failures
+        threshold = self.config.failure_threshold
+        if failures < threshold:
+            return (
+                HealthStatus.UNKNOWN,
+                f"{message} ({failures}/{threshold} failed checks).",
+            )
+        return None, message
 
     def check(
         self,

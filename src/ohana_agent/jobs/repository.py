@@ -263,17 +263,24 @@ class DistributedJobRepository(
         return self._document(row) if row is not None else None
 
     def latest_for_incident(
-        self, job_type: str, incident_id: str | None
+        self,
+        job_type: str,
+        incident_id: str | None,
+        status: DistributedJobStatus | None = None,
     ) -> DistributedJobDocument | None:
-        """Return the latest job whose bounded parameters target one incident."""
+        """Return the latest job whose bounded parameters target one incident.
+
+        ``status`` restricts the search to jobs that ended (or stand) in it.
+        """
         if job_type not in JOB_TYPE_MODELS:
             raise ValueError(f"unsupported distributed job type: {job_type}")
         with self._lock, self._connection:
             self._recover_locked(self._now())
             rows = self._connection.execute(
                 """SELECT * FROM distributed_jobs WHERE type = ?
+                AND (? IS NULL OR status = ?)
                 ORDER BY julianday(created_at) DESC, job_id DESC LIMIT 100""",
-                (job_type,),
+                (job_type, status and status.value, status and status.value),
             ).fetchall()
         for row in rows:
             parameters = json.loads(row["parameters_json"])

@@ -30,7 +30,22 @@ _DETAIL = {
     "critical": "En panne",
     "unknown": "Pas de mesure récente",
 }
-_LOG_ORDER = {"decision": 0, "attention": 1, "analyzing": 2, "watch": 3, "ok": 4}
+_LOG_ORDER = {
+    "decision": 0,
+    "attention": 1,
+    "unknown": 2,
+    "analyzing": 3,
+    "watch": 4,
+    "ok": 5,
+}
+# How the latest daily log check stands, from the state of its job.
+_CHECK_STATES = {
+    "SUCCEEDED": "succeeded",
+    "FAILED": "failed",
+    "TIMEOUT": "failed",
+    "CANCELLED": "failed",
+    "RUNNING": "running",
+}
 
 
 def format_latency(latency_ms: float) -> str:
@@ -123,17 +138,38 @@ def _finding_detail(incident: TsunadeIncident) -> str:
     return "Collecte sans résultat exploitable"
 
 
+def log_check_summary(job: Any | None) -> dict[str, Any]:
+    """State of the latest daily log check: ``none`` until a job exists.
+
+    ``waiting`` covers a job created but not yet run (Bubule is off until the
+    05:00 wake-up); ``failed`` covers failure, timeout and cancellation.
+    """
+    if job is None:
+        return {"state": "none", "at": None}
+    status = job.status.value
+    moment = job.finished_at or job.started_at or job.created_at
+    return {
+        "state": _CHECK_STATES.get(status, "waiting"),
+        "at": paris_iso(moment) if moment is not None else None,
+    }
+
+
 def logs_overview(
     incidents: Iterable[TsunadeIncident],
     pending_incident_ids: set[str],
     accepted_counts: Mapping[str, int],
     checked_at: datetime | None,
+    last_check: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Log review by equipment: open incident, known noise or nothing to report.
 
-    ``checked_at`` is the date of the last completed review; the block states
-    when the review ran, never a global verdict a single equipment contradicts.
+    ``checked_at`` is the date of the last *successful* review and ``last_check``
+    the state of the latest one. When that latest check failed, a source without
+    incident is not reported clean: nothing was read to say so.
     """
+    check = (
+        dict(last_check) if last_check is not None else {"state": "none", "at": None}
+    )
     active = {
         incident.equipment_id: incident
         for incident in incidents
@@ -164,6 +200,9 @@ def logs_overview(
         elif accepted_counts.get(source, 0) > 0:
             entry["status"] = "watch"
             entry["detail"] = f"Bruit connu · {accepted_counts[source]} accepté(s)"
+        elif check["state"] == "failed":
+            entry["status"] = "unknown"
+            entry["detail"] = "Non vérifié : le dernier contrôle a échoué"
         else:
             entry["status"] = "ok"
             entry["detail"] = "Aucune anomalie"
@@ -171,5 +210,6 @@ def logs_overview(
     equipments.sort(key=lambda entry: _LOG_ORDER[entry["status"]])
     return {
         "checked_at": paris_iso(checked_at) if checked_at is not None else None,
+        "last_check": check,
         "equipments": equipments,
     }

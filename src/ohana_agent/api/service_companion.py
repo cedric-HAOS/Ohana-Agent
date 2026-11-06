@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ohana_agent.tsunade.companion_overview import logs_overview, services_overview
+from ohana_agent.contracts.administration import DistributedJobStatus
+from ohana_agent.tsunade.companion_overview import (
+    log_check_summary,
+    logs_overview,
+    services_overview,
+)
 from ohana_agent.tsunade.incident_summary import (
     incident_assessment,
 )
@@ -43,7 +48,11 @@ class CompanionServiceMixin:
             default=None,
         )
         latest_log_health = None
+        last_log_success = None
         if self.job_repository is not None:
+            last_log_success = self.job_repository.latest_for_incident(
+                "logs.health_check", None, DistributedJobStatus.SUCCEEDED
+            )
             latest_log_health = self.job_repository.latest_for_incident(
                 "logs.health_check", None
             )
@@ -86,10 +95,8 @@ class CompanionServiceMixin:
                 incidents,
                 {str(request.incident_id) for request in requests},
                 self._accepted_log_counts(),
-                latest_log_health.finished_at
-                if latest_log_health is not None
-                and latest_log_health.status.value == "SUCCEEDED"
-                else None,
+                last_log_success.finished_at if last_log_success is not None else None,
+                last_check=log_check_summary(latest_log_health),
             ),
         }
 

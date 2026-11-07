@@ -3,3 +3,7 @@ timeout: 3.0
 retries: 1
 interval_seconds: 60
 verify_tls: true
+# Minutes without contact before a node is flagged (degraded). Omit to disable.
+last_seen_alert_minutes: 60
+# Battery (sleeping) nodes wake rarely: give them a longer delay. Omit to skip them.
+sleeping_last_seen_alert_minutes: 1440

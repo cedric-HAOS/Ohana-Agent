@@ -33,7 +33,13 @@ def test_zwave_builder_discovers_websocket_service() -> None:
 
     config = ZWaveConfigurationBuilder().build(
         infrastructure,
-        ZWavePluginConfig(timeout=2.5, retries=0, verify_tls=False),
+        ZWavePluginConfig(
+            timeout=2.5,
+            retries=0,
+            verify_tls=False,
+            last_seen_alert_minutes=60,
+            sleeping_last_seen_alert_minutes=1440,
+        ),
     )
 
     assert len(config.services) == 1
@@ -41,6 +47,8 @@ def test_zwave_builder_discovers_websocket_service() -> None:
     assert config.timeout == 2.5
     assert config.retries == 0
     assert config.verify_tls is False
+    assert config.last_seen_alert_minutes == 60
+    assert config.sleeping_last_seen_alert_minutes == 1440
 
 
 def test_zwave_builder_uses_home_assistant_defaults() -> None:

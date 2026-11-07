@@ -14,6 +14,8 @@ timeout: 4.5
 retries: 2
 interval_seconds: 120
 verify_tls: false
+last_seen_alert_minutes: 90
+sleeping_last_seen_alert_minutes: 2880
 """.strip(),
         encoding="utf-8",
     )
@@ -25,3 +27,17 @@ verify_tls: false
     assert config.retries == 2
     assert config.interval_seconds == 120
     assert config.verify_tls is False
+    assert config.last_seen_alert_minutes == 90
+    assert config.sleeping_last_seen_alert_minutes == 2880
+
+
+def test_zwave_config_loader_disables_silence_alert_by_default(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "zwave.yaml"
+    config_path.write_text("enabled: true", encoding="utf-8")
+
+    config = ZWaveConfigLoader().load(config_path)
+
+    assert config.last_seen_alert_minutes is None
+    assert config.sleeping_last_seen_alert_minutes is None

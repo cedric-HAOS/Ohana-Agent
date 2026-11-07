@@ -246,3 +246,48 @@ def test_discovery_reconciles_removed_nodes_and_preserves_manual_devices() -> No
     assert "manual-device" in device_ids
     assert "zwave-zwave-main-node-2" not in device_ids
     assert "zwave-zwave-main-node-3" in device_ids
+
+
+def _publish_single_node(node: dict[str, Any]) -> Any:
+    holder = {"payload": base_payload()}
+    engine = FakeObservationEngine()
+    handler = ZWaveDiscoveryHandler(
+        observation_engine=engine,  # type: ignore[arg-type]
+        infrastructure_payload=lambda: holder["payload"],
+        update_infrastructure=lambda payload: holder.update(payload=payload),
+    )
+    handler.handle(
+        controller_event(metadata={"discovery_complete": True, "nodes": [node]})
+    )
+    return engine.calls[0][0]
+
+
+def test_silent_node_is_degraded_with_the_delay_in_the_message() -> None:
+    result = _publish_single_node(
+        {
+            "node_id": 9,
+            "status": "alive",
+            "name": "Prise garage",
+            "silent": True,
+            "last_seen_age_seconds": 7500,
+            "silence_threshold_minutes": 60,
+        }
+    )
+
+    assert result.health is HealthStatus.DEGRADED
+    assert result.success is False
+    assert "Prise garage" in result.message
+    assert "125 min" in result.message
+    assert "60 min" in result.message
+
+
+def test_node_within_its_delay_stays_healthy() -> None:
+    result = _publish_single_node({"node_id": 9, "status": "alive", "silent": False})
+
+    assert result.health is HealthStatus.HEALTHY
+
+
+def test_dead_node_stays_unhealthy_even_when_silent() -> None:
+    result = _publish_single_node({"node_id": 9, "status": "dead", "silent": True})
+
+    assert result.health is HealthStatus.UNHEALTHY

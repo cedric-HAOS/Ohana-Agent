@@ -21,3 +21,13 @@ class ZWaveConfig:
     timeout: float = 3.0
     retries: int = 1
     verify_tls: bool = True
+    last_seen_alert_minutes: int | None = None
+    sleeping_last_seen_alert_minutes: int | None = None
+
+    def silence_threshold_minutes(self, *, can_sleep: bool) -> int | None:
+        """Return the allowed silence for a node, or None when not monitored."""
+        return (
+            self.sleeping_last_seen_alert_minutes
+            if can_sleep
+            else self.last_seen_alert_minutes
+        )

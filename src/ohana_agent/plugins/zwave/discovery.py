@@ -136,13 +136,21 @@ class ZWaveDiscoveryHandler:
             status = str(node.get("status") or "unknown").strip().lower()
             health = self._health(status)
             label = self._node_label(node)
+            silent = node.get("silent") is True and health is HealthStatus.HEALTHY
+
+            if silent:
+                health = HealthStatus.DEGRADED
 
             self.observation_engine.process_result(
                 ObserverResult(
                     success=health is HealthStatus.HEALTHY,
                     latency=0.0,
                     timestamp=observed_at,
-                    message=self._state_message(label, status),
+                    message=(
+                        self._silence_message(label, node)
+                        if silent
+                        else self._state_message(label, status)
+                    ),
                     check=_NODE_CAPABILITY,
                     description="Etat vivant du noeud Z-Wave.",
                     metadata={
@@ -331,6 +339,15 @@ class ZWaveDiscoveryHandler:
             return f"{label} ne repond plus au reseau Z-Wave."
 
         return f"L'etat vivant de {label} est inconnu."
+
+    @staticmethod
+    def _silence_message(label: str, node: dict[str, Any]) -> str:
+        age = int(node.get("last_seen_age_seconds") or 0) // 60
+        threshold = node.get("silence_threshold_minutes")
+        return (
+            f"{label} n'a pas donne signe de vie depuis {age} min "
+            f"(delai autorise : {threshold} min)."
+        )
 
     @staticmethod
     def _device_id(service_id: str, node_id: int) -> str:

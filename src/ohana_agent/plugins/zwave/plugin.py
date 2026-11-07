@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +13,7 @@ from ohana_agent.plugins.runtime.plugin_manifest import PluginManifest
 from ohana_agent.plugins.runtime.plugin_runtime import PluginState
 from ohana_agent.plugins.zwave.check import ZWaveCheck
 from ohana_agent.plugins.zwave.config import ZWaveConfig
+from ohana_agent.plugins.zwave.result import ZWaveNodeResult
 
 if TYPE_CHECKING:
     from ohana_agent.observation.observer_result import ObserverResult
@@ -24,8 +27,10 @@ class ZWavePlugin(Plugin):
         *,
         check: ZWaveCheck | None = None,
         config: ZWaveConfig | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._state = PluginState.LOADED
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._check = check or ZWaveCheck()
         self.config = config or ZWaveConfig()
 
@@ -75,6 +80,7 @@ class ZWavePlugin(Plugin):
             if result.healthy
             else result.error or f"Z-Wave controller is unavailable at {result.url}."
         )
+        now = self._clock()
         nodes = [
             {
                 "node_id": node.node_id,
@@ -90,6 +96,7 @@ class ZWavePlugin(Plugin):
                 "firmware_version": node.firmware_version,
                 "can_sleep": node.can_sleep,
                 "last_seen": node.last_seen,
+                **self._silence(node, now),
             }
             for node in result.nodes
         ]
@@ -115,6 +122,37 @@ class ZWavePlugin(Plugin):
                 "error": result.error,
             },
         )
+
+    def _silence(self, node: ZWaveNodeResult, now: datetime) -> dict[str, Any]:
+        """Measure how long a node has been silent against the configured delay.
+
+        ``silent`` stays None when the node is not monitored or has no usable
+        last contact: an unknown date is not evidence of silence.
+        """
+        threshold = self.config.silence_threshold_minutes(can_sleep=node.can_sleep)
+        age_seconds: int | None = None
+
+        if node.last_seen is not None:
+            try:
+                last_seen = datetime.fromisoformat(node.last_seen)
+            except ValueError:
+                last_seen = None
+
+            if last_seen is not None:
+                if last_seen.tzinfo is None:
+                    last_seen = last_seen.replace(tzinfo=UTC)
+
+                age_seconds = max(0, int((now - last_seen).total_seconds()))
+
+        return {
+            "last_seen_age_seconds": age_seconds,
+            "silence_threshold_minutes": threshold,
+            "silent": (
+                None
+                if threshold is None or age_seconds is None
+                else age_seconds > threshold * 60
+            ),
+        }
 
     def reconfigure(self, config: ZWaveConfig) -> None:
         """Replace Z-Wave services and policy without recreating the plugin."""

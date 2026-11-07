@@ -24,6 +24,8 @@ class ZWaveConfigurationBuilder:
             timeout=config.timeout,
             retries=config.retries,
             verify_tls=config.verify_tls,
+            last_seen_alert_minutes=config.last_seen_alert_minutes,
+            sleeping_last_seen_alert_minutes=(config.sleeping_last_seen_alert_minutes),
         )
 
     @staticmethod

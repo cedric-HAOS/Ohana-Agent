@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from ohana_agent.plugins.zwave.result import ZWaveHealthResult, ZWaveNodeResult
 from ohana_agent.runtime.memory_release import release_freed_memory
+from ohana_agent.tsunade.local_time import paris_iso
 
 WebSocketQuery = Callable[[str, float, bool], Awaitable[ZWaveHealthResult]]
 
@@ -214,7 +215,7 @@ class ZWaveHealthClient:
         last_seen = getattr(node, "last_seen", None)
 
         if last_seen is not None and hasattr(last_seen, "isoformat"):
-            last_seen = last_seen.isoformat()
+            last_seen = paris_iso(last_seen)
         elif last_seen is not None:
             last_seen = str(last_seen)
 

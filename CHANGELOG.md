@@ -2,6 +2,10 @@
 
 ## Non publié
 
+## [1.57.0] — 2026-11-07 — Alerte Z-Wave sur la dernière connexion d'un équipement
+
+- Alerte Z-Wave sur la dernière connexion d'un équipement : `last_seen_alert_minutes` (nœuds sur secteur) et `sleeping_last_seen_alert_minutes` (nœuds sur batterie) dans `zwave.yaml`. Un nœud vivant sans contact au-delà du délai passe en `degraded` avec un message « n'a pas donné signe de vie depuis N min ». Désactivé par défaut ; un nœud sans date de dernier contact n'est jamais jugé silencieux. `last_seen` est désormais exprimé en heure de Paris, et les nœuds exposent `last_seen_age_seconds`, `silence_threshold_minutes` et `silent`.
+
 ## [1.56.0] — 2026-11-06 — Synthèse Shizune
 
 - Synthèse Shizune : le bloc `logs` porte `last_check` (`state` : `succeeded`, `failed`, `running`, `waiting` ou `none`, et `at`), l'état du dernier contrôle quotidien des journaux. `checked_at` désigne désormais le dernier contrôle *réussi* (un contrôle en cours ou en échec ne l'efface plus). Quand le dernier contrôle a échoué, une source sans incident passe à `unknown` (« Non vérifié ») au lieu de « Aucune anomalie ». Sans effet pour Vision. `latest_for_incident` accepte un filtre de statut.

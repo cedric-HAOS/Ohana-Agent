@@ -446,8 +446,10 @@ def test_production_bootstrap_exports_infrastructure_before_observation() -> Non
     dns_observation = observations["dns.resolve"]
     assert dns_observation["node_id"] == "infra-01"
     assert dns_observation["service_id"] == "dns-primary"
+    # A first failed lookup is "unknown" (failure_threshold), not yet critical.
     assert dns_observation["status"] in {
         "healthy",
+        "unknown",
         "unavailable",
     }
     assert dns_observation["metadata"]["hostname"] == "example.com"

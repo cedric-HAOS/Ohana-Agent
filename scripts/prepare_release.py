@@ -25,6 +25,7 @@ CONFIGURATION_ASSETS = (
     Path("config/plugins/mqtt.example.yaml"),
     Path("config/plugins/network.example.yaml"),
     Path("config/plugins/ntp.example.yaml"),
+    Path("config/plugins/power-plug.example.yaml"),
     Path("config/plugins/shelly-telemetry.example.yaml"),
     Path("config/plugins/teleinformation.example.yaml"),
     Path("config/plugins/wireguard.example.yaml"),

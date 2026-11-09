@@ -150,6 +150,16 @@ class DistributedJobSchema:
                 ON distributed_worker_power_events(worker_id, event_id)
                 """
             )
+            # The only plug state worth surviving a restart: did Ohana switch it
+            # on, i.e. does the current cycle owe the plug an "off".
+            self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS distributed_power_plug_state (
+                    plug_id INTEGER PRIMARY KEY CHECK (plug_id = 1),
+                    turned_on_at TEXT
+                )
+                """
+            )
             self._connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS distributed_worker_pairings (

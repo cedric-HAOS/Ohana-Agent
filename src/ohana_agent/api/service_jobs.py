@@ -8,12 +8,14 @@ from datetime import UTC, datetime, timedelta
 from datetime import time as clock_time
 from typing import Any
 
+from ohana_agent.contracts.administration import DistributedWorkerPowerEventKind
 from ohana_agent.jobs.job_types import (
     AUTOMATIC_WAKE_JOB_TYPES,
     DEFERRED_TO_BATCH_JOB_TYPES,
     LOCAL_TIMEZONE,
     DistributedJobConflictError,
 )
+from ohana_agent.jobs.power_plug import PendingWake
 from ohana_agent.tsunade.expertise_catalog import (
     TsunadeExpertiseConflictError,
 )
@@ -105,6 +107,7 @@ class JobServiceMixin:
         """Wake one worker at the local daily Katsuyu batch boundary."""
         if self.job_repository is None:
             return
+        self.tick_power_plug(now or self.job_repository.now())
         self._retry_unanswered_wake()
         current = (now or self.job_repository.now()).astimezone(
             self.wake_schedule_timezone
@@ -155,22 +158,147 @@ class JobServiceMixin:
     ) -> bool:
         """Send one Wake-on-LAN and journal it, or journal why it was not sent."""
         assert self.job_repository is not None  # noqa: S101
-        try:
-            self._send_wake_on_lan(mac_address)
-        except (OSError, ValueError) as error:
-            LOGGER.exception(
-                "Unable to send Wake-on-LAN for Katsuyu worker %s", worker_id
-            )
-            self.job_repository.record_wake_failure(
-                worker_id, str(error), trigger=trigger
-            )
-            return False
+        deferred, plug_detail = self._power_plug_before_wake(
+            worker_id, mac_address, trigger
+        )
+        if not deferred:
+            try:
+                self._send_wake_on_lan(mac_address)
+            except (OSError, ValueError) as error:
+                LOGGER.exception(
+                    "Unable to send Wake-on-LAN for Katsuyu worker %s", worker_id
+                )
+                self.job_repository.record_wake_failure(
+                    worker_id, str(error), trigger=trigger
+                )
+                return False
         self.job_repository.mark_worker_waking(
             worker_id,
             timeout_seconds=self.wake_timeout_seconds,
             trigger=trigger,
+            detail=plug_detail or None,
         )
         return True
+
+    def _power_plug_before_wake(
+        self, worker_id: str, mac_address: str, trigger: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Give the PC power before waking it; the packet may have to wait.
+
+        Returns whether the Wake-on-LAN is held back (the plug was just switched
+        on) and what to journal. A plug that cannot be read or commanded never
+        blocks the wake: Ohana then behaves as it did without a plug.
+        """
+        plug = self.power_plug
+        if (
+            plug is None
+            or self.job_repository is None
+            or (self.wake_worker_id is not None and worker_id != self.wake_worker_id)
+        ):
+            return False, {}
+        now = self.job_repository.now()
+        outcome = plug.begin_wake(now)
+        if outcome.status == "disabled":
+            return False, {}
+        if outcome.status == "turned_on":
+            self.job_repository.record_plug_event(
+                worker_id,
+                DistributedWorkerPowerEventKind.PLUG_ON,
+                {"trigger": trigger},
+            )
+            plug.hold_wake(worker_id, mac_address, trigger, now)
+            return True, {
+                "plug": "turned_on",
+                "wol_delay_seconds": outcome.delay_seconds,
+            }
+        if outcome.status in {"failed", "unreadable"}:
+            self.job_repository.record_plug_event(
+                worker_id,
+                DistributedWorkerPowerEventKind.PLUG_FAILED,
+                {
+                    "action": "on" if outcome.status == "failed" else "read",
+                    "error": (outcome.error or "")[:200],
+                },
+            )
+            return False, {"plug": outcome.status}
+        return False, {"plug": "already_on"}
+
+    def _power_plug_policy(self) -> dict[str, Any]:
+        described = None if self.power_plug is None else self.power_plug.describe()
+        return (
+            {} if described is None else {"power_plug": {"enabled": True, **described}}
+        )
+
+    def tick_power_plug(self, now: datetime) -> None:
+        """Send the held Wake-on-LAN packets, then cut the plug of a finished PC."""
+        plug = self.power_plug
+        if plug is None or self.job_repository is None:
+            return
+        for pending in plug.due_wakes(now):
+            self._send_held_wake(pending)
+        if not plug.active:
+            return
+        worker_id = self._plug_worker_id()
+        if worker_id is None:
+            return
+        candidate = self.job_repository.plug_cut_candidate(
+            worker_id, max_attempts=self.wake_max_unanswered_attempts
+        )
+        cut = plug.cut_if_ready(candidate, now)
+        if cut is None:
+            return
+        detail = {**cut.detail, "reason": cut.reason}
+        if cut.outcome == "failed":
+            kind = DistributedWorkerPowerEventKind.PLUG_FAILED
+        else:
+            kind = DistributedWorkerPowerEventKind.PLUG_OFF
+            if cut.outcome == "already_off":
+                detail["already_off"] = True
+        self.job_repository.record_plug_event(worker_id, kind, detail)
+
+    def _plug_worker_id(self) -> str | None:
+        """The worker whose PC the plug feeds: the configured one, else the one
+        that advertised a Wake-on-LAN address (remembered once found)."""
+        if self.wake_worker_id is not None:
+            return self.wake_worker_id
+        if self._plug_worker is None and self.job_repository is not None:
+            self._plug_worker = next(
+                (
+                    worker.worker_id
+                    for worker in self.job_repository.list_workers().workers
+                    if worker.wake_on_lan_mac_address
+                ),
+                None,
+            )
+        return self._plug_worker
+
+    def _send_held_wake(self, pending: PendingWake) -> None:
+        """The PC has had power for a moment: now wake it."""
+        assert self.job_repository is not None  # noqa: S101
+        assert self.power_plug is not None  # noqa: S101
+        try:
+            worker = self.job_repository.worker_availability(pending.worker_id)
+        except LookupError:
+            return
+        if worker.availability.value == "AVAILABLE":
+            return  # it booted by itself when the power came back
+        problem = self.power_plug.confirm_on()
+        if problem is not None:
+            self.job_repository.record_plug_event(
+                pending.worker_id,
+                DistributedWorkerPowerEventKind.PLUG_FAILED,
+                {"action": "confirm", "error": problem[:200]},
+            )
+        try:
+            self._send_wake_on_lan(pending.mac_address)
+        except (OSError, ValueError) as error:
+            LOGGER.exception(
+                "Unable to send Wake-on-LAN for Katsuyu worker %s",
+                pending.worker_id,
+            )
+            self.job_repository.record_wake_failure(
+                pending.worker_id, str(error), trigger=pending.trigger
+            )
 
     def request_manual_log_health_check(self) -> object:
         """A control asked from Vision wakes Katsuyu now, not at 05:00."""
@@ -307,6 +435,8 @@ class JobServiceMixin:
             "schedule_timezone": self.wake_schedule_timezone_name,
             "minimum_interval_seconds": self.wake_minimum_interval_seconds,
             "shutdown_after_completion": self.wake_shutdown_after_completion,
+            # Present only when a plug feeds the PC: the policy keeps its shape.
+            **self._power_plug_policy(),
         }
 
     def write_wake_on_lan(self, payload: dict[str, Any]) -> object:
@@ -363,17 +493,22 @@ class JobServiceMixin:
             )
         if worker.availability.value == "WAKING":
             return worker
-        try:
-            self._send_wake_on_lan(mac_address)
-        except (OSError, ValueError) as error:
-            self.job_repository.record_wake_failure(
-                worker.worker_id, str(error), trigger="manual"
-            )
-            raise
+        deferred, plug_detail = self._power_plug_before_wake(
+            worker.worker_id, mac_address, "manual"
+        )
+        if not deferred:
+            try:
+                self._send_wake_on_lan(mac_address)
+            except (OSError, ValueError) as error:
+                self.job_repository.record_wake_failure(
+                    worker.worker_id, str(error), trigger="manual"
+                )
+                raise
         self.job_repository.mark_worker_waking(
             worker.worker_id,
             timeout_seconds=self.wake_timeout_seconds,
             trigger="manual",
+            detail=plug_detail or None,
         )
         return self.job_repository.worker_availability(worker.worker_id)
 

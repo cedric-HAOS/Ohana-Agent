@@ -191,6 +191,7 @@ def build_production_agent(
     dhcp_config_path: Path = Path("config/plugins/dhcp.yaml"),
     dns_config_path: Path = Path("config/plugins/dns.yaml"),
     adguard_sync_config_path: Path | None = None,
+    power_plug_config_path: Path | None = None,
     ntp_config_path: Path = Path("config/plugins/ntp.yaml"),
     mqtt_config_path: Path = Path("config/plugins/mqtt.yaml"),
     network_config_path: Path = Path("config/plugins/network.yaml"),
@@ -273,6 +274,9 @@ def build_production_agent(
             "adguard_sync": (
                 adguard_sync_config_path
                 or dns_config_path.with_name("adguard-sync.yaml")
+            ),
+            "power_plug": (
+                power_plug_config_path or dns_config_path.with_name("power-plug.yaml")
             ),
             "ntp": ntp_config_path,
             "mqtt": mqtt_config_path,

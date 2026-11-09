@@ -134,6 +134,7 @@ Ohana-Agent fournit actuellement :
 - `wireguard` pour `wireguard.status` ;
 - `shelly_telemetry` pour `shelly.telemetry.freshness` ;
 - `teleinformation` pour `teleinformation.freshness`.
+- `power_plug` pour `power_plug.control` : la prise connectée de Bubule, pilotée par le noyau autour d'un cycle de réveil (le plugin lit et commande la prise, il ne décide de rien).
 
 Le plugin réseau constitue une exception volontairement limitée : il observe la
 présence d'un équipement, mais cette présence ne remplace jamais l'observation

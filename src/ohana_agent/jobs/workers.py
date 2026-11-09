@@ -30,6 +30,7 @@ from ohana_agent.jobs.job_types import (
     JOB_TYPE_MODELS,
     DistributedJobConflictError,
 )
+from ohana_agent.jobs.power_plug import PlugCutCandidate
 
 LOGGER = logging.getLogger(__name__)
 
@@ -305,12 +306,14 @@ class DistributedWorkerRegistry:
         *,
         timeout_seconds: int,
         trigger: str = "manual",
+        detail: dict[str, Any] | None = None,
     ) -> DistributedWorkerDocument:
         """Persist that Ohana sent WOL for a known, currently unavailable worker.
 
         ``trigger`` is why Ohana woke it: ``queued_jobs`` (work was waiting),
         ``retry`` (an earlier wake got no answer) or ``manual`` (an explicit
-        test from Vision).
+        test from Vision). ``detail`` adds facts about how it was woken (the
+        smart plug, for instance).
         """
         if timeout_seconds < 10 or timeout_seconds > 1800:
             raise ValueError("wake timeout must be between 10 and 1800 seconds")
@@ -343,6 +346,7 @@ class DistributedWorkerRegistry:
                     "attempt": self._unanswered_wakes_locked(worker_id) + 1,
                     "pending_jobs": self._pending_jobs_locked(row),
                     "timeout_seconds": timeout_seconds,
+                    **(detail or {}),
                 },
             )
             updated = self._connection.execute(
@@ -543,7 +547,9 @@ class DistributedWorkerRegistry:
         # again to the next poll, and the journal keeps a single entry.
         last = self._connection.execute(
             """SELECT kind FROM distributed_worker_power_events
-            WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+            WHERE worker_id = ?
+            AND kind NOT IN ('plug_on', 'plug_off', 'plug_failed')
+            ORDER BY event_id DESC LIMIT 1""",
             (worker_id,),
         ).fetchone()
         if (
@@ -599,6 +605,90 @@ class DistributedWorkerRegistry:
             "recorded_at": now.isoformat(),
         }
 
+    def record_plug_event(
+        self,
+        worker_id: str,
+        kind: DistributedWorkerPowerEventKind,
+        detail: dict[str, Any],
+    ) -> None:
+        """Journal a smart-plug step next to the wake cycle it belongs to."""
+        with self._lock, self._connection:
+            self._power_event_locked(worker_id, kind, self._now(), detail)
+
+    def plug_turned_on_at(self) -> datetime | None:
+        """When Ohana last switched the plug on, until it switches it off."""
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT turned_on_at FROM distributed_power_plug_state"
+            ).fetchone()
+        if row is None or row["turned_on_at"] is None:
+            return None
+        return self._parse_timestamp(row["turned_on_at"])
+
+    def set_plug_turned_on_at(self, moment: datetime | None) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                """INSERT INTO distributed_power_plug_state (plug_id, turned_on_at)
+                VALUES (1, ?) ON CONFLICT(plug_id) DO UPDATE
+                SET turned_on_at = excluded.turned_on_at""",
+                (self._timestamp(moment) if moment is not None else None,),
+            )
+
+    def plug_cut_candidate(
+        self, worker_id: str, *, max_attempts: int = 3
+    ) -> PlugCutCandidate | None:
+        """Why the PC looks finished, or ``None`` while it may still be working.
+
+        Only the cycle journal speaks: a PC that is up, still waking, or still
+        due another wake attempt is never a candidate. The plug controller then
+        asks the plug itself before cutting anything.
+        """
+        now = self._now()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM distributed_workers WHERE worker_id = ?",
+                (worker_id,),
+            ).fetchone()
+            if (
+                row is None
+                or self._worker_document(row, now).availability
+                != DistributedWorkerAvailability.UNAVAILABLE
+            ):
+                return None
+            last = self._connection.execute(
+                """SELECT event_id, kind, occurred_at
+                FROM distributed_worker_power_events
+                WHERE worker_id = ?
+                AND kind NOT IN ('plug_on', 'plug_off', 'plug_failed')
+                ORDER BY event_id DESC LIMIT 1""",
+                (worker_id,),
+            ).fetchone()
+            if last is None:
+                return None
+            already_cut = self._connection.execute(
+                """SELECT 1 FROM distributed_worker_power_events
+                WHERE worker_id = ? AND kind = 'plug_off' AND event_id > ?""",
+                (worker_id, last["event_id"]),
+            ).fetchone()
+            if already_cut is not None:
+                return None
+            kind = last["kind"]
+            if kind == DistributedWorkerPowerEventKind.SHUTDOWN_STARTED:
+                reason = "shutdown_started"
+            elif kind == DistributedWorkerPowerEventKind.WAKE_ABANDONED:
+                reason = "wake_abandoned"
+            elif kind == DistributedWorkerPowerEventKind.WAKE_SENT:
+                return None
+            elif kind == DistributedWorkerPowerEventKind.WAKE_TIMEOUT:
+                if self._unanswered_wakes_locked(
+                    worker_id
+                ) < max_attempts and self._pending_jobs_locked(row):
+                    return None
+                reason = "wake_unanswered"
+            else:
+                reason = "worker_offline"
+            return PlugCutCandidate(reason, self._parse_timestamp(last["occurred_at"]))
+
     def settle_unanswered_wakes(self, *, max_attempts: int = 3) -> None:
         """Record the wakes whose wait ran out without the worker connecting.
 
@@ -612,7 +702,9 @@ class DistributedWorkerRegistry:
             ).fetchall():
                 last = self._connection.execute(
                     """SELECT kind FROM distributed_worker_power_events
-                    WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+                    WHERE worker_id = ?
+                    AND kind NOT IN ('plug_on', 'plug_off', 'plug_failed')
+                    ORDER BY event_id DESC LIMIT 1""",
                     (row["worker_id"],),
                 ).fetchone()
                 deadline = self._parse_timestamp(row["wake_deadline_at"])
@@ -657,7 +749,9 @@ class DistributedWorkerRegistry:
             ).fetchall():
                 last = self._connection.execute(
                     """SELECT kind, occurred_at FROM distributed_worker_power_events
-                    WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+                    WHERE worker_id = ?
+                    AND kind NOT IN ('plug_on', 'plug_off', 'plug_failed')
+                    ORDER BY event_id DESC LIMIT 1""",
                     (row["worker_id"],),
                 ).fetchone()
                 if (
@@ -797,7 +891,9 @@ class DistributedWorkerRegistry:
         """
         last = self._connection.execute(
             """SELECT kind FROM distributed_worker_power_events
-            WHERE worker_id = ? ORDER BY event_id DESC LIMIT 1""",
+            WHERE worker_id = ?
+            AND kind NOT IN ('plug_on', 'plug_off', 'plug_failed')
+            ORDER BY event_id DESC LIMIT 1""",
             (worker_id,),
         ).fetchone()
         if last is None or last["kind"] not in {

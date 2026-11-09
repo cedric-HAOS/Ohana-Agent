@@ -147,6 +147,12 @@ class PluginAdministrationRepository:
                 current_configuration,
                 field_name="app_token",
             )
+        elif identifier == "power_plug":
+            self._preserve_secret(
+                configuration_payload,
+                current_configuration,
+                field_name="access_token",
+            )
         elif identifier == "home_assistant_telemetry":
             self._preserve_secret(
                 configuration_payload,
@@ -186,6 +192,12 @@ class PluginAdministrationRepository:
         )
         if identifier == "backup":
             binding.configuration_path.chmod(0o600)
+        elif identifier == "power_plug":
+            # The access token is stored in this file; tighten it when allowed.
+            try:
+                binding.configuration_path.chmod(0o600)
+            except OSError:
+                LOGGER.warning("Unable to restrict %s", binding.configuration_path)
 
         try:
             binding.apply_configuration(configuration)
@@ -487,6 +499,11 @@ class PluginAdministrationRepository:
             PluginAdministrationRepository._mask_secret(
                 payload,
                 field_name="app_token",
+            )
+        elif identifier == "power_plug":
+            PluginAdministrationRepository._mask_secret(
+                payload,
+                field_name="access_token",
             )
         elif identifier == "home_assistant_telemetry":
             PluginAdministrationRepository._mask_secret(

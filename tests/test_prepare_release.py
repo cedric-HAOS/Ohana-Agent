@@ -19,6 +19,7 @@ def test_configuration_assets_match_deployable_examples() -> None:
         "config/plugins/mqtt.example.yaml",
         "config/plugins/network.example.yaml",
         "config/plugins/ntp.example.yaml",
+        "config/plugins/power-plug.example.yaml",
         "config/plugins/shelly-telemetry.example.yaml",
         "config/plugins/teleinformation.example.yaml",
         "config/plugins/wireguard.example.yaml",

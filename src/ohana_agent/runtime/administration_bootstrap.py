@@ -41,6 +41,7 @@ from ohana_agent.host.network import NetworkManagerRepository
 from ohana_agent.host.system_updates import SystemUpdateRequester, read_system_updates
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.log_sources import LogSourceBroker
+from ohana_agent.jobs.power_plug import PowerPlugController
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.jobs.wake_on_lan import WakeOnLanSender
 from ohana_agent.observation import ObservationPublished, PluginObservationDispatcher
@@ -289,6 +290,7 @@ def attach_administration(context: AdministrationContext) -> AdministrationServi
         ),
         worker_ca_sha256=worker_tls.ca_sha256 if worker_tls is not None else None,
         **_wake_arguments(context, administration_config.jobs.wake_on_lan),
+        power_plug=_build_power_plug(context, job_repository),
         incident_repository=incident_repository,
         preventive_monitor=preventive_monitor,
         self_report=self_report.snapshot,
@@ -651,6 +653,21 @@ def _build_investigation_executor(
         chrony_status_reader=chrony_status,
         vision_status_reader=context.vision_status_reader,
     )
+
+
+def _build_power_plug(
+    context: AdministrationContext,
+    job_repository: DistributedJobRepository | None,
+) -> PowerPlugController | None:
+    """Decide when the smart plug powers Katsuyu's PC (the plugin is the plug).
+
+    The controller always exists when jobs are enabled; it does nothing until the
+    ``power_plug`` plugin is enabled in Vision.
+    """
+    if job_repository is None:
+        return None
+    plugin = context.plugins["power_plug"].plugin
+    return PowerPlugController(plugin, job_repository, policy=plugin.policy)
 
 
 def _wake_arguments(

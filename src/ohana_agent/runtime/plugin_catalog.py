@@ -42,9 +42,11 @@ from ohana_agent.configuration.loaders import (
     ZWaveConfigLoader,
 )
 from ohana_agent.configuration.loaders.adguard_sync import AdGuardSyncConfigLoader
+from ohana_agent.configuration.loaders.power_plug import PowerPlugConfigLoader
 from ohana_agent.configuration.mqtt_plugin import MQTTPluginConfig
 from ohana_agent.configuration.network import NetworkPluginConfig
 from ohana_agent.configuration.ntp import NTPPluginConfig
+from ohana_agent.configuration.power_plug import PowerPlugPluginConfig
 from ohana_agent.configuration.teleinformation import TeleinformationPluginConfig
 from ohana_agent.configuration.wireguard import WireGuardPluginConfig
 from ohana_agent.configuration.zwave import ZWavePluginConfig
@@ -79,6 +81,7 @@ from ohana_agent.plugins.network.plugin import NetworkPlugin
 from ohana_agent.plugins.ntp.check import NTPCheck
 from ohana_agent.plugins.ntp.config import NTPConfig
 from ohana_agent.plugins.ntp.plugin import NTPPlugin
+from ohana_agent.plugins.power_plug.plugin import PowerPlugPlugin
 from ohana_agent.plugins.teleinformation.check import TeleinformationCheck
 from ohana_agent.plugins.teleinformation.config import TeleinformationConfig
 from ohana_agent.plugins.teleinformation.plugin import TeleinformationPlugin
@@ -895,6 +898,21 @@ def production_plugin_specs(
                 start_at=now,
             ),
             test_plugin=test_teleinformation_plugin,
+        ),
+        PluginSpec(
+            identifier="power_plug",
+            display_name="Prise connectée",
+            capabilities=("power_plug.control",),
+            configuration_model=PowerPlugPluginConfig,
+            load_configuration=PowerPlugConfigLoader().load,
+            build_config=lambda _, __, plugin_config: plugin_config,
+            create_plugin=lambda config: PowerPlugPlugin(config=config),
+            # Nothing is observed on a schedule: the plug is only read around a
+            # wake cycle, and by the "Tester" button.
+            build_tasks=lambda _config, _plugin_config, _now: [],
+            test_plugin=lambda plugin: plugin.execute(),
+            follows_infrastructure=False,
+            optional_configuration=True,
         ),
         PluginSpec(
             identifier="backup",

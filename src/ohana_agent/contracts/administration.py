@@ -478,6 +478,11 @@ class DistributedWorkerPowerEventKind(StrEnum):
     SHUTDOWN_GRANTED = "shutdown_granted"
     SHUTDOWN_STARTED = "shutdown_started"
     SHUTDOWN_VETOED = "shutdown_vetoed"
+    # Smart plug feeding the PC. These sit beside the wake cycle: no cycle rule
+    # (unanswered wakes, online delay, shutdown candidate) reads them.
+    PLUG_ON = "plug_on"
+    PLUG_OFF = "plug_off"
+    PLUG_FAILED = "plug_failed"
 
 
 class DistributedWorkerPowerEvent(AdministrationModel):

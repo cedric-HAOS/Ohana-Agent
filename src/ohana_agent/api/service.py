@@ -37,6 +37,7 @@ from ohana_agent.host.network import (
 )
 from ohana_agent.infrastructure.repository import InfrastructureConfigurationRepository
 from ohana_agent.jobs.log_sources import LogSourceBroker
+from ohana_agent.jobs.power_plug import PowerPlugController
 from ohana_agent.jobs.repository import DistributedJobRepository
 from ohana_agent.plugins.administration import PluginAdministrationRepository
 from ohana_agent.runtime.memory_diagnostics import AllocationTrace
@@ -142,6 +143,7 @@ class AdministrationService(
         wake_enabled: bool = False,
         on_wake_enabled_changed: Callable[[bool], None] | None = None,
         agent_node_id: str | None = None,
+        power_plug: PowerPlugController | None = None,
     ) -> None:
         self.infrastructure_repository = infrastructure_repository
         self.dhcp_repository = dhcp_repository
@@ -198,6 +200,9 @@ class AdministrationService(
         self.wake_shutdown_after_completion = wake_shutdown_after_completion
         self.wake_worker_id = wake_worker_id
         self.wake_mac_address = wake_mac_address
+        # Smart plug feeding the wake worker's PC (only that worker's).
+        self.power_plug = power_plug
+        self._plug_worker: str | None = None
         self._last_planned_wake_date = None
         self._last_job_settlement: datetime | None = None
         self.backup_transfer = backup_transfer

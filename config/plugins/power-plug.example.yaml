@@ -1,0 +1,17 @@
+# Prise connectée du PC de Katsuyu (Bubule), pilotée par Home Assistant :
+# allumée avant chaque réveil, coupée une fois le PC éteint.
+# Activer et régler dans Vision : Configuration > Plugins > Prise connectée.
+# Le jeton est un jeton d'accès longue durée Home Assistant (profil > Sécurité),
+# de préférence dédié à Ohana ; il n'est jamais réaffiché une fois enregistré.
+enabled: false
+home_assistant_url: null
+access_token: null
+switch_entity_id: null
+# Recommandé : la puissance mesurée permet de ne couper qu'un PC éteint.
+power_entity_id: null
+verify_tls: true
+boot_delay_seconds: 15
+shutdown_grace_seconds: 300
+idle_watts: 5.0
+idle_confirm_seconds: 30
+poll_seconds: 15

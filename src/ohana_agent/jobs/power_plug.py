@@ -200,11 +200,9 @@ class PowerPlugController:
         if candidate is None or policy is None:
             self._idle_since = None
             return None
-        # Only what Ohana switched on, or the plug after a shutdown Ohana ran.
-        if (
-            candidate.reason != REASON_SHUTDOWN_STARTED
-            and self._store.plug_turned_on_at() is None
-        ):
+        # Only a plug Ohana switched on itself: a plug the owner switched on, or
+        # left on, is theirs, whatever happened to the PC since.
+        if self._store.plug_turned_on_at() is None:
             return None
         if (
             self._last_poll is not None

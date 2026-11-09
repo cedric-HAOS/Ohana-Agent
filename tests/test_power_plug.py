@@ -437,22 +437,50 @@ def test_a_plug_the_user_switched_on_is_not_cut_without_a_reason(
     assert plug.calls == []
 
 
-def test_the_plug_is_cut_after_a_shutdown_ohana_ran_even_if_it_was_already_on(
+def test_a_plug_that_was_already_on_stays_on_after_a_shutdown_ohana_ran(
     tmp_path: Path, repository: DistributedJobRepository, clock: Clock
 ) -> None:
     wakes: list[str] = []
     plug = FakePlug(on=True, watts=20.0)
     service, _ = _build(tmp_path, repository, plug, wakes)
     _queue_work(repository, clock)
-    _wake_and_boot(service, repository, clock)  # plug already on: not owned
+    _wake_and_boot(service, repository, clock)  # plug already on: not Ohana's
     _shutdown_started(repository)
     plug.watts = 0.6
 
-    for _ in range(8):
+    for _ in range(30):
         clock.advance(20)
         service.tick_power_plug(clock.now)
 
-    assert plug.calls == ["off"]
+    assert plug.calls == []
+    assert "plug_off" not in _kinds(repository)
+
+
+def test_a_pc_the_owner_started_and_stopped_keeps_its_plug(
+    tmp_path: Path, repository: DistributedJobRepository, clock: Clock
+) -> None:
+    """9 November, real: an old Ohana shutdown must not justify a cut days later."""
+    wakes: list[str] = []
+    plug = FakePlug(on=True, watts=20.0)
+    service, _ = _build(tmp_path, repository, plug, wakes)
+    _queue_work(repository, clock)
+    _wake_and_boot(service, repository, clock)  # the 05:00 cycle, plug already on
+    _shutdown_started(repository)
+    clock.advance(6 * 3600)
+
+    repository.register_worker(REGISTRATION)  # the owner starts the PC by hand
+    plug.watts = 166.6
+    for _ in range(5):
+        clock.advance(20)
+        repository.register_worker(REGISTRATION)
+        service.tick_power_plug(clock.now)
+    plug.watts = 0.5  # ... and shuts it down by hand
+    for _ in range(30):
+        clock.advance(20)
+        service.tick_power_plug(clock.now)
+
+    assert plug.calls == []
+    assert "plug_off" not in _kinds(repository)
 
 
 def test_a_silent_pc_is_unplugged_again_only_when_it_draws_nothing(

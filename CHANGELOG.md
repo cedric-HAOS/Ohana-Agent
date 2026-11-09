@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.58.1] — 2026-11-09 — Prise connectée
+
 - Prise connectée : Ohana ne coupe plus que la prise qu'il a lui-même allumée. Un arrêt lancé par Ohana ne suffisait qu'à lui seul à justifier la coupure, même pour une prise déjà allumée, et ce motif restait valable des heures plus tard : le 9 novembre, un PC démarré puis éteint à la main a vu sa prise coupée à cause du cycle de 05:00. Une prise allumée par le propriétaire, ou laissée allumée, n'est plus jamais coupée.
 
 ## [1.58.0] — 2026-11-09 — Plugin « Prise connectée » (`power_plug`, désactivé par défaut) pour l

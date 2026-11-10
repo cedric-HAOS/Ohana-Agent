@@ -458,6 +458,24 @@ async def _companion_trust(call: _Call, _: Mapping[str, str]) -> web.Response:
     )
 
 
+def _companion_system_update(action: str) -> Handler:
+    """Ask for one fixed system update helper; the request takes no parameter."""
+
+    async def handler(call: _Call, _: Mapping[str, str]) -> web.Response:
+        if await call.json():
+            raise _Rejected(HTTPStatus.BAD_REQUEST, "No parameters are accepted")
+
+        return await call.execute(
+            partial(
+                call.service.request_companion_system_update,
+                action,
+                call.companion_id,
+            )
+        )
+
+    return handler
+
+
 async def _companion_diagnosis(
     call: _Call,
     parameters: Mapping[str, str],
@@ -754,6 +772,7 @@ def _companion_listener_routes(
                 _call(partial(service.read_companion_requests, "all")),
             ),
             _route("/v1/incidents/activity", _call(service.read_companion_activity)),
+            _route("/v1/system/updates", _call(service.read_companion_system_updates)),
         ),
         "PUT": (),
         "POST": (
@@ -771,6 +790,8 @@ def _companion_listener_routes(
                 _companion_call_with_body(service.register_companion_notifications),
             ),
             _route("/v1/incidents/{incident_id}/diagnose", _companion_diagnosis),
+            _route("/v1/system/updates/refresh", _companion_system_update("refresh")),
+            _route("/v1/system/updates/apply", _companion_system_update("upgrade")),
             _route(
                 "/v1/incidents/requests/{request_id}/response",
                 _respond_companion_request,

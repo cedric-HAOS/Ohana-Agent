@@ -3,6 +3,7 @@
 ## Non publié
 
 - Gravité des incidents : un contrôle en échec n'ouvre plus d'office un incident « critique ». La gravité tient compte de ce que `infrastructure.yaml` déclare : un service en échec est critique seulement si son champ `critical` est vrai, sinon l'incident est « dégradé » ; un équipement absent du réseau est critique s'il porte `metadata.critical: true` ou, par défaut, s'il héberge un service critique actif ; un équipement découvert (nœud Z-Wave) n'est jamais critique. Ce que l'infrastructure ne décrit pas (santé de l'hôte, sauvegardes) garde sa gravité, et un fichier illisible ne masque rien : la panne reste critique. Un incident ouvert est requalifié à l'observation suivante. Conséquences : la notification « incident critique », l'état « Konoha : critique » de Shizune et la tête de liste ne concernent plus la téléinformation, la télémétrie, la synchronisation AdGuard ou un appareil secondaire, sauf déclaration contraire.
+- Compagnon Shizune : le listener compagnon expose l'état des mises à jour du système de l'hôte (`GET /v1/system/updates` : verdict, compteurs, âge des listes, redémarrage requis, avancement des assistants ; jamais la liste des paquets) et les demandes `POST /v1/system/updates/refresh` et `/v1/system/updates/apply`, sans paramètre, avec les mêmes refus que depuis Vision. Aucune autre route système n'est ouverte au compagnon.
 
 ## [1.58.1] — 2026-11-09 — Prise connectée
 

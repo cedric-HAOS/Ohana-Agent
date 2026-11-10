@@ -381,3 +381,104 @@ def test_expired_companion_session_is_refused(tmp_path: Path) -> None:
     current += timedelta(days=2)
     assert not repository.authorize("iphone-cedric", token)
     repository.close()
+
+
+def test_companion_reads_and_requests_the_system_update_through_fixed_routes(
+    tmp_path,
+):
+    companions = CompanionRepository(tmp_path / "control.db")
+    token = _pair(companions)
+    requested = []
+
+    class Requester:
+        def status(self):
+            return {"installed": True, "refresh": {"state": "never"}}
+
+        def request(self, action):
+            requested.append(action)
+            return {"started": True, "busy": False, "action": action}
+
+    state = {
+        "status": "security_updates",
+        "message": "2 correctifs de sécurité en attente",
+        "pending_count": 5,
+        "security_count": 2,
+        "kernel_pending": False,
+        "packages": [{"name": "openssl", "security": True}],
+        "held_back": ["docker-ce"],
+        "lists_refreshed_at": "2026-11-10T08:00:00+01:00",
+        "lists_age_days": 0.1,
+        "lists_stale": False,
+        "reboot_required": False,
+        "reboot_packages": [],
+        "last_apt_run": {"command": "apt-get upgrade"},
+        "read_at": "2026-11-10T10:00:00+01:00",
+    }
+    service = AdministrationService(
+        infrastructure_repository=InfrastructureConfigurationRepository(
+            tmp_path / "infra.yaml"
+        ),
+        companion_repository=companions,
+        system_updates_reader=lambda: dict(state),
+        system_update_requester=Requester(),
+    )
+    server = AdministrationHTTPServer(
+        service=service, token="admin-test", companion_only=True, port=0
+    )
+    session = {"device_id": "iphone-cedric", "token": token}
+    server.start()
+    try:
+        with pytest.raises(HTTPError) as anonymous:
+            _companion_request(server, "/v1/system/updates")
+        assert anonymous.value.code == 401
+
+        updates = _companion_request(server, "/v1/system/updates", **session)
+        assert updates["schema_version"] == 1
+        assert updates["status"] == "security_updates"
+        assert (updates["pending_count"], updates["security_count"]) == (5, 2)
+        assert updates["helper"] == {"installed": True, "refresh": {"state": "never"}}
+        # The package list and the apt history stay in Vision.
+        assert not {"packages", "held_back", "reboot_packages", "last_apt_run"} & set(
+            updates
+        )
+
+        with pytest.raises(HTTPError) as parameters:
+            _companion_request(
+                server,
+                "/v1/system/updates/apply",
+                method="POST",
+                payload={"packages": ["openssl"]},
+                **session,
+            )
+        assert parameters.value.code == 400
+        with pytest.raises(HTTPError) as anonymous_request:
+            _companion_request(
+                server, "/v1/system/updates/apply", method="POST", payload={}
+            )
+        assert anonymous_request.value.code == 401
+        assert requested == []
+
+        refreshed = _companion_request(
+            server, "/v1/system/updates/refresh", method="POST", payload={}, **session
+        )
+        applied = _companion_request(
+            server, "/v1/system/updates/apply", method="POST", payload={}, **session
+        )
+        assert (refreshed["action"], applied["action"]) == ("refresh", "upgrade")
+        assert requested == ["refresh", "upgrade"]
+
+        # The same guards as from Vision, and no other system route.
+        state.update(lists_stale=True)
+        service._system_updates_cache = None
+        with pytest.raises(HTTPError) as stale:
+            _companion_request(
+                server, "/v1/system/updates/apply", method="POST", payload={}, **session
+            )
+        assert stale.value.code == 422
+        for path in ("/v1/system/network", "/v1/system/adguard-sync"):
+            with pytest.raises(HTTPError) as hidden:
+                _companion_request(server, path, **session)
+            assert hidden.value.code == 404
+        assert requested == ["refresh", "upgrade"]
+    finally:
+        server.stop()

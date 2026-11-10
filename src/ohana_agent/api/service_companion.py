@@ -18,6 +18,23 @@ from ohana_agent.tsunade.incident_summary import (
 LOGGER = logging.getLogger(__name__)
 
 
+# The essential of the host's package updates: counts, dates and progress.
+# The package list stays in Vision.
+_COMPANION_SYSTEM_UPDATE_FIELDS = (
+    "status",
+    "message",
+    "pending_count",
+    "security_count",
+    "kernel_pending",
+    "lists_refreshed_at",
+    "lists_age_days",
+    "lists_stale",
+    "reboot_required",
+    "read_at",
+    "helper",
+)
+
+
 class CompanionServiceMixin:
     """Companion (Shizune) summary, requests, pairing and devices."""
 
@@ -99,6 +116,31 @@ class CompanionServiceMixin:
                 last_check=log_check_summary(latest_log_health),
             ),
         }
+
+    def read_companion_system_updates(self) -> dict[str, Any]:
+        """Whether the Agent's host is up to date, without the package list."""
+        state = self.read_system_updates()
+        return {
+            "schema_version": 1,
+            **{field: state.get(field) for field in _COMPANION_SYSTEM_UPDATE_FIELDS},
+        }
+
+    def request_companion_system_update(
+        self, action: str, companion_id: str | None
+    ) -> object:
+        """A paired companion asks for the fixed refresh or upgrade helper.
+
+        Same refusals as from Vision: the companion chooses neither a package
+        nor an option, and the machine is never restarted.
+        """
+        result = self.request_system_update(action)
+        LOGGER.info(
+            "System update %s requested by companion %s: %s",
+            action,
+            companion_id,
+            "started" if result.get("started") else "already running",
+        )
+        return result
 
     def _companion_services(self) -> dict[str, Any]:
         """The essential services at a glance, from Agent's own latest checks."""

@@ -95,7 +95,10 @@ limité, activé par Installer sur le port `8767`, expose seulement :
 - l’ouverture et le suivi d’une association temporaire ;
 - la santé globale synthétique, les demandes structurées et l’activité récente ;
 - la réponse à une demande Tsunade ;
-- l’enregistrement ou la désactivation du jeton APNs de l’iPhone.
+- l’enregistrement ou la désactivation du jeton APNs de l’iPhone ;
+- l’état des mises à jour du système de l’hôte de l’Agent
+  (`GET /v1/system/updates`) et les deux demandes `POST
+  /v1/system/updates/refresh` et `/v1/system/updates/apply`.
 
 L’association produit un code et l’empreinte courte de l’autorité TLS. Ces deux
 valeurs doivent être identiques dans Shizune et dans Vision avant autorisation.
@@ -108,8 +111,15 @@ Une réponse Shizune porte uniquement un choix fini. Agent impose lui-même la
 provenance `shizune`, retrouve la proposition côté serveur puis passe par le
 même validateur et le même exécuteur que Vision. Une validation concurrente
 trouve la demande déjà traitée et ne peut pas déclencher une seconde exécution.
-Le listener ne publie aucune route d’infrastructure, DHCP, plugin, job ou
-opération système.
+Le listener ne publie aucune route d’infrastructure, DHCP, plugin ou job.
+
+La mise à jour du système est la seule opération système du compagnon, décidée
+par l’utilisateur le 10 novembre 2026. Elle reste bornée : la lecture ne donne
+que des compteurs, des dates et l’avancement (la liste des paquets reste dans
+Vision) ; une demande n’accepte aucun paramètre et passe par les mêmes
+assistants root de l’Installer que depuis Vision, avec les mêmes refus (listes
+périmées, rien en attente, assistant déjà en cours). Le compagnon ne choisit ni
+paquet ni option, et la machine n’est jamais redémarrée.
 
 Les notifications iOS sont envoyées directement par Agent à APNs en HTTP/2 ;
 elles ne passent ni par Home Assistant ni par MQTT. Le canal reste facultatif :

@@ -14,17 +14,18 @@ revenir à un état sûr en cas d'échec.
 
 ## État actuel
 
-Travail local non publié : code applicatif regroupé sous `src/ohana_agent`,
-domaines séparés et guides classés dans `docs/`. Le parcours de collecte avec
-autorisation Shizune, exécution Katsuyu et réévaluation reste intégré.
-Voir [l’organisation actuelle](docs/architecture-evolution.md).
+**Version publiée au 10 novembre 2026 : 1.58.1**, dans la composition
+Ohana-Platform 1.0.157. Le numéro courant fait foi dans `pyproject.toml` et le
+[CHANGELOG](CHANGELOG.md) : cette page ne suit pas chaque release.
 
-**Version : 1.28.0 — Architecture regroupée et investigations complémentaires autorisées.**
+Depuis la 1.28.0, Agent avance avec la [roadmap commune](https://github.com/cedric-HAOS/Ohana-Platform/blob/main/ROADMAP.md)
+d'Ohana-Platform, phase par phase. Les critères de sortie, leurs preuves et ce
+qui reste ouvert y sont tenus à jour ; cette page résume ce que cela a changé
+dans Agent.
 
-Le contrôle des journaux réévalue les sources avant l’arrêt de Katsuyu. Les
-résultats en attente survivent au redémarrage. Les incidents réseau des équipements
-retirés sont clôturés au démarrage et à l’enregistrement de l’architecture.
-Voir [le contrat du cycle](docs/tsunade-worker-cycle.md).
+Le code applicatif est regroupé sous `src/ohana_agent`, par domaine, et les
+guides sont classés dans `docs/`. Voir [l’organisation actuelle](docs/architecture-evolution.md)
+et [le contrat du cycle worker](docs/tsunade-worker-cycle.md).
 
 Le socle actuel couvre notamment :
 
@@ -46,7 +47,19 @@ Le socle actuel couvre notamment :
   journaux et les analyses Katsuyu AI bornées ;
 - les réparations supervisées, explicitement autorisées, vérifiées et
   enregistrables comme expérience ;
-- le contrat compagnon Shizune, borné, révocable et sans voie d'exécution directe.
+- le contrat compagnon Shizune, borné, révocable et sans voie d'exécution directe ;
+- la maintenance préventive : dérives de l'hôte, sauvegardes, session iCloud,
+  mises à jour du système, certificats et mises à jour Home Assistant, sans
+  incident ni réparation ;
+- la supervision d'Ohana par Ohana : composants de l'Agent, Vision, Katsuyu et
+  Shizune ;
+- le registre des restaurations déclarées et la relecture indépendante des
+  archives distantes ;
+- la publication des réservations DHCP dans AdGuard Home et la supervision de
+  la réplication entre les deux AdGuard ;
+- la lecture de l'état apt d'INFRA-01 et les demandes de mise à jour, exécutées
+  par les assistants root de l'Installer ;
+- la prise connectée qui alimente Bubule le temps d'un réveil.
 
 Le détail exhaustif des versions et correctifs publiés est conservé dans le
 [CHANGELOG](CHANGELOG.md).
@@ -156,31 +169,105 @@ Le détail exhaustif des versions et correctifs publiés est conservé dans le
 
 **Statut : livré.**
 
+### 1.27 à 1.29 — Investigations en lecture seule et stabilisation de Tsunade
+
+- code regroupé par domaine et investigations complémentaires autorisées ;
+- investigations en lecture seule lancées automatiquement ;
+- configuration et contrôles Supervisor, diagnostic Téléinformation déterministe ;
+- preuves des réévaluations conservées, niveaux de diagnostic, sûreté des preuves.
+
+**Statut : livré (Phase 1).**
+
+### 1.30 à 1.37 — Réparations supervisées
+
+- registre de plugins, serveur aiohttp et découpage des gros modules ;
+- corrélation entre incidents, sans cause affirmée ;
+- catalogue fini de réparations : dnsmasq, Mosquitto, teleinfo2mqtt, Z-Wave JS
+  et chrony, chacune avec ses préconditions, son risque et sa vérification ;
+- refus et report d'une réparation, vérification immédiate après exécution ;
+- causes d'échec explicites, cascade DNS, incidents de journaux significatifs.
+
+**Statut : livré (Phase 2).**
+
+### 1.38 à 1.41 — Mémoire, prévention et supervision d'Ohana
+
+- expérience des réparations réussies et résolution manuelle déclarée ;
+- maintenance préventive et surveillance de la session iCloud ;
+- composants de l'Agent, Vision, Katsuyu et Shizune observés comme le reste ;
+- durcissement des phases 1 à 5.
+
+**Statut : livré (Phases 3 à 5).**
+
+### 1.42 à 1.44 — Katsuyu expliqué et synthèse Shizune
+
+- journaux par composant, bruit accepté, statistiques et classement des réparations ;
+- cycles de réveil journalisés avec leur raison, Wake-on-LAN mesuré, reprise
+  bornée des travaux interrompus, veto d'arrêt rapporté par Katsuyu ;
+- services essentiels et journaux par équipement dans la synthèse compagnon.
+
+**Statut : livré ; essais réels des Phases 6 et 7 différés.**
+
+### 1.45 à 1.48 — Réservations DNS et AdGuard
+
+- noms des réservations DHCP publiés dans `ohana.lan` vers AdGuard Home ;
+- autorisations Katsuyu et Shizune exportées dans la sauvegarde d'INFRA-01 ;
+- capacité de synchronisation AdGuard et supervision centrée sur la réplication.
+
+**Statut : livré.**
+
+### 1.49 à 1.53 — Sauvegardes restaurables et observations stables
+
+- registre des restaurations déclarées, sauvegarde jamais testée identifiable ;
+- relecture indépendante des archives distantes, session iCloud, sauvegarde à
+  l'heure, compte rendu d'`ohana restore` ;
+- retard de télémétrie confirmé sur deux contrôles avant incident ;
+- mémoire de l'Agent et de Vision mesurée séparément ;
+- investigation de journaux étendue une fois à 24 heures ;
+- purge quotidienne des observations déjà traitées.
+
+**Statut : livré ; Phases 9 et 10 ouvertes (mesures et restauration réelle).**
+
+### 1.54 à 1.58 — Maintenance du système et alimentation de Bubule
+
+- état apt d'INFRA-01 et demandes d'actualisation ou de mise à jour ;
+- échéances : correctifs de sécurité, certificats TLS, mises à jour Home Assistant ;
+- diagnostic de mémoire à la demande et mémoire rendue après la sonde Z-Wave ;
+- échec DNS confirmé sur deux contrôles, registre unique des règles préventives ;
+- alerte Z-Wave sur la dernière connexion d'un équipement ;
+- plugin « Prise connectée » : Ohana ne coupe que la prise qu'il a allumée.
+
+**Statut : livré.**
+
 ---
 
 ## Prochaines priorités
 
-### Maintenant — Stabilisation Tsunade, Katsuyu et sauvegardes
+Les priorités sont celles de la [roadmap commune](https://github.com/cedric-HAOS/Ohana-Platform/blob/main/ROADMAP.md#priorité-immédiate).
+Ce qui suit est la part d'Agent, relevée le 10 novembre 2026.
 
-- suivre en production les jobs créés dans la fenêtre Wake-on-LAN regroupée ;
-- rendre les raisons de timeout, d'absence de worker et de réveil manqué plus
-  exploitables dans les journaux et les incidents ;
-- consolider les contrôles `logs.health` pour éviter les sévérités excessives ;
-- documenter les chemins opérateur : diagnostic, investigation, autorisation,
-  vérification et expérience.
+### Maintenant — Mesurer avant de développer
 
-**Statut : en consolidation.**
+- confirmer par la règle `memory_growth` l'effet du correctif mémoire de la
+  1.55.0 ;
+- compter les incidents de fraîcheur et de présence par semaine, et trouver
+  pourquoi le DNS de LINKY-01 vacille (Phase 9) ;
+- déclarer une restauration HAOS réelle dans le registre (Phase 10) ;
+- relire la gravité des incidents : tout contrôle en échec ouvre aujourd'hui un
+  incident « critique », sans tenir compte du champ `critical` des services
+  déclarés. Constat du 10 novembre 2026, décision à prendre.
+
+**Statut : en cours.**
 
 ### Ensuite — Actions contrôlées étendues
 
 Objectif : élargir prudemment les actions disponibles sans introduire
 d'auto-réparation implicite.
 
+Livré depuis la 1.31 : cinq réparations au catalogue, avec préconditions,
+conséquences, risque, vérification et journal des autorisations.
+
 - politiques explicites de remédiation par capacité ;
-- nouveaux types d'actions supervisées au-delà de `dnsmasq.service` ;
-- meilleure modélisation des conséquences et préconditions ;
-- stratégie de retour à un état sûr après échec d'une action ;
-- audit durable des autorisations humaines et des décisions Tsunade.
+- nouvelle réparation seulement après une panne réelle qui la justifie.
 
 **Statut : à cadrer.**
 

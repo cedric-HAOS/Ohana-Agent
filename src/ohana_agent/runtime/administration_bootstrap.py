@@ -85,6 +85,7 @@ from ohana_agent.tsunade.incident_repairs import (
     REPAIR_VERIFICATION_PROBES,
     observes_repaired_service,
 )
+from ohana_agent.tsunade.incident_severity import DeclaredSeverity
 from ohana_agent.tsunade.incidents import (
     TsunadeIncidentRepository,
 )
@@ -582,7 +583,10 @@ def _build_incident_repository(
     context: AdministrationContext,
     administration_config: AdministrationConfig,
 ) -> TsunadeIncidentRepository:
-    repository = TsunadeIncidentRepository(administration_config.control_database_path)
+    repository = TsunadeIncidentRepository(
+        administration_config.control_database_path,
+        severity=DeclaredSeverity(context.infrastructure_config_path),
+    )
     repository.reconcile_network_devices(
         {
             device.name

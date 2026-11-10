@@ -102,6 +102,16 @@ Le LLM local ne reçoit que le contexte utile et retourne des hypothèses,
 conserve ces éléments comme propositions : Tsunade reste responsable de la
 décision et aucune action n'est autorisée automatiquement.
 
+La gravité d'un incident dépend de ce qui est en panne, pas seulement de
+l'échec du contrôle. Un service en échec ouvre un incident critique si
+`infrastructure.yaml` le déclare `critical: true`, sinon un incident dégradé. Un
+équipement absent du réseau est critique s'il porte `metadata.critical: true`
+ou, sans ce champ, s'il héberge un service critique actif ; `metadata.critical:
+false` le rend secondaire. Un nœud Z-Wave découvert n'est jamais critique. La
+santé de l'hôte et les sauvegardes, que l'infrastructure ne décrit pas, gardent
+la gravité choisie par leur contrôle. Seul un incident critique envoie la
+notification « incident critique » et fait passer Shizune à « Konoha : critique ».
+
 Depuis l’administration Vision, un opérateur peut demander à Tsunade le
 contrôle déterministe immédiat des journaux configurés. Si ce contrôle ouvre un
 incident `logs.health`, une analyse approfondie peut ensuite être autorisée

@@ -252,9 +252,9 @@ Ce qui suit est la part d'Agent, relevée le 10 novembre 2026.
 - compter les incidents de fraîcheur et de présence par semaine, et trouver
   pourquoi le DNS de LINKY-01 vacille (Phase 9) ;
 - déclarer une restauration HAOS réelle dans le registre (Phase 10) ;
-- relire la gravité des incidents : tout contrôle en échec ouvre aujourd'hui un
-  incident « critique », sans tenir compte du champ `critical` des services
-  déclarés. Constat du 10 novembre 2026, décision à prendre.
+- mesurer l'effet de la nouvelle gravité des incidents (critique seulement pour
+  ce que l'infrastructure déclare critique, décidée le 10 novembre 2026) sur ce
+  qui alerte réellement, une fois déployée.
 
 **Statut : en cours.**
 

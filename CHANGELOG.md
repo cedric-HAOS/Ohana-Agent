@@ -2,6 +2,8 @@
 
 ## Non publié
 
+- Gravité des incidents : un contrôle en échec n'ouvre plus d'office un incident « critique ». La gravité tient compte de ce que `infrastructure.yaml` déclare : un service en échec est critique seulement si son champ `critical` est vrai, sinon l'incident est « dégradé » ; un équipement absent du réseau est critique s'il porte `metadata.critical: true` ou, par défaut, s'il héberge un service critique actif ; un équipement découvert (nœud Z-Wave) n'est jamais critique. Ce que l'infrastructure ne décrit pas (santé de l'hôte, sauvegardes) garde sa gravité, et un fichier illisible ne masque rien : la panne reste critique. Un incident ouvert est requalifié à l'observation suivante. Conséquences : la notification « incident critique », l'état « Konoha : critique » de Shizune et la tête de liste ne concernent plus la téléinformation, la télémétrie, la synchronisation AdGuard ou un appareil secondaire, sauf déclaration contraire.
+
 ## [1.58.1] — 2026-11-09 — Prise connectée
 
 - Prise connectée : Ohana ne coupe plus que la prise qu'il a lui-même allumée. Un arrêt lancé par Ohana ne suffisait qu'à lui seul à justifier la coupure, même pour une prise déjà allumée, et ce motif restait valable des heures plus tard : le 9 novembre, un PC démarré puis éteint à la main a vu sa prise coupée à cause du cycle de 05:00. Une prise allumée par le propriétaire, ou laissée allumée, n'est plus jamais coupée.

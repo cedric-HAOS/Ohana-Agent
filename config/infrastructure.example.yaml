@@ -209,6 +209,9 @@ topology:
       address: 192.168.1.99
       metadata:
         role: wireless_access_point
+        # Sans ce champ, l'absence d'un équipement du réseau est critique
+        # seulement s'il héberge un service critique actif. Le déclarer :
+        # critical: true
 
     - id: infra-01
       label: INFRA-01

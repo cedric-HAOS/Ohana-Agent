@@ -29,6 +29,7 @@ from ohana_agent.tsunade.incident_models import (
 )
 from ohana_agent.tsunade.incident_repairs import TsunadeRepairs
 from ohana_agent.tsunade.incident_schema import TsunadeIncidentSchema
+from ohana_agent.tsunade.incident_severity import SeverityPolicy, observed_severity
 from ohana_agent.tsunade.incident_user_requests import TsunadeUserRequests
 from ohana_agent.tsunade.local_time import paris_iso, paris_now, to_paris
 from ohana_agent.tsunade.repair_statistics import TsunadeRepairStatistics
@@ -50,13 +51,14 @@ class TsunadeIncidentRepository(
 ):
     """Deduplicate and persist incidents in Agent's existing control database."""
 
-    _FAULTS = {
-        ObservationStatus.DEGRADED: "degraded",
-        ObservationStatus.UNHEALTHY: "critical",
-    }
-
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(
+        self,
+        database_path: Path | str,
+        *,
+        severity: SeverityPolicy = observed_severity,
+    ) -> None:
         self.database_path = Path(database_path)
+        self._severity = severity
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._processed_purged_on: str | None = None
@@ -83,7 +85,7 @@ class TsunadeIncidentRepository(
                 self._mark_processed(observation.id)
                 return None
             current = self._active(key)
-            severity = self._FAULTS.get(observation.status)
+            severity = self._severity(observation)
             incident: TsunadeIncident | None = None
             if severity is not None:
                 if current is not None:

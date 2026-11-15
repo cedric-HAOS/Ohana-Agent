@@ -2,6 +2,8 @@
 
 ## Non publié
 
+- Z-Wave : la dépendance `zwave-js-server-python` est bornée à `<0.75`. La mise à jour du 15 novembre (Agent 1.59.0) avait installé la 0.75.0, publiée le 12 novembre, qui n'accepte que le schéma d'API 52 : le serveur Z-Wave JS 3.11.0 de zwave-01 était refusé (« Z-Wave JS Server version (3.11.0) is incompatible »), la découverte n'aboutissait plus et aucun nœud n'était surveillé. Conséquence visible : un nœud supprimé de Z-Wave JS (la Sonnette, nœud 25) réapparaissait depuis `infrastructure.yaml` au redémarrage et y restait. La borne pourra être relevée quand le serveur Z-Wave JS gérera le schéma 52.
+
 ## [1.59.0] — 2026-11-15 — Gravité des incidents
 
 - Gravité des incidents : un contrôle en échec n'ouvre plus d'office un incident « critique ». La gravité tient compte de ce que `infrastructure.yaml` déclare : un service en échec est critique seulement si son champ `critical` est vrai, sinon l'incident est « dégradé » ; un équipement absent du réseau est critique s'il porte `metadata.critical: true` ou, par défaut, s'il héberge un service critique actif ; un équipement découvert (nœud Z-Wave) n'est jamais critique. Ce que l'infrastructure ne décrit pas (santé de l'hôte, sauvegardes) garde sa gravité, et un fichier illisible ne masque rien : la panne reste critique. Un incident ouvert est requalifié à l'observation suivante. Conséquences : la notification « incident critique », l'état « Konoha : critique » de Shizune et la tête de liste ne concernent plus la téléinformation, la télémétrie, la synchronisation AdGuard ou un appareil secondaire, sauf déclaration contraire.

@@ -56,7 +56,7 @@ def test_package_declares_runtime_dependencies() -> None:
         "cryptography>=45,<47",
         "httpx[http2]>=0.28,<1",
         "tzdata>=2025.2",
-        "zwave-js-server-python>=0.72,<1",
+        "zwave-js-server-python>=0.72,<0.75",
     ]
 
     assert "pytest" not in dependencies

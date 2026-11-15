@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.59.1] — 2026-11-15 — Z-Wave
+
 - Z-Wave : la dépendance `zwave-js-server-python` est bornée à `<0.75`. La mise à jour du 15 novembre (Agent 1.59.0) avait installé la 0.75.0, publiée le 12 novembre, qui n'accepte que le schéma d'API 52 : le serveur Z-Wave JS 3.11.0 de zwave-01 était refusé (« Z-Wave JS Server version (3.11.0) is incompatible »), la découverte n'aboutissait plus et aucun nœud n'était surveillé. Conséquence visible : un nœud supprimé de Z-Wave JS (la Sonnette, nœud 25) réapparaissait depuis `infrastructure.yaml` au redémarrage et y restait. La borne pourra être relevée quand le serveur Z-Wave JS gérera le schéma 52.
 
 ## [1.59.0] — 2026-11-15 — Gravité des incidents

@@ -243,6 +243,88 @@ def test_log_anomaly_growing_over_daily_checks_is_reported(tmp_path: Path) -> No
     monitor.close()
 
 
+ZWAVE_SERVER_LINE = (
+    "<timestamp> haos-zwave app_a0d7b954_zwavejs2mqtt[<value>]: "
+    "<timestamp> info z-wave-server: client disconnected"
+)
+
+
+def test_log_growth_ignores_accepted_component_except_critical(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "control.db"
+    monitor = TsunadePreventiveMonitor(database)
+    connection = sqlite3.connect(database)
+    connection.execute(
+        """CREATE TABLE distributed_jobs (job_id TEXT, type TEXT, status TEXT,
+        finished_at TEXT, result_json TEXT)"""
+    )
+    connection.execute(
+        """CREATE TABLE tsunade_accepted_log_signatures (source TEXT,
+        signature TEXT, summary TEXT, accepted_at TEXT)"""
+    )
+    connection.execute(
+        """CREATE TABLE tsunade_accepted_log_components (source TEXT,
+        component TEXT, label TEXT, accepted_at TEXT)"""
+    )
+
+    def write(severity: str) -> None:
+        connection.execute("DELETE FROM distributed_jobs")
+        for offset in range(21):
+            day = TODAY - timedelta(days=20 - offset)
+            # Absent from the older checks, then Ohana's own probe every day.
+            findings = (
+                [
+                    {
+                        "source": "zwave-01",
+                        "signature": ZWAVE_SERVER_LINE,
+                        "occurrences": 717,
+                        "severity": severity,
+                    }
+                ]
+                if offset >= 14
+                else []
+            )
+            connection.execute(
+                """INSERT INTO distributed_jobs
+                (job_id, type, status, finished_at, result_json)
+                VALUES (?, ?, ?, ?, ?)""",
+                (
+                    f"job-{day.isoformat()}",
+                    "logs.health_check",
+                    "SUCCEEDED",
+                    datetime(
+                        day.year, day.month, day.day, 5, 3, tzinfo=PARIS
+                    ).isoformat(),
+                    json.dumps(
+                        {"sources": [{"source": "zwave-01", "findings": findings}]}
+                    ),
+                ),
+            )
+        connection.commit()
+
+    def growth_items() -> list[dict]:
+        summary = monitor.summary(now=NOW)
+        return [i for i in summary["watch"] if i["rule"] == "log_errors_growth"]
+
+    write("warning")
+    assert len(growth_items()) == 1
+
+    # The user accepted the "Z-Wave JS (serveur)" component in Vision.
+    connection.execute(
+        "INSERT INTO tsunade_accepted_log_components VALUES (?, ?, ?, ?)",
+        ("zwave-01", "zwave_js.server", "Z-Wave JS (serveur)", NOW.isoformat()),
+    )
+    connection.commit()
+    assert growth_items() == []
+
+    # Accepting a component never hides a critical line.
+    write("critical")
+    assert len(growth_items()) == 1
+    connection.close()
+    monitor.close()
+
+
 def test_new_unavailable_home_assistant_entities_are_named(tmp_path: Path) -> None:
     monitor = TsunadePreventiveMonitor(tmp_path / "control.db")
     for offset in range(21):

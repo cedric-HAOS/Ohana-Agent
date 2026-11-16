@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from ohana_agent.tsunade.local_time import to_paris
+from ohana_agent.tsunade.log_components import annotate_log_finding, canonical_component
 from ohana_agent.tsunade.preventive_drifts import (
     MAX_BASELINE_DAYS,
     RECENT_DAYS,
@@ -374,6 +375,15 @@ def log_errors_growth(connection: sqlite3.Connection, current: datetime) -> dict
         }
     except sqlite3.OperationalError:
         return _check("log_errors_growth", [], [])
+    try:
+        accepted_components = {
+            (row[0], canonical_component(row[1]))
+            for row in connection.execute(
+                "SELECT source, component FROM tsunade_accepted_log_components"
+            )
+        }
+    except sqlite3.OperationalError:
+        accepted_components = set()
     checked: dict[str, set[date]] = {}
     counts: dict[tuple[str, str], dict[date, float]] = {}
     for row in rows:
@@ -391,6 +401,13 @@ def log_errors_growth(connection: sqlite3.Connection, current: datetime) -> dict
             for finding in source.get("findings", []):
                 key = (source_id, str(finding.get("signature", "")))
                 if key in accepted or not key[1]:
+                    continue
+                # Same rule as the daily check: an accepted component no
+                # longer counts, except its critical lines.
+                if (
+                    source_id,
+                    annotate_log_finding(finding)["component"],
+                ) in accepted_components and finding.get("severity") != "critical":
                     continue
                 daily = counts.setdefault(key, {})
                 daily[day] = max(daily.get(day, 0.0), float(finding["occurrences"]))

@@ -572,6 +572,10 @@ def _administration_routes(
                 "/v1/incidents/{incident_id}/similar",
                 _call(service.read_similar_incidents),
             ),
+            _route(
+                "/v1/incidents/{incident_id}/older",
+                _call(service.list_older_incidents),
+            ),
             _route("/v1/plugins/{identifier}", _call(service.read_plugin)),
             _route("/v1/jobs/{job_id}", _call(service.read_job)),
             _route("/v1/incidents/{incident_id}", _call(service.read_incident)),

@@ -223,6 +223,14 @@ def test_administration_server_exposes_authenticated_tsunade_incidents(
         }
         detailed = request_json(server, f"/v1/incidents/{incident.incident_id}")
         assert detailed["events"][0]["kind"] == "opened"  # type: ignore[index]
+        older = request_json(server, f"/v1/incidents/{log_incident.incident_id}/older")
+        # Both incidents are still open: no resolved history before them.
+        assert older == {
+            "schema_version": 1,
+            "before": str(log_incident.incident_id),
+            "has_more": False,
+            "incidents": [],
+        }
         recorded = request_json(
             server,
             f"/v1/incidents/{incident.incident_id}/records",

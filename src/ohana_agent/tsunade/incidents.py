@@ -233,6 +233,38 @@ class TsunadeIncidentRepository(
             # observations interleave on it (sqlite3.InterfaceError).
             return [self._incident(row, include_events=False) for row in rows]
 
+    def older_resolved(
+        self, incident_id: UUID | str, *, limit: int = 100
+    ) -> tuple[list[TsunadeIncident], bool]:
+        """Return resolved incidents that started before ``incident_id``.
+
+        The anchor is the oldest incident a reader already has: a keyset on
+        (start, identifier) neither repeats nor skips a row when incidents
+        open or close between two pages. The flag tells whether more remain.
+        """
+        if not 1 <= limit <= 500:
+            raise ValueError("incident limit must be between 1 and 500")
+        with self._lock:
+            anchor = self._connection.execute(
+                "SELECT started_at FROM tsunade_incidents WHERE incident_id = ?",
+                (str(incident_id),),
+            ).fetchone()
+            if anchor is None:
+                raise LookupError(f"Unknown incident: {incident_id}")
+            rows = self._connection.execute(
+                """SELECT * FROM tsunade_incidents
+                WHERE ended_at IS NOT NULL AND (
+                    julianday(started_at) < julianday(?)
+                    OR (julianday(started_at) = julianday(?) AND incident_id < ?)
+                )
+                ORDER BY julianday(started_at) DESC, incident_id DESC LIMIT ?""",
+                (anchor["started_at"], anchor["started_at"], str(incident_id), limit + 1),
+            ).fetchall()
+            incidents = [
+                self._incident(row, include_events=False) for row in rows[:limit]
+            ]
+            return incidents, len(rows) > limit
+
     def statistics(self) -> dict[str, int | float | None]:
         """Return compact history counters without loading incident rows."""
         with self._lock:
@@ -712,6 +744,11 @@ class TsunadeIncidentRepository(
             if decision_row
             else None
         )
+        opened = self._connection.execute(
+            """SELECT summary FROM tsunade_incident_events
+            WHERE incident_id=? AND kind='opened' ORDER BY event_id LIMIT 1""",
+            (row["incident_id"],),
+        ).fetchone()
         incident = TsunadeIncident(
             incident_id=row["incident_id"],
             followup=self.latest_followup(row["incident_id"]),
@@ -730,6 +767,9 @@ class TsunadeIncidentRepository(
             else None,
             last_observation_id=row["last_observation_id"],
             message=redact_sensitive_text(str(row["message"])),
+            opening_message=(
+                redact_sensitive_text(str(opened["summary"])) if opened else None
+            ),
             occurrence_count=int(row["occurrence_count"]),
             recurrence_count=int(row["recurrence_count"]),
             context=redact_sensitive_value(json.loads(row["context_json"])),

@@ -813,6 +813,22 @@ class AdministrationService(
     def read_similar_incidents(self, incident_id: str) -> object:
         return self._require_incidents().similar_incidents(incident_id)
 
+    def list_older_incidents(self, incident_id: str) -> object:
+        """Next page of resolved history, older than an incident Vision holds."""
+        incidents, has_more = self._require_incidents().older_resolved(incident_id)
+        return {
+            "schema_version": 1,
+            "before": incident_id,
+            "has_more": has_more,
+            "incidents": [
+                {
+                    **incident.model_dump(mode="json"),
+                    "assessment": incident_assessment(incident),
+                }
+                for incident in incidents
+            ],
+        }
+
     def _require_incidents(self) -> Any:
         if self.incident_repository is None:
             raise LookupError("Tsunade incident history is unavailable")

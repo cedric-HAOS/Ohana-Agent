@@ -174,6 +174,9 @@ class TsunadeIncident(AdministrationModel):
     ended_at: ParisDatetime | None = None
     last_observation_id: UUID
     message: str
+    # The symptom when the incident opened: once resolved, ``message`` only
+    # says the capability is healthy again.
+    opening_message: str | None = None
     occurrence_count: int = Field(ge=1)
     recurrence_count: int = Field(ge=0)
     context: dict[str, Any] = Field(default_factory=dict)

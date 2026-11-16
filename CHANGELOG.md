@@ -2,6 +2,9 @@
 
 ## Non publié
 
+- Incidents Tsunade : `GET /v1/incidents/{incident_id}/older` sert la page suivante de l'historique, les 100 incidents résolus ouverts avant l'incident donné (`has_more` dit s'il en reste). La page est découpée sur (début, identifiant) : un incident qui s'ouvre ou se ferme entre deux pages ne fait ni doublon ni trou. La liste `GET /v1/incidents/all` reste limitée aux 100 derniers ; Vision s'en sert pour remonter au-delà.
+- Incidents Tsunade : chaque incident porte `opening_message`, le symptôme enregistré à l'ouverture. Une fois l'incident résolu, `message` ne dit plus que le retour à la normale (« Host healthy », « DNS resolution succeeded… ») ; Vision retrouve ainsi un incident passé par son symptôme.
+
 ## [1.59.3] — 2026-11-16 — Journaux, composants Z-Wave
 
 - Journaux, composants Z-Wave : les lignes de l'add-on Z-Wave JS UI (`zwavejs2mqtt`) ne tombent plus dans « Autre ». Celles de son serveur WebSocket (`z-wave-server`) forment le composant « Z-Wave JS (serveur) », les autres « Z-Wave JS UI » ; les lignes du contrôleur restent « Z-Wave JS (contrôleur) ». Sur zwave-01, l'incident de journaux ouvert depuis le 6 novembre venait surtout de « client disconnected », environ 720 lignes par jour laissées par la sonde Z-Wave d'Ohana elle-même (une connexion toutes les 120 s) : rangées dans « Autre », elles échappaient à l'acceptation du contrôleur. Le serveur peut désormais être accepté seul, sans masquer le pilote ni le reste de l'add-on.

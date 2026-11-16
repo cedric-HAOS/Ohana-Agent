@@ -81,6 +81,38 @@ def test_same_reasons_on_the_same_equipment_are_alike() -> None:
     )
 
 
+def test_older_resolved_pages_by_start_without_repeating_rows(tmp_path: Path) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    oldest_first = [
+        _episode(repository, day, [f"reason_{day}"]) for day in range(5)
+    ]
+    newest = oldest_first[-1]
+
+    page, more = repository.older_resolved(newest, limit=2)
+    assert [str(item.incident_id) for item in page] == oldest_first[3:1:-1]
+    assert more is True
+    # Resolved, the message only says the host is healthy: the symptom stays.
+    assert page[0].message == "Host healthy"
+    assert page[0].opening_message == "reason_3"
+    page, more = repository.older_resolved(str(page[-1].incident_id), limit=2)
+    assert [str(item.incident_id) for item in page] == oldest_first[1::-1]
+    assert more is False
+    assert all(item.ended_at is not None for item in page)
+    assert repository.older_resolved(oldest_first[0]) == ([], False)
+
+    # An incident still open is never part of the older resolved history.
+    repository.process(
+        _host(START + timedelta(days=-1), ObservationStatus.UNHEALTHY, ["disk_critical"])
+    )
+    page, _ = repository.older_resolved(newest)
+    assert [str(item.incident_id) for item in page] == oldest_first[3::-1]
+    with pytest.raises(LookupError):
+        repository.older_resolved(str(uuid4()))
+    with pytest.raises(ValueError):
+        repository.older_resolved(newest, limit=0)
+    repository.close()
+
+
 def test_history_filters_by_outcome_and_period(tmp_path: Path) -> None:
     repository = TsunadeIncidentRepository(tmp_path / "control.db")
     vision = _episode(repository, 0, ["vision_http_unavailable"])

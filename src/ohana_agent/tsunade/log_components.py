@@ -58,6 +58,8 @@ _LOGGER = re.compile(r"\(\w[\w\- ]*\)\s*\[([a-z0-9_.\-]+)\]")
 _BRACKETED = re.compile(r"\[([a-z][a-z0-9_.\-]*)\]")
 _SYSTEMD_UNIT = re.compile(r"\b(ohana-[a-z]+)\[")
 _ADDON = re.compile(r"\b(teleinfo2mqtt)\b")
+# The Z-Wave JS UI add-on (slug "a0d7b954_zwavejs2mqtt" on HAOS).
+_ZWAVE_JS_UI = re.compile(r"zwavejs2mqtt|zwave-js-ui")
 OTHER = ("other", "Autre")
 
 
@@ -104,6 +106,13 @@ def log_component(finding: dict[str, Any]) -> tuple[str, str]:
         return "teleinfo2mqtt", "teleinfo2mqtt"
     if "cntrlr" in signature:
         return "zwave_js.controller", "Z-Wave JS (contrôleur)"
+    if _ZWAVE_JS_UI.search(signature):
+        # Its WebSocket server logs every client, Ohana's own Z-Wave probe
+        # included (one connection every interval): a component of its own,
+        # so it can be accepted without hiding the driver or the add-on.
+        if "z-wave-server" in signature:
+            return "zwave_js.server", "Z-Wave JS (serveur)"
+        return "zwave_js_ui", "Z-Wave JS UI"
     return OTHER
 
 

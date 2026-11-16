@@ -39,6 +39,23 @@ SIGNATURES = {
         "zwave_js.controller",
         "Z-Wave JS (contrôleur)",
     ),
+    # zwave-01, 16 November: these add-on lines all fell into "Autre", so
+    # accepting "Z-Wave JS (contrôleur)" never closed the incident.
+    "<timestamp> haos-zwave app_a0d7b954_zwavejs2mqtt[<value>]: <timestamp> "
+    "info z-wave-server: client disconnected": (
+        "zwave_js.server",
+        "Z-Wave JS (serveur)",
+    ),
+    "<timestamp> haos-zwave app_a0d7b954_zwavejs2mqtt[<value>]: <timestamp> "
+    "error z-wave: error during bulk firmware update check:": (
+        "zwave_js_ui",
+        "Z-Wave JS UI",
+    ),
+    "<timestamp> haos-zwave app_a0d7b954_zwavejs2mqtt[<value>]: <timestamp> "
+    "cntrlr [node <value>] timed out while waiting": (
+        "zwave_js.controller",
+        "Z-Wave JS (contrôleur)",
+    ),
     "something without any logger name": ("other", "Autre"),
 }
 

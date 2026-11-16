@@ -2,6 +2,8 @@
 
 ## Non publié
 
+- Journaux, composants Z-Wave : les lignes de l'add-on Z-Wave JS UI (`zwavejs2mqtt`) ne tombent plus dans « Autre ». Celles de son serveur WebSocket (`z-wave-server`) forment le composant « Z-Wave JS (serveur) », les autres « Z-Wave JS UI » ; les lignes du contrôleur restent « Z-Wave JS (contrôleur) ». Sur zwave-01, l'incident de journaux ouvert depuis le 6 novembre venait surtout de « client disconnected », environ 720 lignes par jour laissées par la sonde Z-Wave d'Ohana elle-même (une connexion toutes les 120 s) : rangées dans « Autre », elles échappaient à l'acceptation du contrôleur. Le serveur peut désormais être accepté seul, sans masquer le pilote ni le reste de l'add-on.
+
 ## [1.59.2] — 2026-11-16 — Z-Wave, nœud retiré
 
 - Z-Wave, nœud retiré : quand un nœud disparaît de Z-Wave JS, la découverte retire aussi sa position des dispositions de la topologie. Vision refusait sinon chaque instantané d'infrastructure (HTTP 422, « topology layouts reference unknown devices ») : le 15 novembre, après la suppression de la Sonnette (nœud 25), la vue Infrastructure est restée vide jusqu'à la correction manuelle d'`infrastructure.yaml` le 16 au matin.

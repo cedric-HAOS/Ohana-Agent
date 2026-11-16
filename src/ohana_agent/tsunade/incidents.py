@@ -258,7 +258,12 @@ class TsunadeIncidentRepository(
                     OR (julianday(started_at) = julianday(?) AND incident_id < ?)
                 )
                 ORDER BY julianday(started_at) DESC, incident_id DESC LIMIT ?""",
-                (anchor["started_at"], anchor["started_at"], str(incident_id), limit + 1),
+                (
+                    anchor["started_at"],
+                    anchor["started_at"],
+                    str(incident_id),
+                    limit + 1,
+                ),
             ).fetchall()
             incidents = [
                 self._incident(row, include_events=False) for row in rows[:limit]

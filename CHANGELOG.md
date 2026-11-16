@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.60.0] — 2026-11-16 — Incidents Tsunade
+
 - Incidents Tsunade : `GET /v1/incidents/{incident_id}/older` sert la page suivante de l'historique, les 100 incidents résolus ouverts avant l'incident donné (`has_more` dit s'il en reste). La page est découpée sur (début, identifiant) : un incident qui s'ouvre ou se ferme entre deux pages ne fait ni doublon ni trou. La liste `GET /v1/incidents/all` reste limitée aux 100 derniers ; Vision s'en sert pour remonter au-delà.
 - Incidents Tsunade : chaque incident porte `opening_message`, le symptôme enregistré à l'ouverture. Une fois l'incident résolu, `message` ne dit plus que le retour à la normale (« Host healthy », « DNS resolution succeeded… ») ; Vision retrouve ainsi un incident passé par son symptôme.
 

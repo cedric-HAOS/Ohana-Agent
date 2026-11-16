@@ -83,9 +83,7 @@ def test_same_reasons_on_the_same_equipment_are_alike() -> None:
 
 def test_older_resolved_pages_by_start_without_repeating_rows(tmp_path: Path) -> None:
     repository = TsunadeIncidentRepository(tmp_path / "control.db")
-    oldest_first = [
-        _episode(repository, day, [f"reason_{day}"]) for day in range(5)
-    ]
+    oldest_first = [_episode(repository, day, [f"reason_{day}"]) for day in range(5)]
     newest = oldest_first[-1]
 
     page, more = repository.older_resolved(newest, limit=2)
@@ -102,7 +100,9 @@ def test_older_resolved_pages_by_start_without_repeating_rows(tmp_path: Path) ->
 
     # An incident still open is never part of the older resolved history.
     repository.process(
-        _host(START + timedelta(days=-1), ObservationStatus.UNHEALTHY, ["disk_critical"])
+        _host(
+            START + timedelta(days=-1), ObservationStatus.UNHEALTHY, ["disk_critical"]
+        )
     )
     page, _ = repository.older_resolved(newest)
     assert [str(item.incident_id) for item in page] == oldest_first[3::-1]

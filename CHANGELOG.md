@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.60.1] — 2026-11-16 — Tsunade, erreurs de journaux en hausse
+
 - Tsunade, erreurs de journaux en hausse : la règle préventive ignore désormais les composants acceptés dans Vision, comme le contrôle quotidien (sauf les lignes critiques). Elle ne regardait que les signatures acceptées : « ZWAVE-01 : « … info z-wave-server: client disconnected » en hausse » restait affiché alors que le composant « Z-Wave JS (serveur) » avait été accepté le 16 novembre. Cette ligne, laissée par la sonde Z-Wave d'Ohana, est stable à environ 717 par jour depuis le 9 novembre ; la « hausse » venait de la référence, faite de contrôles d'octobre où elle n'apparaissait pas.
 
 ## [1.60.0] — 2026-11-16 — Incidents Tsunade

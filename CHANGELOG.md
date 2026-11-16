@@ -2,6 +2,8 @@
 
 ## Non publié
 
+## [1.59.2] — 2026-11-16 — Z-Wave, nœud retiré
+
 - Z-Wave, nœud retiré : quand un nœud disparaît de Z-Wave JS, la découverte retire aussi sa position des dispositions de la topologie. Vision refusait sinon chaque instantané d'infrastructure (HTTP 422, « topology layouts reference unknown devices ») : le 15 novembre, après la suppression de la Sonnette (nœud 25), la vue Infrastructure est restée vide jusqu'à la correction manuelle d'`infrastructure.yaml` le 16 au matin.
 - Z-Wave, incidents : après chaque découverte complète, Tsunade clôt l'incident d'un nœud qui n'existe plus dans Z-Wave JS (« La surveillance de cette capacité a été retirée de l'architecture. »), comme il le faisait déjà pour un équipement réseau retiré. L'incident « silence » de la Sonnette restait actif indéfiniment, faute d'observation pour le résoudre. Une découverte en échec ne clôt rien.
 

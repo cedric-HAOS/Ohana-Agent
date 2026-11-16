@@ -184,6 +184,56 @@ def test_reconcile_persisted_network_incidents_after_restart(tmp_path: Path) -> 
         repository.close()
 
 
+def test_reconcile_zwave_nodes_closes_only_removed_nodes_of_the_controller(
+    tmp_path: Path,
+) -> None:
+    repository = TsunadeIncidentRepository(tmp_path / "control.db")
+    started = datetime(2026, 11, 7, 9, tzinfo=UTC)
+    silent = Observation(
+        node="zwave-zwave-node-25",
+        service="zwave-zwave-node-25",
+        capability="zwave.node.alive",
+        status=ObservationStatus.DEGRADED,
+        success=False,
+        message="Sonnette n'a pas donné signe de vie depuis 1500 min.",
+        source="zwave.node.alive",
+        id=uuid4(),
+        timestamp=started,
+        metadata={"target_type": "device", "device_id": "zwave-zwave-node-25"},
+    )
+    try:
+        removed = repository.process(silent)
+        kept = repository.process(
+            replace(silent, id=uuid4(), service="zwave-zwave-node-2", node="n2")
+        )
+        other_controller = repository.process(
+            replace(silent, id=uuid4(), service="zwave-garage-node-25", node="g25")
+        )
+        assert removed is not None and kept is not None
+        assert other_controller is not None
+
+        closed = repository.reconcile_zwave_nodes(
+            "zwave-zwave-node-",
+            {"zwave-zwave-node-2", "zwave-zwave-node-26"},
+            occurred_at=started + timedelta(days=9),
+        )
+
+        assert [item.incident_id for item in closed] == [removed.incident_id]
+        assert closed[0].events[-1].kind == "monitoring_removed"
+        assert repository.get(kept.incident_id).state == "active"
+        assert repository.get(other_controller.incident_id).state == "active"
+        assert (
+            repository.reconcile_zwave_nodes(
+                "zwave-zwave-node-",
+                {"zwave-zwave-node-2"},
+                occurred_at=started + timedelta(days=10),
+            )
+            == []
+        )
+    finally:
+        repository.close()
+
+
 def test_incident_references_typed_records_and_observations(tmp_path: Path) -> None:
     repository = TsunadeIncidentRepository(tmp_path / "control.db")
     try:

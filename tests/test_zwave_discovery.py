@@ -248,6 +248,78 @@ def test_discovery_reconciles_removed_nodes_and_preserves_manual_devices() -> No
     assert "zwave-zwave-main-node-3" in device_ids
 
 
+def test_discovery_removes_layout_positions_of_removed_nodes() -> None:
+    holder = {"payload": base_payload()}
+    holder["payload"]["topology"]["layouts"] = [
+        {
+            "layout_id": "main",
+            "label": "Principal",
+            "kind": "logical",
+            "positions": {
+                "manual-device": {"column": 1, "row": 1},
+                "zwave-zwave-main-node-2": {"column": 2, "row": 1},
+                "zwave-zwave-main-node-3": {"column": 3, "row": 1},
+            },
+            "metadata": {},
+        }
+    ]
+    engine = FakeObservationEngine()
+    handler = ZWaveDiscoveryHandler(
+        observation_engine=engine,  # type: ignore[arg-type]
+        infrastructure_payload=lambda: holder["payload"],
+        update_infrastructure=lambda payload: holder.update(payload=payload),
+    )
+
+    for nodes in ([2, 3], [3]):
+        handler.handle(
+            controller_event(
+                metadata={
+                    "discovery_complete": True,
+                    "nodes": [
+                        {"node_id": node_id, "status": "alive"} for node_id in nodes
+                    ],
+                }
+            )
+        )
+
+    positions = holder["payload"]["topology"]["layouts"][0]["positions"]
+    assert set(positions) == {"manual-device", "zwave-zwave-main-node-3"}
+
+
+def test_complete_discovery_reconciles_incidents_but_failure_does_not() -> None:
+    holder = {"payload": base_payload()}
+    calls: list[tuple[str, set[str], datetime]] = []
+    handler = ZWaveDiscoveryHandler(
+        observation_engine=FakeObservationEngine(),  # type: ignore[arg-type]
+        infrastructure_payload=lambda: holder["payload"],
+        update_infrastructure=lambda payload: holder.update(payload=payload),
+        reconcile_incidents=lambda prefix, ids, *, occurred_at: calls.append(
+            (prefix, ids, occurred_at)
+        ),
+    )
+
+    handler.handle(
+        controller_event(metadata={"discovery_complete": False, "nodes": []})
+    )
+    assert calls == []
+
+    handler.handle(
+        controller_event(
+            metadata={
+                "discovery_complete": True,
+                "nodes": [{"node_id": 3, "status": "alive"}],
+            }
+        )
+    )
+    assert calls == [
+        (
+            "zwave-zwave-main-node-",
+            {"zwave-zwave-main-node-3"},
+            datetime(2026, 8, 4, 12, 0, tzinfo=UTC),
+        )
+    ]
+
+
 def _publish_single_node(node: dict[str, Any]) -> Any:
     holder = {"payload": base_payload()}
     engine = FakeObservationEngine()

@@ -124,14 +124,52 @@ class TsunadeIncidentRepository(
                 removed, occurred_at=occurred_at
             )
 
+    def reconcile_zwave_nodes(
+        self,
+        node_prefix: str,
+        device_ids: set[str],
+        *,
+        occurred_at: datetime,
+    ) -> list[TsunadeIncident]:
+        """Close node incidents of one controller whose node no longer exists.
+
+        Only called after a complete Z-Wave discovery: a node absent from it
+        was removed from Z-Wave JS, so no observation will ever resolve it.
+        """
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT DISTINCT service_id FROM tsunade_incidents
+                WHERE capability_id='zwave.node.alive' AND ended_at IS NULL""",
+            ).fetchall()
+            removed = {
+                row["service_id"]
+                for row in rows
+                if str(row["service_id"]).startswith(node_prefix)
+            } - device_ids
+            return self._resolve_removed_monitoring(
+                "zwave.node.alive", removed, occurred_at=occurred_at
+            )
+
     def resolve_removed_network_devices(
         self, device_ids: set[str], *, occurred_at: datetime
     ) -> list[TsunadeIncident]:
-        """Close active presence incidents for devices removed from monitoring.
+        """Close active presence incidents for devices removed from monitoring."""
+        return self._resolve_removed_monitoring(
+            "network.reachable", device_ids, occurred_at=occurred_at
+        )
+
+    def _resolve_removed_monitoring(
+        self,
+        capability_id: str,
+        device_ids: set[str],
+        *,
+        occurred_at: datetime,
+    ) -> list[TsunadeIncident]:
+        """Close active incidents of a capability for equipment no longer monitored.
 
         This is deliberately not modelled as a healthy observation: the device
-        was removed from the declared architecture, so Shikamaru has not
-        established that it is reachable.
+        was removed from the architecture, so Shikamaru has not established
+        that it works.
         """
         if not device_ids:
             return []
@@ -140,7 +178,8 @@ class TsunadeIncidentRepository(
         with self._lock, self._connection:
             rows = self._connection.execute(
                 """SELECT * FROM tsunade_incidents
-                WHERE capability_id='network.reachable' AND ended_at IS NULL""",
+                WHERE capability_id=? AND ended_at IS NULL""",
+                (capability_id,),
             ).fetchall()
             for row in rows:
                 if row["service_id"] not in device_ids:

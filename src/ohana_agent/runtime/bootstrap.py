@@ -573,4 +573,9 @@ def build_production_agent(
         )
         administration_service.archive_integrity = archive_integrity_reporter
 
+        if administration_service.incident_repository is not None:
+            zwave_discovery_handler.reconcile_incidents = (
+                administration_service.incident_repository.reconcile_zwave_nodes
+            )
+
     return agent

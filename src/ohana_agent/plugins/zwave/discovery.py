@@ -24,6 +24,9 @@ class ZWaveDiscoveryHandler:
     observation_engine: ObservationEngine
     infrastructure_payload: Callable[[], dict[str, Any] | None]
     update_infrastructure: Callable[[dict[str, Any]], None]
+    # (node device id prefix, current node device ids, observed at): closes
+    # the incidents of nodes removed from Z-Wave JS. Set once Tsunade exists.
+    reconcile_incidents: Callable[..., object] | None = None
 
     def handle(self, event: ObservationPublished) -> None:
         """Handle the controller observation produced by the Z-Wave plugin."""
@@ -48,6 +51,16 @@ class ZWaveDiscoveryHandler:
                 nodes=nodes,
                 observed_at=observation.timestamp,
             )
+
+            if self.reconcile_incidents is not None:
+                self.reconcile_incidents(
+                    self._node_prefix(service_id),
+                    {
+                        self._device_id(service_id, int(node["node_id"]))
+                        for node in nodes
+                    },
+                    occurred_at=observation.timestamp,
+                )
             return
 
         self._publish_unavailable_discovery(
@@ -74,9 +87,14 @@ class ZWaveDiscoveryHandler:
         )
         devices = topology.setdefault("devices", [])
         links = topology.setdefault("links", [])
-        topology.setdefault("layouts", [])
+        layouts = topology.setdefault("layouts", [])
         topology.setdefault("metadata", {})
 
+        previous_managed_ids = {
+            str(device.get("device_id"))
+            for device in devices
+            if self._is_managed(device, service_id=service_id)
+        }
         devices[:] = [
             device
             for device in devices
@@ -118,6 +136,19 @@ class ZWaveDiscoveryHandler:
                         },
                     }
                 )
+
+        # Vision rejects a snapshot whose layout places a device that does not
+        # exist: a node removed from Z-Wave JS must leave the layouts too.
+        removed_ids = previous_managed_ids - {
+            str(device.get("device_id")) for device in devices
+        }
+
+        for layout in layouts:
+            positions = layout.get("positions")
+
+            if isinstance(positions, dict):
+                for device_id in removed_ids:
+                    positions.pop(device_id, None)
 
         if updated != current:
             self.update_infrastructure(updated)
@@ -350,9 +381,13 @@ class ZWaveDiscoveryHandler:
         )
 
     @staticmethod
-    def _device_id(service_id: str, node_id: int) -> str:
+    def _node_prefix(service_id: str) -> str:
         service_slug = re.sub(r"[^a-z0-9]+", "-", service_id.lower()).strip("-")
-        return f"zwave-{service_slug or 'controller'}-node-{node_id}"
+        return f"zwave-{service_slug or 'controller'}-node-"
+
+    @classmethod
+    def _device_id(cls, service_id: str, node_id: int) -> str:
+        return f"{cls._node_prefix(service_id)}{node_id}"
 
     @staticmethod
     def _is_managed(item: dict[str, Any], *, service_id: str) -> bool:
